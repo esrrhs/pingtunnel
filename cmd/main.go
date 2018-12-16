@@ -51,7 +51,7 @@ func main() {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
 		}
-		fmt.Printf("Client Listen %s (%s) Target %s (%s):\n", c.Addr(), c.IPAddr(), c.TargetAddr(), c.TargetIPAddr())
 		c.Run()
+		fmt.Printf("Client Listen %s (%s) Target %s (%s):\n", c.Addr(), c.IPAddr(), c.TargetAddr(), c.TargetIPAddr())
 	}
 }

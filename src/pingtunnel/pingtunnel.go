@@ -54,10 +54,11 @@ type PingTunnelClient struct {
 	ipaddr *net.TCPAddr
 	addr   string
 
-	ipaddrTarget *net.TCPAddr
+	ipaddrTarget *net.IPAddr
 	addrTarget   string
 
-	conn net.Conn
+	conn       *icmp.PacketConn
+	listenConn *net.TCPListener
 }
 
 type PingTunnelServer struct {
@@ -98,14 +99,14 @@ func (p *PingTunnelClient) TargetAddr() string {
 	return p.addrTarget
 }
 
-func (p *PingTunnelClient) TargetIPAddr() *net.TCPAddr {
+func (p *PingTunnelClient) TargetIPAddr() *net.IPAddr {
 	return p.ipaddrTarget
 }
 
 func (p *PingTunnelServer) Run() {
-	conn, err := net.ListenPacket("udp4", p.addr)
+	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("Error listening for ICMP packets: %s\n", err.Error())
 		return
 	}
 
@@ -116,25 +117,56 @@ func (p *PingTunnelServer) Run() {
 
 func (p *PingTunnelClient) Run() {
 
-	conn, err := net.Dial("udp4", p.addrTarget)
+	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("Error listening for ICMP packets: %s\n", err.Error())
 		return
 	}
-
 	p.conn = conn
 
-	n := 0
+	ipaddrTarget, err := net.ResolveIPAddr("ip", p.addrTarget)
+	if err != nil {
+		return
+	}
+	p.ipaddrTarget = ipaddrTarget
+
+	ipAddr, err := net.ResolveTCPAddr("tcp", p.addr)
+	if err != nil {
+		fmt.Printf("Error listening for Local packets: %s\n", err.Error())
+		return
+	}
+	p.ipaddr = ipAddr
+
+	listener, err := net.ListenTCP("tcp", p.ipaddr)
+
+	p.listenConn = listener
+
+	go p.Accept()
+}
+
+func (p *PingTunnelClient) Accept() error {
+
 	for {
-		p.Send(n, []byte("haha"))
-		n++
+		localConn, err := p.listenConn.AcceptTCP()
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		localConn.SetLinger(0)
+		go p.handleConn(*localConn)
 	}
 }
 
-func (p *PingTunnelClient) Send(id int, data []byte) error {
+func (p *PingTunnelClient) handleConn(conn net.TCPConn) {
+
+}
+
+func (p *PingTunnelClient) sendICMP(connId int, msgType int, data []byte) error {
 
 	body := &Msg{
-		ID:   id,
+		ID:   connId,
+		TYPE: msgType,
 		Data: data,
 	}
 
@@ -203,7 +235,8 @@ func ipv4Payload(b []byte) []byte {
 }
 
 type Msg struct {
-	ID   int    // identifier
+	ID   int // identifier
+	TYPE int
 	Data []byte // data
 }
 
@@ -211,13 +244,14 @@ func (p *Msg) Len(proto int) int {
 	if p == nil {
 		return 0
 	}
-	return 4 + len(p.Data)
+	return 8 + len(p.Data)
 }
 
 func (p *Msg) Marshal(proto int) ([]byte, error) {
-	b := make([]byte, 4+len(p.Data))
+	b := make([]byte, 8+len(p.Data))
 	binary.BigEndian.PutUint32(b, uint32(p.ID))
-	copy(b[4:], p.Data)
+	binary.BigEndian.PutUint32(b, uint32(p.TYPE))
+	copy(b[8:], p.Data)
 	return b, nil
 }
 
