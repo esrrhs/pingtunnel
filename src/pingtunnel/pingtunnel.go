@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"golang.org/x/net/ipv4"
 	"io"
 )
 
@@ -19,14 +18,6 @@ const (
 const (
 	protocolICMP     = 1
 )
-
-func ipv4Payload(b []byte) []byte {
-	if len(b) < ipv4.HeaderLen {
-		return b
-	}
-	hdrlen := int(b[0]&0x0f) << 2
-	return b[hdrlen:]
-}
 
 type Msg struct {
 	TYPE int
