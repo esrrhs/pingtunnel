@@ -65,10 +65,8 @@ func (p *Server) Recv() error {
 			}
 		}
 
-		bytes1 := ipv4Payload(bytes)
-
 		var m *icmp.Message
-		if m, err = icmp.ParseMessage(protocolICMP, bytes1[:n]); err != nil {
+		if m, err = icmp.ParseMessage(protocolICMP, bytes[:n]); err != nil {
 			fmt.Println("Error parsing icmp message")
 			return err
 		}
