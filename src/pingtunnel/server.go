@@ -9,7 +9,7 @@ import (
 
 func NewServer(target string) (*Server, error) {
 
-	ipaddrTarget, err := net.ResolveTCPAddr("tcp", target)
+	ipaddrTarget, err := net.ResolveUDPAddr("udp", target)
 	if err != nil {
 		return nil, err
 	}
@@ -21,17 +21,19 @@ func NewServer(target string) (*Server, error) {
 }
 
 type Server struct {
-	ipaddrTarget *net.TCPAddr
+	ipaddrTarget *net.UDPAddr
 	addrTarget   string
 
-	conn net.PacketConn
+	conn *icmp.PacketConn
+
+	localConnMap map[uint32]*net.UDPConn
 }
 
 func (p *Server) TargetAddr() string {
 	return p.addrTarget
 }
 
-func (p *Server) TargetIPAddr() *net.TCPAddr {
+func (p *Server) TargetIPAddr() *net.UDPAddr {
 	return p.ipaddrTarget
 }
 
@@ -44,43 +46,66 @@ func (p *Server) Run() {
 	}
 	p.conn = conn
 
-	p.Recv()
-}
+	p.localConnMap = make(map[uint32]*net.UDPConn)
 
-func (p *Server) Recv() error {
+	recv := make(chan *Packet, 1000)
+	go recvICMP(*p.conn, recv)
 
 	for {
-		bytes := make([]byte, 512)
-		p.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		n, srcaddr, err := p.conn.ReadFrom(bytes)
+		select {
+		case r := <-recv:
+			p.processPacket(r)
+		}
+	}
+}
 
+func (p *Server) processPacket(packet *Packet) {
+
+	fmt.Printf("processPacket %d %s %d\n", packet.id, packet.src.String(), len(packet.data))
+
+	id := packet.id
+	udpConn := p.localConnMap[id]
+	if udpConn == nil {
+		targetConn, err := net.ListenUDP("udp", p.ipaddrTarget)
+		if err != nil {
+			fmt.Printf("Error listening for udp packets: %s\n", err.Error())
+			return
+		}
+		udpConn = targetConn
+		p.localConnMap[id] = udpConn
+		go p.Recv(udpConn, id, packet.src)
+	}
+
+	_, err := udpConn.WriteToUDP(packet.data, p.ipaddrTarget)
+	if err != nil {
+		fmt.Printf("WriteToUDP Error read udp %s\n", err)
+		p.localConnMap[id] = nil
+		return
+	}
+}
+
+func (p *Server) Recv(conn *net.UDPConn, id uint32, src *net.IPAddr) {
+
+	fmt.Println("server waiting target response")
+
+	bytes := make([]byte, 10240)
+
+	for {
+		p.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+		n, _, err := conn.ReadFromUDP(bytes)
 		if err != nil {
 			if neterr, ok := err.(*net.OpError); ok {
 				if neterr.Timeout() {
 					// Read timeout
 					continue
 				} else {
-					return err
+					fmt.Printf("ReadFromUDP Error read udp %s\n", err)
+					p.localConnMap[id] = nil
+					return
 				}
 			}
 		}
 
-		var m *icmp.Message
-		if m, err = icmp.ParseMessage(protocolICMP, bytes[:n]); err != nil {
-			fmt.Println("Error parsing icmp message")
-			return err
-		}
-
-		fmt.Printf("%d %d %d %s \n", m.Type, m.Code, n, srcaddr)
+		sendICMP(*p.conn, src, id, (uint32)(DATA), bytes[:n])
 	}
-}
-
-func (p *Server) listen(netProto string, source string) *icmp.PacketConn {
-
-	conn, err := icmp.ListenPacket(netProto, source)
-	if err != nil {
-		fmt.Printf("Error listening for ICMP packets: %s\n", err.Error())
-		return nil
-	}
-	return conn
 }
