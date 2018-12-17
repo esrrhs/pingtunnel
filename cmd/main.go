@@ -9,9 +9,9 @@ import (
 var usage = `
 Usage:
 
-    pingtunnel -t server -l SERVER_IP:4455 -t TARGET_IP:443
+    pingtunnel -type server -t TARGET_IP:4455
 
-    pingtunnel -t client -l LOCAL_IP:4455 -t SERVER_IP:4455
+    pingtunnel -type client -l LOCAL_IP:4455 -t SERVER_IP
 
 `
 
@@ -37,21 +37,21 @@ func main() {
 	fmt.Printf("target %s\n", *target)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewPingTunnelServer(*listen, *target)
+		s, err := pingtunnel.NewServer(*target)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
 		}
-		fmt.Printf("Server Listen %s (%s) Target %s (%s):\n", s.Addr(), s.IPAddr(), s.TargetAddr(), s.TargetIPAddr())
+		fmt.Printf("Server Target %s (%s):\n", s.TargetAddr(), s.TargetIPAddr())
 		s.Run()
 	}
 	if *t == "client" {
-		c, err := pingtunnel.NewPingTunnelClient(*listen, *target)
+		c, err := pingtunnel.NewClient(*listen, *target)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
 		}
-		c.Run()
 		fmt.Printf("Client Listen %s (%s) Target %s (%s):\n", c.Addr(), c.IPAddr(), c.TargetAddr(), c.TargetIPAddr())
+		c.Run()
 	}
 }
