@@ -151,7 +151,7 @@ func (p *Client) Accept() error {
 
 func (p *Client) processPacket(packet *Packet) {
 
-	if len(packet.target) != 0 {
+	if packet.data == nil {
 		return
 	}
 
