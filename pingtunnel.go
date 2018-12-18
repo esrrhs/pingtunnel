@@ -99,7 +99,7 @@ func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId st
 	}
 
 	msg := &icmp.Message{
-		Type: ipv4.ICMPTypeExtendedEchoRequest,
+		Type: ipv4.ICMPTypeTimestamp,
 		Code: 0,
 		Body: m,
 	}
