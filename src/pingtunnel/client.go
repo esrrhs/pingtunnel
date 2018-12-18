@@ -7,14 +7,14 @@ import (
 	"time"
 )
 
-func NewClient(addr string, target string) (*Client, error) {
+func NewClient(addr string, server string, target int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
 	}
 
-	ipaddrTarget, err := net.ResolveIPAddr("ip", target)
+	ipaddrServer, err := net.ResolveIPAddr("ip", server)
 	if err != nil {
 		return nil, err
 	}
@@ -22,8 +22,9 @@ func NewClient(addr string, target string) (*Client, error) {
 	return &Client{
 		ipaddr:       ipaddr,
 		addr:         addr,
-		ipaddrTarget: ipaddrTarget,
-		addrTarget:   target,
+		ipaddrServer: ipaddrServer,
+		addrServer:   server,
+		targetPort:   (uint16)(target),
 	}, nil
 }
 
@@ -31,8 +32,10 @@ type Client struct {
 	ipaddr *net.UDPAddr
 	addr   string
 
-	ipaddrTarget *net.IPAddr
-	addrTarget   string
+	ipaddrServer *net.IPAddr
+	addrServer   string
+
+	targetPort uint16
 
 	conn       *icmp.PacketConn
 	listenConn *net.UDPConn
@@ -49,12 +52,16 @@ func (p *Client) IPAddr() *net.UDPAddr {
 	return p.ipaddr
 }
 
-func (p *Client) TargetAddr() string {
-	return p.addrTarget
+func (p *Client) TargetPort() uint16 {
+	return p.targetPort
 }
 
-func (p *Client) TargetIPAddr() *net.IPAddr {
-	return p.ipaddrTarget
+func (p *Client) ServerIPAddr() *net.IPAddr {
+	return p.ipaddrServer
+}
+
+func (p *Client) ServerAddr() string {
+	return p.addrServer
 }
 
 func (p *Client) Run() {
@@ -98,7 +105,7 @@ func (p *Client) Accept() error {
 	bytes := make([]byte, 10240)
 
 	for {
-		p.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+		p.listenConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, srcaddr, err := p.listenConn.ReadFromUDP(bytes)
 		if err != nil {
 			if neterr, ok := err.(*net.OpError); ok {
@@ -120,7 +127,7 @@ func (p *Client) Accept() error {
 			fmt.Printf("client accept new local %d %s\n", uuid, srcaddr.String())
 		}
 
-		sendICMP(*p.conn, p.ipaddrTarget, uuid, (uint32)(DATA), bytes[:n])
+		sendICMP(*p.conn, p.ipaddrServer, p.targetPort, uuid, (uint32)(DATA), bytes[:n])
 	}
 }
 
