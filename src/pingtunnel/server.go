@@ -4,25 +4,28 @@ import (
 	"fmt"
 	"golang.org/x/net/icmp"
 	"net"
-	"strconv"
 	"time"
 )
 
-func NewServer() (*Server, error) {
+func NewServer(timeout int) (*Server, error) {
 	return &Server{
+		timeout: timeout,
 	}, nil
 }
 
 type Server struct {
+	timeout int
+
 	conn *icmp.PacketConn
 
-	localConnMap map[uint32]*Conn
+	localConnMap map[string]*ServerConn
 }
 
-type Conn struct {
+type ServerConn struct {
 	ipaddrTarget *net.UDPAddr
 	conn         *net.UDPConn
-	id           uint32
+	id           string
+	activeTime   time.Time
 }
 
 func (p *Server) Run() {
@@ -34,13 +37,18 @@ func (p *Server) Run() {
 	}
 	p.conn = conn
 
-	p.localConnMap = make(map[uint32]*Conn)
+	p.localConnMap = make(map[string]*ServerConn)
 
 	recv := make(chan *Packet, 1000)
 	go recvICMP(*p.conn, recv)
 
+	interval := time.NewTicker(time.Second)
+	defer interval.Stop()
+
 	for {
 		select {
+		case <-interval.C:
+			p.checkTimeoutConn()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -49,13 +57,15 @@ func (p *Server) Run() {
 
 func (p *Server) processPacket(packet *Packet) {
 
-	fmt.Printf("processPacket %d %s %d\n", packet.id, packet.src.String(), len(packet.data))
+	fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
+
+	now := time.Now()
 
 	id := packet.id
 	udpConn := p.localConnMap[id]
 	if udpConn == nil {
 
-		addr := ":" + strconv.Itoa((int)(packet.target))
+		addr := packet.target
 		ipaddrTarget, err := net.ResolveUDPAddr("udp", addr)
 		if err != nil {
 			fmt.Printf("Error ResolveUDPAddr for udp addr: %s %s\n", addr, err.Error())
@@ -67,10 +77,12 @@ func (p *Server) processPacket(packet *Packet) {
 			fmt.Printf("Error listening for udp packets: %s\n", err.Error())
 			return
 		}
-		udpConn = &Conn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id}
+		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now}
 		p.localConnMap[id] = udpConn
 		go p.Recv(udpConn, id, packet.src)
 	}
+
+	udpConn.activeTime = now
 
 	_, err := udpConn.conn.Write(packet.data)
 	if err != nil {
@@ -80,9 +92,9 @@ func (p *Server) processPacket(packet *Packet) {
 	}
 }
 
-func (p *Server) Recv(conn *Conn, id uint32, src *net.IPAddr) {
+func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
-	fmt.Printf("server waiting target response %s\n", conn.ipaddrTarget.String())
+	fmt.Printf("server waiting target response %s -> %s %s\n", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
 
 	bytes := make([]byte, 10240)
 
@@ -102,13 +114,29 @@ func (p *Server) Recv(conn *Conn, id uint32, src *net.IPAddr) {
 			}
 		}
 
-		sendICMP(*p.conn, src, 0, id, (uint32)(DATA), bytes[:n])
+		now := time.Now()
+		conn.activeTime = now
+
+		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n])
 	}
 }
 
-func (p *Server) Close(conn *Conn) {
+func (p *Server) Close(conn *ServerConn) {
 	if p.localConnMap[conn.id] != nil {
 		conn.conn.Close()
-		p.localConnMap[conn.id] = nil
+		delete(p.localConnMap, conn.id)
 	}
+}
+
+func (p *Server) checkTimeoutConn() {
+
+	now := time.Now()
+	for id, conn := range p.localConnMap {
+		diff := now.Sub(conn.activeTime)
+		if diff > time.Second*(time.Duration(p.timeout)) {
+			fmt.Printf("close inactive conn %s %s\n", id, conn.ipaddrTarget.String())
+			p.Close(conn)
+		}
+	}
+
 }
