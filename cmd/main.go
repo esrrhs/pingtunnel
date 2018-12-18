@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"pingtunnel"
+	"github.com/esrrhs/pingtunnel"
 )
 
 var usage = `
