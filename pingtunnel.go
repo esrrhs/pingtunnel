@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DATA uint32 = 0xDEADBEEF
+	DATA uint32 = 0x01010101
 )
 
 // An Echo represents an ICMP echo request or reply message body.
