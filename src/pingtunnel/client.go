@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -24,24 +24,33 @@ func NewClient(addr string, server string, target int) (*Client, error) {
 		addr:         addr,
 		ipaddrServer: ipaddrServer,
 		addrServer:   server,
-		targetPort:   (uint16)(target),
+		targetAddr:   target,
+		timeout:      timeout,
 	}, nil
 }
 
 type Client struct {
+	timeout int
+
 	ipaddr *net.UDPAddr
 	addr   string
 
 	ipaddrServer *net.IPAddr
 	addrServer   string
 
-	targetPort uint16
+	targetAddr string
 
 	conn       *icmp.PacketConn
 	listenConn *net.UDPConn
 
-	localConnToIdMap map[string]uint32
-	localIdToConnMap map[uint32]*net.UDPAddr
+	localAddrToConnMap map[string]*ClientConn
+	localIdToConnMap   map[string]*ClientConn
+}
+
+type ClientConn struct {
+	ipaddr     *net.UDPAddr
+	id         string
+	activeTime time.Time
 }
 
 func (p *Client) Addr() string {
@@ -52,8 +61,8 @@ func (p *Client) IPAddr() *net.UDPAddr {
 	return p.ipaddr
 }
 
-func (p *Client) TargetPort() uint16 {
-	return p.targetPort
+func (p *Client) TargetAddr() string {
+	return p.targetAddr
 }
 
 func (p *Client) ServerIPAddr() *net.IPAddr {
@@ -82,16 +91,21 @@ func (p *Client) Run() {
 	defer listener.Close()
 	p.listenConn = listener
 
-	p.localConnToIdMap = make(map[string]uint32)
-	p.localIdToConnMap = make(map[uint32]*net.UDPAddr)
+	p.localAddrToConnMap = make(map[string]*ClientConn)
+	p.localIdToConnMap = make(map[string]*ClientConn)
 
 	go p.Accept()
 
 	recv := make(chan *Packet, 1000)
 	go recvICMP(*p.conn, recv)
 
+	interval := time.NewTicker(time.Second)
+	defer interval.Stop()
+
 	for {
 		select {
+		case <-interval.C:
+			p.checkTimeoutConn()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -119,33 +133,58 @@ func (p *Client) Accept() error {
 			}
 		}
 
-		uuid := p.localConnToIdMap[srcaddr.String()]
-		if uuid == 0 {
-			uuid = UniqueId()
-			p.localConnToIdMap[srcaddr.String()] = uuid
-			p.localIdToConnMap[uuid] = srcaddr
-			fmt.Printf("client accept new local %d %s\n", uuid, srcaddr.String())
+		now := time.Now()
+		clientConn := p.localAddrToConnMap[srcaddr.String()]
+		if clientConn == nil {
+			uuid := UniqueId()
+			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeTime: now}
+			p.localAddrToConnMap[srcaddr.String()] = clientConn
+			p.localIdToConnMap[uuid] = clientConn
+			fmt.Printf("client accept new local %s %s\n", uuid, srcaddr.String())
 		}
 
-		sendICMP(*p.conn, p.ipaddrServer, p.targetPort, uuid, (uint32)(DATA), bytes[:n])
+		clientConn.activeTime = now
+		sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n])
 	}
 }
 
 func (p *Client) processPacket(packet *Packet) {
 
-	fmt.Printf("processPacket %d %s %d\n", packet.id, packet.src.String(), len(packet.data))
+	fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
 
-	addr := p.localIdToConnMap[packet.id]
-	if addr == nil {
-		fmt.Printf("processPacket no conn %d \n", packet.id)
+	clientConn := p.localIdToConnMap[packet.id]
+	if clientConn == nil {
+		fmt.Printf("processPacket no conn %s \n", packet.id)
 		return
 	}
+
+	addr := clientConn.ipaddr
+
+	now := time.Now()
+	clientConn.activeTime = now
 
 	_, err := p.listenConn.WriteToUDP(packet.data, addr)
 	if err != nil {
 		fmt.Printf("WriteToUDP Error read udp %s\n", err)
-		p.localConnToIdMap[addr.String()] = 0
-		p.localIdToConnMap[packet.id] = nil
+		p.Close(clientConn)
 		return
+	}
+}
+
+func (p *Client) Close(clientConn *ClientConn) {
+	if p.localIdToConnMap[clientConn.id] != nil {
+		delete(p.localIdToConnMap, clientConn.id)
+		delete(p.localAddrToConnMap, clientConn.ipaddr.String())
+	}
+}
+
+func (p *Client) checkTimeoutConn() {
+	now := time.Now()
+	for id, conn := range p.localIdToConnMap {
+		diff := now.Sub(conn.activeTime)
+		if diff > time.Second*(time.Duration(p.timeout)) {
+			fmt.Printf("close inactive conn %s %s\n", id, conn.ipaddr.String())
+			p.Close(conn)
+		}
 	}
 }
