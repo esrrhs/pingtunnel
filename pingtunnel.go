@@ -67,6 +67,7 @@ func (p *MyMsg) MarshalString(s string) []byte {
 // Marshal implements the Marshal method of MessageBody interface.
 func (p *MyMsg) Unmarshal(b []byte) error {
 	defer func() {
+		recover()
 	}()
 
 	p.TYPE = binary.BigEndian.Uint32(b[:4])
