@@ -51,6 +51,7 @@ type ClientConn struct {
 	ipaddr     *net.UDPAddr
 	id         string
 	activeTime time.Time
+	close      bool
 }
 
 func (p *Client) Addr() string {
@@ -137,7 +138,7 @@ func (p *Client) Accept() error {
 		clientConn := p.localAddrToConnMap[srcaddr.String()]
 		if clientConn == nil {
 			uuid := UniqueId()
-			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeTime: now}
+			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeTime: now, close: false}
 			p.localAddrToConnMap[srcaddr.String()] = clientConn
 			p.localIdToConnMap[uuid] = clientConn
 			fmt.Printf("client accept new local %s %s\n", uuid, srcaddr.String())
@@ -166,7 +167,7 @@ func (p *Client) processPacket(packet *Packet) {
 	_, err := p.listenConn.WriteToUDP(packet.data, addr)
 	if err != nil {
 		fmt.Printf("WriteToUDP Error read udp %s\n", err)
-		p.Close(clientConn)
+		clientConn.close = true
 		return
 	}
 }
@@ -180,9 +181,15 @@ func (p *Client) Close(clientConn *ClientConn) {
 
 func (p *Client) checkTimeoutConn() {
 	now := time.Now()
-	for id, conn := range p.localIdToConnMap {
+	for _, conn := range p.localIdToConnMap {
 		diff := now.Sub(conn.activeTime)
 		if diff > time.Second*(time.Duration(p.timeout)) {
+			conn.close = true
+		}
+	}
+
+	for id, conn := range p.localIdToConnMap {
+		if conn.close {
 			fmt.Printf("close inactive conn %s %s\n", id, conn.ipaddr.String())
 			p.Close(conn)
 		}

@@ -26,6 +26,7 @@ type ServerConn struct {
 	conn         *net.UDPConn
 	id           string
 	activeTime   time.Time
+	close        bool
 }
 
 func (p *Server) Run() {
@@ -77,7 +78,7 @@ func (p *Server) processPacket(packet *Packet) {
 			fmt.Printf("Error listening for udp packets: %s\n", err.Error())
 			return
 		}
-		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now}
+		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false}
 		p.localConnMap[id] = udpConn
 		go p.Recv(udpConn, id, packet.src)
 	}
@@ -87,7 +88,7 @@ func (p *Server) processPacket(packet *Packet) {
 	_, err := udpConn.conn.Write(packet.data)
 	if err != nil {
 		fmt.Printf("WriteToUDP Error %s\n", err)
-		p.Close(udpConn)
+		udpConn.close = true
 		return
 	}
 }
@@ -108,7 +109,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 					continue
 				} else {
 					fmt.Printf("ReadFromUDP Error read udp %s\n", err)
-					p.Close(conn)
+					conn.close = true
 					return
 				}
 			}
@@ -131,12 +132,17 @@ func (p *Server) Close(conn *ServerConn) {
 func (p *Server) checkTimeoutConn() {
 
 	now := time.Now()
-	for id, conn := range p.localConnMap {
+	for _, conn := range p.localConnMap {
 		diff := now.Sub(conn.activeTime)
 		if diff > time.Second*(time.Duration(p.timeout)) {
+			conn.close = true
+		}
+	}
+
+	for id, conn := range p.localConnMap {
+		if conn.close {
 			fmt.Printf("close inactive conn %s %s\n", id, conn.ipaddrTarget.String())
 			p.Close(conn)
 		}
 	}
-
 }
