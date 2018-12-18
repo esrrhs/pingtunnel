@@ -15,10 +15,8 @@ import (
 	"time"
 )
 
-type MSGID int
-
 const (
-	DATA MSGID = 0xDEADBEEF
+	DATA uint32 = 0xDEADBEEF
 )
 
 // An Echo represents an ICMP echo request or reply message body.
