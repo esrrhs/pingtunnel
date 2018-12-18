@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	DATA uint32 = 0xDEADBEEF
+	DATA uint32 = 0x01010101
 )
 
 // An Echo represents an ICMP echo request or reply message body.
@@ -99,7 +99,7 @@ func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId st
 	}
 
 	msg := &icmp.Message{
-		Type: ipv4.ICMPTypeTimestamp,
+		Type: ipv4.ICMPTypeExtendedEchoRequest,
 		Code: 0,
 		Body: m,
 	}
