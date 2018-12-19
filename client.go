@@ -112,12 +112,16 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
+	intervalPing := time.NewTicker(time.Second * 10)
+	defer interval.Stop()
+
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
-			p.ping()
 			p.showNet()
+		case <-intervalPing.C:
+			p.ping()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -230,7 +234,7 @@ func (p *Client) ping() {
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n", p.sendPacket, p.sendPacket/1024, p.recvPacket, p.recvPacket/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n", p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
