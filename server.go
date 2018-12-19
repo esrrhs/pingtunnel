@@ -7,16 +7,14 @@ import (
 	"time"
 )
 
-func NewServer(timeout int, proto int) (*Server, error) {
+func NewServer(timeout int) (*Server, error) {
 	return &Server{
 		timeout: timeout,
-		proto:   proto,
 	}, nil
 }
 
 type Server struct {
 	timeout int
-	proto   int
 
 	conn *icmp.PacketConn
 
@@ -29,6 +27,7 @@ type ServerConn struct {
 	id           string
 	activeTime   time.Time
 	close        bool
+	rproto       int
 }
 
 func (p *Server) Run() {
@@ -80,7 +79,7 @@ func (p *Server) processPacket(packet *Packet) {
 			fmt.Printf("Error listening for udp packets: %s\n", err.Error())
 			return
 		}
-		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false}
+		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false, rproto: packet.rproto}
 		p.localConnMap[id] = udpConn
 		go p.Recv(udpConn, id, packet.src)
 	}
@@ -120,7 +119,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], p.proto)
+		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, 0)
 	}
 }
 
