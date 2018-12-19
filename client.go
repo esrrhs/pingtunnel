@@ -111,6 +111,7 @@ func (p *Client) Run() {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
+			p.ping()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -198,4 +199,11 @@ func (p *Client) checkTimeoutConn() {
 			p.Close(conn)
 		}
 	}
+}
+
+func (p *Client) ping() {
+	now := time.Now()
+	b, _ := now.MarshalBinary()
+	sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
+	fmt.Printf("ping %s %s\n", p.addrServer, now.String())
 }
