@@ -89,7 +89,7 @@ func (p *MyMsg) UnmarshalString(b []byte) string {
 	return string(data)
 }
 
-func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId string, msgType uint32, data []byte) {
+func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId string, msgType uint32, data []byte, proto int) {
 
 	m := &MyMsg{
 		ID:     connId,
@@ -99,7 +99,7 @@ func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId st
 	}
 
 	msg := &icmp.Message{
-		Type: ipv4.ICMPTypeExtendedEchoRequest,
+		Type: (ipv4.ICMPType)(proto),
 		Code: 0,
 		Body: m,
 	}

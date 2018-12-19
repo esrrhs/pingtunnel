@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, proto int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -26,11 +26,13 @@ func NewClient(addr string, server string, target string, timeout int) (*Client,
 		addrServer:   server,
 		targetAddr:   target,
 		timeout:      timeout,
+		proto:        proto,
 	}, nil
 }
 
 type Client struct {
 	timeout int
+	proto   int
 
 	ipaddr *net.UDPAddr
 	addr   string
@@ -145,7 +147,7 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeTime = now
-		sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n])
+		sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.proto)
 	}
 }
 

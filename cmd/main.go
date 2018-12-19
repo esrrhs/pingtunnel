@@ -28,8 +28,11 @@ Usage:
     -t        远端服务器转发的目的地址，流量将转发到这个地址
               Destination address forwarded by the remote server, traffic will be forwarded to this address
 
-    -timeout  本地记录连接超时的时间，单位是秒
-              The time when the local record connection timed out, in seconds
+    -timeout  本地记录连接超时的时间，单位是秒，默认60s
+              The time when the local record connection timed out, in seconds, 60 seconds by default
+
+    -proto    ping的协议，默认是42
+              Ping protocol, the default is 42
 `
 
 func main() {
@@ -39,6 +42,7 @@ func main() {
 	target := flag.String("t", "", "target addr")
 	server := flag.String("s", "", "server addr")
 	timeout := flag.Int("timeout", 60, "conn timeout")
+	proto := flag.Int("proto", 2, "ping proto")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -53,7 +57,7 @@ func main() {
 	fmt.Println("start...")
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*timeout)
+		s, err := pingtunnel.NewServer(*timeout, *proto)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
@@ -68,7 +72,7 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *proto)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return

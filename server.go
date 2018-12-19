@@ -7,14 +7,16 @@ import (
 	"time"
 )
 
-func NewServer(timeout int) (*Server, error) {
+func NewServer(timeout int, proto int) (*Server, error) {
 	return &Server{
 		timeout: timeout,
+		proto:   proto,
 	}, nil
 }
 
 type Server struct {
 	timeout int
+	proto   int
 
 	conn *icmp.PacketConn
 
@@ -118,7 +120,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n])
+		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], p.proto)
 	}
 }
 
