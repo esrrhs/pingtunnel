@@ -19,6 +19,11 @@ type Server struct {
 	conn *icmp.PacketConn
 
 	localConnMap map[string]*ServerConn
+
+	sendPacket     uint64
+	recvPacket     uint64
+	sendPacketSize uint64
+	recvPacketSize uint64
 }
 
 type ServerConn struct {
@@ -51,6 +56,7 @@ func (p *Server) Run() {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
+			p.showNet()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -100,6 +106,9 @@ func (p *Server) processPacket(packet *Packet) {
 		udpConn.close = true
 		return
 	}
+
+	p.recvPacket++
+	p.recvPacketSize += (uint64)(len(packet.data))
 }
 
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
@@ -128,6 +137,9 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		conn.activeTime = now
 
 		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, 0)
+
+		p.sendPacket++
+		p.sendPacketSize += (uint64)(n)
 	}
 }
 
@@ -154,4 +166,12 @@ func (p *Server) checkTimeoutConn() {
 			p.Close(conn)
 		}
 	}
+}
+
+func (p *Server) showNet() {
+	fmt.Printf("send %d/s %dKB/s recv %d/s %dKB/s\n", p.sendPacket, p.sendPacket/1024, p.recvPacket, p.recvPacket/1024)
+	p.sendPacket = 0
+	p.recvPacket = 0
+	p.sendPacketSize = 0
+	p.recvPacketSize = 0
 }
