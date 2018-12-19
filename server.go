@@ -63,7 +63,7 @@ func (p *Server) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
 		fmt.Printf("ping from %s %s %d\n", packet.src.String(), t.String(), packet.rproto)
-		sendICMP(*p.conn, packet.src, "", "", (uint32)(DATA), packet.data, packet.rproto, 0)
+		sendICMP(*p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, 0)
 		return
 	}
 
