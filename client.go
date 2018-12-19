@@ -49,6 +49,11 @@ type Client struct {
 
 	localAddrToConnMap map[string]*ClientConn
 	localIdToConnMap   map[string]*ClientConn
+
+	sendPacket     uint64
+	recvPacket     uint64
+	sendPacketSize uint64
+	recvPacketSize uint64
 }
 
 type ClientConn struct {
@@ -112,6 +117,7 @@ func (p *Client) Run() {
 		case <-interval.C:
 			p.checkTimeoutConn()
 			p.ping()
+			p.showNet()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -151,6 +157,9 @@ func (p *Client) Accept() error {
 
 		clientConn.activeTime = now
 		sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.sproto, p.rproto)
+
+		p.sendPacket++
+		p.sendPacketSize += (uint64)(n)
 	}
 }
 
@@ -184,6 +193,9 @@ func (p *Client) processPacket(packet *Packet) {
 		clientConn.close = true
 		return
 	}
+
+	p.recvPacket++
+	p.recvPacketSize += (uint64)(len(packet.data))
 }
 
 func (p *Client) Close(clientConn *ClientConn) {
@@ -215,4 +227,12 @@ func (p *Client) ping() {
 	b, _ := now.MarshalBinary()
 	sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
 	fmt.Printf("ping %s %s %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto)
+}
+
+func (p *Client) showNet() {
+	fmt.Printf("send %d/s %dKB/s recv %d/s %dKB/s\n", p.sendPacket, p.sendPacket/1024, p.recvPacket, p.recvPacket/1024)
+	p.sendPacket = 0
+	p.recvPacket = 0
+	p.sendPacketSize = 0
+	p.recvPacketSize = 0
 }
