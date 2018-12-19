@@ -185,12 +185,12 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		my.Unmarshal(bytes[4:n])
 
 		if my.TYPE != (uint32)(DATA) || my.ENDTYPE != (uint32)(DATA) {
-			fmt.Printf("processPacket diff type %s %d %d \n", my.ID, my.TYPE, my.ENDTYPE)
+			//fmt.Printf("processPacket diff type %s %d %d \n", my.ID, my.TYPE, my.ENDTYPE)
 			continue
 		}
 
 		if my.Data == nil {
-			fmt.Printf("processPacket data nil %s\n", my.ID)
+			//fmt.Printf("processPacket data nil %s\n", my.ID)
 			return
 		}
 

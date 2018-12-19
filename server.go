@@ -41,7 +41,7 @@ func (p *Server) Run() {
 
 	p.localConnMap = make(map[string]*ServerConn)
 
-	recv := make(chan *Packet, 1000)
+	recv := make(chan *Packet, 10000)
 	go recvICMP(*p.conn, recv)
 
 	interval := time.NewTicker(time.Second)
