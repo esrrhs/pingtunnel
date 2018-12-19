@@ -17,6 +17,8 @@ import (
 
 const (
 	DATA uint32 = 0x01010101
+	PING uint32 = 0x02020202
+	END  uint32 = 0xAAAABBBB
 )
 
 // An Echo represents an ICMP echo request or reply message body.
@@ -131,7 +133,7 @@ func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId st
 		TARGET:  target,
 		Data:    data,
 		RPROTO:  (uint16)(rproto),
-		ENDTYPE: msgType,
+		ENDTYPE: END,
 	}
 
 	msg := &icmp.Message{
@@ -184,26 +186,27 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		}
 		my.Unmarshal(bytes[4:n])
 
-		if my.TYPE != (uint32)(DATA) || my.ENDTYPE != (uint32)(DATA) {
+		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING)) || my.ENDTYPE != (uint32)(END) {
 			//fmt.Printf("processPacket diff type %s %d %d \n", my.ID, my.TYPE, my.ENDTYPE)
 			continue
 		}
 
 		if my.Data == nil {
-			//fmt.Printf("processPacket data nil %s\n", my.ID)
+			fmt.Printf("processPacket data nil %s\n", my.ID)
 			return
 		}
 
-		recv <- &Packet{data: my.Data, id: my.ID, target: my.TARGET, src: srcaddr.(*net.IPAddr), rproto: (int)(my.RPROTO)}
+		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET, src: srcaddr.(*net.IPAddr), rproto: (int)(my.RPROTO)}
 	}
 }
 
 type Packet struct {
-	data   []byte
-	id     string
-	target string
-	src    *net.IPAddr
-	rproto int
+	msgType uint32
+	data    []byte
+	id      string
+	target  string
+	src     *net.IPAddr
+	rproto  int
 }
 
 func UniqueId() string {

@@ -59,6 +59,12 @@ func (p *Server) Run() {
 
 func (p *Server) processPacket(packet *Packet) {
 
+	if packet.msgType == PING {
+		fmt.Printf("pong from %s\n", packet.src.String())
+		sendICMP(*p.conn, packet.src, "", "", (uint32)(DATA), packet.data, packet.rproto, 0)
+		return
+	}
+
 	fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
 
 	now := time.Now()
