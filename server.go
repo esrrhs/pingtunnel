@@ -60,7 +60,9 @@ func (p *Server) Run() {
 func (p *Server) processPacket(packet *Packet) {
 
 	if packet.msgType == PING {
-		fmt.Printf("pong from %s\n", packet.src.String())
+		t := time.Time{}
+		t.UnmarshalBinary(packet.data)
+		fmt.Printf("pong from %s %s\n", packet.src.String(), t.String())
 		sendICMP(*p.conn, packet.src, "", "", (uint32)(DATA), packet.data, packet.rproto, 0)
 		return
 	}
