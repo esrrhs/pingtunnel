@@ -22,3 +22,9 @@
 
     -timeout  本地记录连接超时的时间，单位是秒
               The time when the local record connection timed out, in seconds
+
+    -sproto   客户端发送ping协议的协议，默认是13
+              The protocol that the client sends the ping. The default is 13.
+
+    -rproto   客户端接收ping协议的协议，默认是14
+              The protocol that the client receives the ping. The default is 14.
