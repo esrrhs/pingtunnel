@@ -174,7 +174,7 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
-	fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
+	//fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
 
 	clientConn := p.localIdToConnMap[packet.id]
 	if clientConn == nil {
@@ -230,7 +230,7 @@ func (p *Client) ping() {
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %d/s %dKB/s recv %d/s %dKB/s\n", p.sendPacket, p.sendPacket/1024, p.recvPacket, p.recvPacket/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n", p.sendPacket, p.sendPacket/1024, p.recvPacket, p.recvPacket/1024)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
