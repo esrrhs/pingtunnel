@@ -156,6 +156,15 @@ func (p *Client) Accept() error {
 
 func (p *Client) processPacket(packet *Packet) {
 
+	if packet.msgType == PING {
+		t := time.Time{}
+		t.UnmarshalBinary(packet.data)
+		d := time.Now().Sub(t)
+		fmt.Printf("pong from %s %s %d\n", packet.src.String(), d.String(), packet.rproto)
+		sendICMP(*p.conn, packet.src, "", "", (uint32)(DATA), packet.data, packet.rproto, 0)
+		return
+	}
+
 	fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
 
 	clientConn := p.localIdToConnMap[packet.id]
@@ -205,5 +214,5 @@ func (p *Client) ping() {
 	now := time.Now()
 	b, _ := now.MarshalBinary()
 	sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
-	fmt.Printf("ping %s %s\n", p.addrServer, now.String())
+	fmt.Printf("ping %s %s %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto)
 }
