@@ -69,7 +69,7 @@ func (p *Server) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
 		fmt.Printf("ping from %s %s %d\n", packet.src.String(), t.String(), packet.rproto)
-		sendICMP(*p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, 0)
+		sendICMP(*p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
 		return
 	}
 
@@ -136,7 +136,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, 0)
+		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
