@@ -112,16 +112,12 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	intervalPing := time.NewTicker(time.Second * 10)
-	defer interval.Stop()
-
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
-			p.showNet()
-		case <-intervalPing.C:
 			p.ping()
+			p.showNet()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -231,10 +227,12 @@ func (p *Client) checkTimeoutConn() {
 }
 
 func (p *Client) ping() {
-	now := time.Now()
-	b, _ := now.MarshalBinary()
-	sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
-	fmt.Printf("ping %s %s %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto)
+	if p.sendPacket == 0 && p.recvPacket == 0 {
+		now := time.Now()
+		b, _ := now.MarshalBinary()
+		sendICMP(*p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
+		fmt.Printf("ping %s %s %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto)
+	}
 }
 
 func (p *Client) showNet() {
