@@ -165,16 +165,16 @@ func (p *Client) Accept() error {
 
 func (p *Client) processPacket(packet *Packet) {
 
+	if packet.rproto != 0 {
+		return
+	}
+
 	if packet.msgType == PING {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
 		d := time.Now().Sub(t)
 		fmt.Printf("pong from %s %s\n", packet.src.String(), d.String())
 		sendICMP(*p.conn, packet.src, "", "", (uint32)(DATA), packet.data, packet.rproto, 0)
-		return
-	}
-
-	if packet.rproto != 0 {
 		return
 	}
 
