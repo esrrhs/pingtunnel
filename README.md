@@ -1,6 +1,6 @@
 # pingtunnel
-pingtunnel是把udp流量伪装成icmp流量进行转发的工具，类似于kcptun。
-Pingtunnel is a tool that advertises udp traffic as icmp traffic for forwarding, similar to kcptun.
+pingtunnel是把udp流量伪装成icmp流量进行转发的工具，类似于kcptun。用于突破网络封锁，或是绕过WIFI网络的登陆验证。可以与kcptun很方便的结合使用。
+<br />Pingtunnel is a tool that advertises udp traffic as icmp traffic for forwarding, similar to kcptun. Used to break through the network blockade, or to bypass the WIFI network login verification. Can be combined with kcptun very convenient.
 ![image](network.png)
 
     通过伪造ping，把udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁UDP流量。
