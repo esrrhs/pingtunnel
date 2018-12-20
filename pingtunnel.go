@@ -196,7 +196,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 			return
 		}
 
-		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET, src: srcaddr.(*net.IPAddr), rproto: (int)(my.RPROTO)}
+		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET, src: srcaddr.(*net.IPAddr), rproto: (int)((int16)(my.RPROTO))}
 	}
 }
 
