@@ -165,7 +165,7 @@ func (p *Client) Accept() error {
 
 func (p *Client) processPacket(packet *Packet) {
 
-	if packet.rproto != 0 {
+	if packet.rproto >= 0 {
 		return
 	}
 
