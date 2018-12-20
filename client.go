@@ -178,6 +178,10 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
+	if packet.rproto != 0 {
+		return
+	}
+
 	//fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
 
 	clientConn := p.localIdToConnMap[packet.id]

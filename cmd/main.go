@@ -31,11 +31,11 @@ Usage:
     -timeout  本地记录连接超时的时间，单位是秒，默认60s
               The time when the local record connection timed out, in seconds, 60 seconds by default
 
-    -sproto   客户端发送ping协议的协议，默认是13
-              The protocol that the client sends the ping. The default is 13.
+    -sproto   客户端发送ping协议的协议，默认是8
+              The protocol that the client sends the ping. The default is 8.
 
-    -rproto   客户端接收ping协议的协议，默认是14
-              The protocol that the client receives the ping. The default is 14.
+    -rproto   客户端接收ping协议的协议，默认是0
+              The protocol that the client receives the ping. The default is 0.
 `
 
 func main() {
@@ -45,8 +45,8 @@ func main() {
 	target := flag.String("t", "", "target addr")
 	server := flag.String("s", "", "server addr")
 	timeout := flag.Int("timeout", 60, "conn timeout")
-	sproto := flag.Int("sproto", 13, "send ping proto")
-	rproto := flag.Int("rproto", 14, "recv ping proto")
+	sproto := flag.Int("sproto", 8, "send ping proto")
+	rproto := flag.Int("rproto", 0, "recv ping proto")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
