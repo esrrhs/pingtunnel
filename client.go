@@ -24,7 +24,6 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Client{
 		id:           r.Intn(math.MaxInt16),
-		r:            r,
 		ipaddr:       ipaddr,
 		addr:         addr,
 		ipaddrServer: ipaddrServer,
@@ -37,8 +36,8 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 }
 
 type Client struct {
-	id int
-	r  *rand.Rand
+	id       int
+	sequence int
 
 	timeout int
 	sproto  int
@@ -164,7 +163,9 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeTime = now
-		sendICMP(p.id, p.r.Intn(math.MaxInt16), *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.sproto, p.rproto)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.sproto, p.rproto)
+
+		p.sequence++
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
@@ -234,11 +235,12 @@ func (p *Client) checkTimeoutConn() {
 }
 
 func (p *Client) ping() {
-	if p.sendPacket == 0 && p.recvPacket == 0 {
+	if p.sendPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.r.Intn(math.MaxInt16), *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
-		fmt.Printf("ping %s %s %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
+		fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+		p.sequence++
 	}
 }
 

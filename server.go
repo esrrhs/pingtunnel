@@ -3,25 +3,17 @@ package pingtunnel
 import (
 	"fmt"
 	"golang.org/x/net/icmp"
-	"math"
-	"math/rand"
 	"net"
 	"time"
 )
 
 func NewServer(timeout int) (*Server, error) {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Server{
-		id:      r.Intn(math.MaxInt16),
-		r:       r,
 		timeout: timeout,
 	}, nil
 }
 
 type Server struct {
-	id int
-	r  *rand.Rand
-
 	timeout int
 
 	conn *icmp.PacketConn
@@ -41,6 +33,8 @@ type ServerConn struct {
 	activeTime   time.Time
 	close        bool
 	rproto       int
+	echoId       int
+	echoSeq      int
 }
 
 func (p *Server) Run() {
@@ -76,8 +70,8 @@ func (p *Server) processPacket(packet *Packet) {
 	if packet.msgType == PING {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
-		fmt.Printf("ping from %s %s %d\n", packet.src.String(), t.String(), packet.rproto)
-		sendICMP(p.id, p.r.Intn(math.MaxInt16), *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
+		fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
+		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
 		return
 	}
 
@@ -107,6 +101,8 @@ func (p *Server) processPacket(packet *Packet) {
 	}
 
 	udpConn.activeTime = now
+	udpConn.echoId = packet.echoId
+	udpConn.echoSeq = packet.echoSeq
 
 	_, err := udpConn.conn.Write(packet.data)
 	if err != nil {
@@ -144,7 +140,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(p.id, p.r.Intn(math.MaxInt16), *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
+		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)

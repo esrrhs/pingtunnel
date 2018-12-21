@@ -190,6 +190,9 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 			}
 		}
 
+		echoId := int(binary.BigEndian.Uint16(bytes[4:6]))
+		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
+
 		my := &MyMsg{
 		}
 		my.Unmarshal(bytes[8:n])
@@ -204,7 +207,9 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 			return
 		}
 
-		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET, src: srcaddr.(*net.IPAddr), rproto: (int)((int16)(my.RPROTO))}
+		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET,
+			src: srcaddr.(*net.IPAddr), rproto: (int)((int16)(my.RPROTO)),
+			echoId: echoId, echoSeq: echoSeq}
 	}
 }
 
@@ -215,6 +220,8 @@ type Packet struct {
 	target  string
 	src     *net.IPAddr
 	rproto  int
+	echoId  int
+	echoSeq int
 }
 
 func UniqueId() string {
