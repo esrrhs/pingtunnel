@@ -125,7 +125,7 @@ func (p *MyMsg) UnmarshalData(b []byte) []byte {
 	return data
 }
 
-func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId string, msgType uint32, data []byte, sproto int, rproto int) {
+func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string, connId string, msgType uint32, data []byte, sproto int, rproto int) {
 
 	m := &MyMsg{
 		ID:      connId,
@@ -136,10 +136,18 @@ func sendICMP(conn icmp.PacketConn, server *net.IPAddr, target string, connId st
 		ENDTYPE: END,
 	}
 
+	mb, err := m.Marshal(0)
+
+	body := &icmp.Echo{
+		ID:   id,
+		Seq:  sequence,
+		Data: mb,
+	}
+
 	msg := &icmp.Message{
 		Type: (ipv4.ICMPType)(sproto),
 		Code: 0,
-		Body: m,
+		Body: body,
 	}
 
 	bytes, err := msg.Marshal(nil)
@@ -184,7 +192,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 
 		my := &MyMsg{
 		}
-		my.Unmarshal(bytes[4:n])
+		my.Unmarshal(bytes[8:n])
 
 		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING)) || my.ENDTYPE != (uint32)(END) {
 			//fmt.Printf("processPacket diff type %s %d %d \n", my.ID, my.TYPE, my.ENDTYPE)
