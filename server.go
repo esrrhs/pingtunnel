@@ -3,17 +3,25 @@ package pingtunnel
 import (
 	"fmt"
 	"golang.org/x/net/icmp"
+	"math"
+	"math/rand"
 	"net"
 	"time"
 )
 
 func NewServer(timeout int) (*Server, error) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Server{
+		id:      r.Intn(math.MaxInt16),
+		r:       r,
 		timeout: timeout,
 	}, nil
 }
 
 type Server struct {
+	id int
+	r  *rand.Rand
+
 	timeout int
 
 	conn *icmp.PacketConn
@@ -69,7 +77,7 @@ func (p *Server) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
 		fmt.Printf("ping from %s %s %d\n", packet.src.String(), t.String(), packet.rproto)
-		sendICMP(*p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
+		sendICMP(p.id, p.r.Intn(math.MaxInt16), *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
 		return
 	}
 
@@ -136,7 +144,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(*p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
+		sendICMP(p.id, p.r.Intn(math.MaxInt16), *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
