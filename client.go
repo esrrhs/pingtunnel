@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, pingSeq int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -32,6 +32,7 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		timeout:      timeout,
 		sproto:       sproto,
 		rproto:       rproto,
+		pingSeq:      pingSeq,
 	}, nil
 }
 
@@ -42,6 +43,7 @@ type Client struct {
 	timeout int
 	sproto  int
 	rproto  int
+	pingSeq int
 
 	ipaddr *net.UDPAddr
 	addr   string
@@ -119,12 +121,16 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
+	intervalPing := time.NewTicker(time.Millisecond * (time.Duration)(p.pingSeq))
+	defer intervalPing.Stop()
+
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
-			p.ping()
 			p.showNet()
+		case <-intervalPing.C:
+			p.ping()
 		case r := <-recv:
 			p.processPacket(r)
 		}
