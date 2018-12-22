@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, hb int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -32,7 +32,6 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		timeout:      timeout,
 		sproto:       sproto,
 		rproto:       rproto,
-		hb:           hb,
 	}, nil
 }
 
@@ -43,7 +42,6 @@ type Client struct {
 	timeout int
 	sproto  int
 	rproto  int
-	hb      int
 
 	ipaddr *net.UDPAddr
 	addr   string
@@ -237,7 +235,7 @@ func (p *Client) checkTimeoutConn() {
 }
 
 func (p *Client) ping() {
-	if p.sendPacket == 0 && p.recvPacket == 0 {
+	if p.sendPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
