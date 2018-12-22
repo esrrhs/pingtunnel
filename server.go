@@ -24,6 +24,9 @@ type Server struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
+
+	echoId       int
+	echoSeq      int
 }
 
 type ServerConn struct {
@@ -33,8 +36,6 @@ type ServerConn struct {
 	activeTime   time.Time
 	close        bool
 	rproto       int
-	echoId       int
-	echoSeq      int
 }
 
 func (p *Server) Run() {
@@ -66,6 +67,9 @@ func (p *Server) Run() {
 }
 
 func (p *Server) processPacket(packet *Packet) {
+
+	p.echoId = packet.echoId
+	p.echoSeq = packet.echoSeq
 
 	if packet.msgType == PING {
 		t := time.Time{}
@@ -101,8 +105,6 @@ func (p *Server) processPacket(packet *Packet) {
 	}
 
 	udpConn.activeTime = now
-	udpConn.echoId = packet.echoId
-	udpConn.echoSeq = packet.echoSeq
 
 	_, err := udpConn.conn.Write(packet.data)
 	if err != nil {
@@ -140,7 +142,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
+		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
