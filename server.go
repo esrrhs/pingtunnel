@@ -72,10 +72,10 @@ func (p *Server) processPacket(packet *Packet) {
 	p.echoSeq = packet.echoSeq
 
 	if packet.msgType == PING {
-		t := time.Time{}
-		t.UnmarshalBinary(packet.data)
-		fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
-		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
+		//t := time.Time{}
+		//t.UnmarshalBinary(packet.data)
+		//fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
+		//sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
 		return
 	}
 
