@@ -64,6 +64,8 @@ type Client struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
+
+	sendHBPacket uint64
 }
 
 type ClientConn struct {
@@ -260,12 +262,13 @@ func (p *Client) ping() {
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s HB %d/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024,p.sendHBPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+	p.sendHBPacket = 0
 }
 
 func (p *Client) heartbeat() {
@@ -282,6 +285,7 @@ func (p *Client) heartbeat() {
 
 				conn.sendHBPacket++
 
+				p.sendHBPacket++
 			}
 		}
 	}
@@ -292,16 +296,20 @@ func (p *Client) calcHB() {
 	if p.hb > 0 {
 		for _, conn := range p.localIdToConnMap {
 
-			conn.avgRecvPacket = (conn.recvPacket + conn.avgRecvPacket*conn.avgRecvNum) / conn.avgRecvNum
+			if conn.avgRecvNum > 0 {
+				conn.avgRecvPacket = (conn.recvPacket + conn.avgRecvPacket*conn.avgRecvNum) / conn.avgRecvNum
+			} else {
+				conn.avgRecvPacket = conn.recvPacket
+			}
 			conn.avgRecvNum++
 			if conn.avgRecvNum > 10 {
 				conn.avgRecvNum = 0
 			}
 			conn.recvPacket = 0
 
-			conn.hbPacket = conn.avgRecvPacket * 2 / 3
+			conn.hbPacket = conn.avgRecvPacket + 10
 
-			if conn.hbPacket > 0 {
+			if conn.avgRecvPacket > 0 {
 				fmt.Printf("calcHB %s %s %d %d\n", conn.id, conn.ipaddr.String(), conn.hbPacket, conn.sendHBPacket)
 			}
 
