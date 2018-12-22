@@ -227,10 +227,8 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
-	if packet.msgType == DATA {
-		p.recvPacket++
-		p.recvPacketSize += (uint64)(len(packet.data))
-	}
+	p.recvPacket++
+	p.recvPacketSize += (uint64)(len(packet.data))
 }
 
 func (p *Client) Close(clientConn *ClientConn) {
