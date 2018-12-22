@@ -61,6 +61,9 @@ type Client struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
+
+	pingPacketSize uint64
+	pongPacketSize uint64
 }
 
 type ClientConn struct {
@@ -119,12 +122,16 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
+	interval1 := time.NewTicker(time.Millisecond * 1)
+	defer interval1.Stop()
+
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
-			p.ping()
 			p.showNet()
+		case <-interval1.C:
+			p.ping()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -181,8 +188,9 @@ func (p *Client) processPacket(packet *Packet) {
 	if packet.msgType == PING {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
-		d := time.Now().Sub(t)
-		fmt.Printf("pong from %s %s\n", packet.src.String(), d.String())
+		//d := time.Now().Sub(t)
+		//fmt.Printf("pong from %s %s\n", packet.src.String(), d.String())
+		p.pongPacketSize++
 		return
 	}
 
@@ -239,16 +247,19 @@ func (p *Client) ping() {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
-		fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+		//fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
+		p.pingPacketSize++
 	}
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s ping %d/s pong %d/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.pingPacketSize, p.pongPacketSize)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+	p.pingPacketSize = 0
+	p.pongPacketSize = 0
 }
