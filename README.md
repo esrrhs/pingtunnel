@@ -44,3 +44,6 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 
     -rproto   客户端接收ping协议的协议，默认是14
               The protocol that the client receives the ping. The default is 14.
+
+    -catch    主动抓模式，每秒从服务器主动抓多少个reply包，默认0
+              Active capture mode, how many reply packets are actively captured from the server per second, default 0
