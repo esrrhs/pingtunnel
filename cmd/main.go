@@ -36,6 +36,9 @@ Usage:
 
     -rproto   客户端接收ping协议的协议，默认是0
               The protocol that the client receives the ping. The default is 0.
+
+    -ping     客户端发送ping协议的间隔
+              The protocol that the client receives the ping. The default is 0.
 `
 
 func main() {
@@ -47,6 +50,7 @@ func main() {
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	sproto := flag.Int("sproto", 8, "send ping proto")
 	rproto := flag.Int("rproto", 0, "recv ping proto")
+	ping := flag.Int("ping", 1000, "recv ping proto")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -76,7 +80,7 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *ping)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
