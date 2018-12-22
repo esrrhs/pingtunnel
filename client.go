@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -32,6 +32,7 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		timeout:      timeout,
 		sproto:       sproto,
 		rproto:       rproto,
+		catch:        catch,
 	}, nil
 }
 
@@ -42,6 +43,7 @@ type Client struct {
 	timeout int
 	sproto  int
 	rproto  int
+	catch   int
 
 	ipaddr *net.UDPAddr
 	addr   string
@@ -62,8 +64,8 @@ type Client struct {
 	sendPacketSize uint64
 	recvPacketSize uint64
 
-	pingPacketSize uint64
-	pongPacketSize uint64
+	sendCatchPacket uint64
+	recvCatchPacket uint64
 }
 
 type ClientConn struct {
@@ -122,16 +124,24 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	interval1 := time.NewTicker(time.Millisecond * 1)
-	defer interval1.Stop()
+	inter := 1000
+	if p.catch > 0 {
+		inter = 1000 / p.catch
+		if inter <= 0 {
+			inter = 1
+		}
+	}
+	intervalCatch := time.NewTicker(time.Millisecond * time.Duration(inter))
+	defer intervalCatch.Stop()
 
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
-			p.showNet()
-		case <-interval1.C:
 			p.ping()
+			p.showNet()
+		case <-intervalCatch.C:
+			p.sendCatch()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -170,7 +180,7 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeTime = now
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.sproto, p.rproto)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.sproto, p.rproto, p.catch)
 
 		p.sequence++
 
@@ -188,9 +198,8 @@ func (p *Client) processPacket(packet *Packet) {
 	if packet.msgType == PING {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
-		//d := time.Now().Sub(t)
-		//fmt.Printf("pong from %s %s\n", packet.src.String(), d.String())
-		p.pongPacketSize++
+		d := time.Now().Sub(t)
+		fmt.Printf("pong from %s %s\n", packet.src.String(), d.String())
 		return
 	}
 
@@ -207,6 +216,10 @@ func (p *Client) processPacket(packet *Packet) {
 	now := time.Now()
 	clientConn.activeTime = now
 
+	if packet.msgType == CATCH {
+		p.recvCatchPacket++
+	}
+
 	_, err := p.listenConn.WriteToUDP(packet.data, addr)
 	if err != nil {
 		fmt.Printf("WriteToUDP Error read udp %s\n", err)
@@ -214,8 +227,10 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
-	p.recvPacket++
-	p.recvPacketSize += (uint64)(len(packet.data))
+	if packet.msgType == DATA {
+		p.recvPacket++
+		p.recvPacketSize += (uint64)(len(packet.data))
+	}
 }
 
 func (p *Client) Close(clientConn *ClientConn) {
@@ -246,20 +261,29 @@ func (p *Client) ping() {
 	if p.sendPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
-		//fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto, p.catch)
+		fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
-		p.pingPacketSize++
 	}
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s ping %d/s pong %d/s\n",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.pingPacketSize, p.pongPacketSize)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendCatchPacket, p.recvCatchPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
-	p.pingPacketSize = 0
-	p.pongPacketSize = 0
+	p.sendCatchPacket = 0
+	p.recvCatchPacket = 0
+}
+
+func (p *Client) sendCatch() {
+	if p.catch > 0 {
+		for _, conn := range p.localIdToConnMap {
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(CATCH), make([]byte, 0), p.sproto, p.rproto, p.catch)
+			p.sequence++
+			p.sendCatchPacket++
+		}
+	}
 }
