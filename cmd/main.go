@@ -36,6 +36,8 @@ Usage:
 
     -rproto   客户端接收ping协议的协议，默认是0
               The protocol that the client receives the ping. The default is 0.
+
+    -catch    主动抓模式
 `
 
 func main() {
@@ -47,6 +49,7 @@ func main() {
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	sproto := flag.Int("sproto", 8, "send ping proto")
 	rproto := flag.Int("rproto", 0, "recv ping proto")
+	catch := flag.Int("catch", 0, "catch mdoe")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -76,7 +79,7 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
