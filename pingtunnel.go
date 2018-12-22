@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	DATA uint32 = 0x01010101
-	PING uint32 = 0x02020202
-	END  uint32 = 0xAAAABBBB
+	DATA  uint32 = 0x01010101
+	PING  uint32 = 0x02020202
+	CATCH uint32 = 0x03030303
+	END   uint32 = 0xAAAABBBB
 )
 
 type MyMsg struct {
@@ -27,6 +28,7 @@ type MyMsg struct {
 	TARGET  string
 	Data    []byte
 	RPROTO  uint16
+	CATCH   uint16
 	ENDTYPE uint32
 }
 
@@ -35,7 +37,7 @@ func (p *MyMsg) Len(proto int) int {
 	if p == nil {
 		return 0
 	}
-	return 4 + p.LenString(p.ID) + p.LenString(p.TARGET) + p.LenData(p.Data) + 2 + 4
+	return 4 + p.LenString(p.ID) + p.LenString(p.TARGET) + p.LenData(p.Data) + 2 + 2 + 4
 }
 
 func (p *MyMsg) LenString(s string) int {
@@ -64,7 +66,9 @@ func (p *MyMsg) Marshal(proto int) ([]byte, error) {
 
 	binary.BigEndian.PutUint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data):], uint16(p.RPROTO))
 
-	binary.BigEndian.PutUint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+2:], uint32(p.ENDTYPE))
+	binary.BigEndian.PutUint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+2:], uint16(p.CATCH))
+
+	binary.BigEndian.PutUint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+4:], uint32(p.ENDTYPE))
 
 	return b, nil
 }
@@ -99,7 +103,9 @@ func (p *MyMsg) Unmarshal(b []byte) error {
 
 	p.RPROTO = binary.BigEndian.Uint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data):])
 
-	p.ENDTYPE = binary.BigEndian.Uint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+2:])
+	p.CATCH = binary.BigEndian.Uint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+2:])
+
+	p.ENDTYPE = binary.BigEndian.Uint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+4:])
 
 	return nil
 }
@@ -124,7 +130,8 @@ func (p *MyMsg) UnmarshalData(b []byte) []byte {
 	return data
 }
 
-func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string, connId string, msgType uint32, data []byte, sproto int, rproto int) {
+func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
+	connId string, msgType uint32, data []byte, sproto int, rproto int, catch int) {
 
 	m := &MyMsg{
 		ID:      connId,
@@ -132,6 +139,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		TARGET:  target,
 		Data:    data,
 		RPROTO:  (uint16)(rproto),
+		CATCH:   (uint16)(catch),
 		ENDTYPE: END,
 	}
 
@@ -196,7 +204,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		}
 		my.Unmarshal(bytes[8:n])
 
-		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING)) ||
+		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING) && my.TYPE != (uint32)(CATCH)) ||
 			my.ENDTYPE != (uint32)(END) {
 			//fmt.Printf("processPacket diff type %s %d %d \n", my.ID, my.TYPE, my.ENDTYPE)
 			continue
@@ -209,7 +217,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 
 		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET,
 			src: srcaddr.(*net.IPAddr), rproto: (int)((int16)(my.RPROTO)),
-			echoId: echoId, echoSeq: echoSeq}
+			echoId: echoId, echoSeq: echoSeq, catch: (int)((int16)(my.CATCH))}
 	}
 }
 
@@ -222,6 +230,7 @@ type Packet struct {
 	rproto  int
 	echoId  int
 	echoSeq int
+	catch   int
 }
 
 func UniqueId() string {
@@ -237,4 +246,11 @@ func GetMd5String(s string) string {
 	h := md5.New()
 	h.Write([]byte(s))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+type CatchMsg struct {
+	conn *ServerConn
+	id   string
+	src  *net.IPAddr
+	data []byte
 }

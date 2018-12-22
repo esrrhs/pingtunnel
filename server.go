@@ -25,8 +25,11 @@ type Server struct {
 	sendPacketSize uint64
 	recvPacketSize uint64
 
-	echoId       int
-	echoSeq      int
+	sendCatchPacket uint64
+	recvCatchPacket uint64
+
+	echoId  int
+	echoSeq int
 }
 
 type ServerConn struct {
@@ -36,6 +39,8 @@ type ServerConn struct {
 	activeTime   time.Time
 	close        bool
 	rproto       int
+	catch        int
+	catchQueue   chan *CatchMsg
 }
 
 func (p *Server) Run() {
@@ -72,10 +77,10 @@ func (p *Server) processPacket(packet *Packet) {
 	p.echoSeq = packet.echoSeq
 
 	if packet.msgType == PING {
-		//t := time.Time{}
-		//t.UnmarshalBinary(packet.data)
-		//fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
-		//sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1)
+		t := time.Time{}
+		t.UnmarshalBinary(packet.data)
+		fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
+		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1, 0)
 		return
 	}
 
@@ -99,31 +104,52 @@ func (p *Server) processPacket(packet *Packet) {
 			fmt.Printf("Error listening for udp packets: %s\n", err.Error())
 			return
 		}
-		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false, rproto: packet.rproto}
+
+		catchQueue := make(chan *CatchMsg, 1000)
+
+		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
+			rproto: packet.rproto, catchQueue: catchQueue}
+
 		p.localConnMap[id] = udpConn
+
 		go p.Recv(udpConn, id, packet.src)
 	}
 
 	udpConn.activeTime = now
+	udpConn.catch = packet.catch
 
-	_, err := udpConn.conn.Write(packet.data)
-	if err != nil {
-		fmt.Printf("WriteToUDP Error %s\n", err)
-		udpConn.close = true
+	if packet.msgType == CATCH {
+		select {
+		case re := <-udpConn.catchQueue:
+			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(CATCH), re.data, re.conn.rproto, -1, 0)
+			p.sendCatchPacket++
+		case <-time.After(time.Duration(1) * time.Millisecond):
+		}
+		p.recvCatchPacket++
 		return
 	}
 
-	p.recvPacket++
-	p.recvPacketSize += (uint64)(len(packet.data))
+	if packet.msgType == DATA {
+
+		_, err := udpConn.conn.Write(packet.data)
+		if err != nil {
+			fmt.Printf("WriteToUDP Error %s\n", err)
+			udpConn.close = true
+			return
+		}
+
+		p.recvPacket++
+		p.recvPacketSize += (uint64)(len(packet.data))
+	}
 }
 
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 	fmt.Printf("server waiting target response %s -> %s %s\n", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
 
-	bytes := make([]byte, 10240)
-
 	for {
+		bytes := make([]byte, 2000)
+
 		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, _, err := conn.conn.ReadFromUDP(bytes)
 		if err != nil {
@@ -142,7 +168,14 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
+		if conn.catch > 0 {
+			select {
+			case conn.catchQueue <- &CatchMsg{conn: conn, id: id, src: src, data: bytes[:n]}:
+			case <-time.After(time.Duration(10) * time.Millisecond):
+			}
+		} else {
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1, 0)
+		}
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
@@ -175,10 +208,12 @@ func (p *Server) checkTimeoutConn() {
 }
 
 func (p *Server) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendCatchPacket, p.recvCatchPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+	p.sendCatchPacket = 0
+	p.recvCatchPacket = 0
 }
