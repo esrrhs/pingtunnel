@@ -1,6 +1,7 @@
 package pingtunnel
 
 import (
+	"encoding/binary"
 	"fmt"
 	"golang.org/x/net/icmp"
 	"math"
@@ -9,7 +10,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, hb int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -32,6 +33,7 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		timeout:      timeout,
 		sproto:       sproto,
 		rproto:       rproto,
+		hb:           hb,
 	}, nil
 }
 
@@ -42,6 +44,7 @@ type Client struct {
 	timeout int
 	sproto  int
 	rproto  int
+	hb      int
 
 	ipaddr *net.UDPAddr
 	addr   string
@@ -61,6 +64,8 @@ type Client struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
+
+	sendHBPacket uint64
 }
 
 type ClientConn struct {
@@ -119,12 +124,24 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
+	inter := 1000
+	if p.hb > 0 {
+		inter := 1000 / p.hb
+		if inter <= 0 {
+			inter = 1
+		}
+	}
+	intervalHB := time.NewTicker(time.Millisecond * (time.Duration)(inter))
+	defer intervalHB.Stop()
+
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
 			p.ping()
 			p.showNet()
+		case <-intervalHB.C:
+			p.heartbeat()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -235,7 +252,7 @@ func (p *Client) checkTimeoutConn() {
 }
 
 func (p *Client) ping() {
-	if p.sendPacket == 0 {
+	if p.sendPacket == 0 && p.recvPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
@@ -245,9 +262,27 @@ func (p *Client) ping() {
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n", p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s HB %d/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendHBPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+	p.sendHBPacket = 0
+}
+
+func (p *Client) heartbeat() {
+
+	if p.hb > 0 {
+		for _, conn := range p.localIdToConnMap {
+
+			b := make([]byte, 4)
+			binary.BigEndian.PutUint32(b[:4], rand.Uint32())
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(HB), b, p.sproto, p.rproto)
+			p.sequence++
+
+			p.sendHBPacket++
+
+		}
+	}
 }

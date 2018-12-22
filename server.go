@@ -104,6 +104,12 @@ func (p *Server) processPacket(packet *Packet) {
 	udpConn.echoId = packet.echoId
 	udpConn.echoSeq = packet.echoSeq
 
+	if packet.msgType == HB {
+		udpConn.echoId = packet.echoId
+		udpConn.echoSeq = packet.echoSeq
+		return
+	}
+
 	_, err := udpConn.conn.Write(packet.data)
 	if err != nil {
 		fmt.Printf("WriteToUDP Error %s\n", err)
