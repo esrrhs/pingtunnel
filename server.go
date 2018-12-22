@@ -35,6 +35,7 @@ type ServerConn struct {
 	rproto       int
 	echoId       int
 	echoSeq      int
+	sendEchoId   int
 }
 
 func (p *Server) Run() {
@@ -141,6 +142,11 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		conn.activeTime = now
 
 		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1)
+
+		if conn.sendEchoId == conn.echoId {
+			conn.echoSeq++
+		}
+		conn.sendEchoId = conn.echoId
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
