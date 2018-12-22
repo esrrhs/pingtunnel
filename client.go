@@ -241,13 +241,11 @@ func (p *Client) checkTimeoutConn() {
 }
 
 func (p *Client) ping() {
-	if p.sendPacket == 0 {
-		now := time.Now()
-		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
-		fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
-		p.sequence++
-	}
+	now := time.Now()
+	b, _ := now.MarshalBinary()
+	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto)
+	fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+	p.sequence++
 }
 
 func (p *Client) showNet() {
