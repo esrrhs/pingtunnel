@@ -36,8 +36,6 @@ Usage:
 
     -rproto   客户端接收ping协议的协议，默认是0
               The protocol that the client receives the ping. The default is 0.
-
-    -hb       客户端自动保持每秒发到服务器的心跳包，用于在某些网络下更新服务器的id和seq，以接收到服务器的reply，默认0关闭
 `
 
 func main() {
@@ -49,7 +47,6 @@ func main() {
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	sproto := flag.Int("sproto", 8, "send ping proto")
 	rproto := flag.Int("rproto", 0, "recv ping proto")
-	hb := flag.Int("hb", 0, "client heartbeat")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -79,7 +76,7 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *hb)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
