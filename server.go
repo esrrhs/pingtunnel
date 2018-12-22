@@ -24,6 +24,8 @@ type Server struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
+
+	recvHBPacket uint64
 }
 
 type ServerConn struct {
@@ -105,8 +107,7 @@ func (p *Server) processPacket(packet *Packet) {
 	udpConn.echoSeq = packet.echoSeq
 
 	if packet.msgType == HB {
-		udpConn.echoId = packet.echoId
-		udpConn.echoSeq = packet.echoSeq
+		p.recvHBPacket++
 		return
 	}
 
@@ -179,9 +180,11 @@ func (p *Server) checkTimeoutConn() {
 }
 
 func (p *Server) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n", p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s HB %d/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.recvHBPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+	p.recvHBPacket = 0
 }
