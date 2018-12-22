@@ -37,7 +37,7 @@ Usage:
     -rproto   客户端接收ping协议的协议，默认是0
               The protocol that the client receives the ping. The default is 0.
 
-    -hb       客户端保持每秒发到服务器的心跳包，用于在某些网络下更新服务器的id和seq，以接收到服务器的reply
+    -hb       客户端自动保持每秒发到服务器的心跳包，用于在某些网络下更新服务器的id和seq，以接收到服务器的reply，默认0关闭
 `
 
 func main() {
