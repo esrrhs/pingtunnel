@@ -37,7 +37,8 @@ Usage:
     -rproto   客户端接收ping协议的协议，默认是0
               The protocol that the client receives the ping. The default is 0.
 
-    -catch    主动抓模式
+    -catch    主动抓模式，每秒从服务器主动抓多少个reply包，默认0
+              Active capture mode, how many reply packets are actively captured from the server per second, default 0
 `
 
 func main() {
