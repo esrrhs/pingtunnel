@@ -22,7 +22,6 @@ const (
 	END  uint32 = 0xAAAABBBB
 )
 
-// An Echo represents an ICMP echo request or reply message body.
 type MyMsg struct {
 	TYPE    uint32
 	ID      string
