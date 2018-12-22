@@ -1,7 +1,6 @@
 package pingtunnel
 
 import (
-	"encoding/binary"
 	"fmt"
 	"golang.org/x/net/icmp"
 	"math"
@@ -64,20 +63,13 @@ type Client struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
-
-	sendHBPacket uint64
 }
 
 type ClientConn struct {
-	ipaddr        *net.UDPAddr
-	id            string
-	activeTime    time.Time
-	close         bool
-	recvPacket    uint64
-	avgRecvNum    uint64
-	avgRecvPacket uint64
-	hbPacket      uint64
-	sendHBPacket  uint64
+	ipaddr     *net.UDPAddr
+	id         string
+	activeTime time.Time
+	close      bool
 }
 
 func (p *Client) Addr() string {
@@ -129,18 +121,12 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	intervalHB := time.NewTicker(time.Millisecond * 10)
-	defer intervalHB.Stop()
-
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
 			p.ping()
 			p.showNet()
-			p.calcHB()
-		case <-intervalHB.C:
-			p.heartbeat()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -214,7 +200,6 @@ func (p *Client) processPacket(packet *Packet) {
 
 	now := time.Now()
 	clientConn.activeTime = now
-	clientConn.recvPacket++
 
 	_, err := p.listenConn.WriteToUDP(packet.data, addr)
 	if err != nil {
@@ -262,58 +247,10 @@ func (p *Client) ping() {
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s HB %d/s\n",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024,p.sendHBPacket)
+	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s\n",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
-	p.sendHBPacket = 0
-}
-
-func (p *Client) heartbeat() {
-
-	if p.hb > 0 {
-		for _, conn := range p.localIdToConnMap {
-
-			if conn.sendHBPacket < conn.hbPacket {
-
-				b := make([]byte, 4)
-				binary.BigEndian.PutUint32(b[:4], rand.Uint32())
-				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(HB), b, p.sproto, p.rproto)
-				p.sequence++
-
-				conn.sendHBPacket++
-
-				p.sendHBPacket++
-			}
-		}
-	}
-}
-
-func (p *Client) calcHB() {
-
-	if p.hb > 0 {
-		for _, conn := range p.localIdToConnMap {
-
-			if conn.avgRecvNum > 0 {
-				conn.avgRecvPacket = (conn.recvPacket + conn.avgRecvPacket*conn.avgRecvNum) / conn.avgRecvNum
-			} else {
-				conn.avgRecvPacket = conn.recvPacket
-			}
-			conn.avgRecvNum++
-			if conn.avgRecvNum > 10 {
-				conn.avgRecvNum = 0
-			}
-			conn.recvPacket = 0
-
-			conn.hbPacket = conn.avgRecvPacket + 10
-
-			if conn.avgRecvPacket > 0 {
-				fmt.Printf("calcHB %s %s %d %d\n", conn.id, conn.ipaddr.String(), conn.hbPacket, conn.sendHBPacket)
-			}
-
-			conn.sendHBPacket = 0
-		}
-	}
 }

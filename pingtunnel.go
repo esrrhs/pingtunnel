@@ -18,7 +18,6 @@ import (
 const (
 	DATA uint32 = 0x01010101
 	PING uint32 = 0x02020202
-	HB   uint32 = 0x03030303
 	END  uint32 = 0xAAAABBBB
 )
 
@@ -197,7 +196,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		}
 		my.Unmarshal(bytes[8:n])
 
-		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING) && my.TYPE != (uint32)(HB)) ||
+		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING)) ||
 			my.ENDTYPE != (uint32)(END) {
 			//fmt.Printf("processPacket diff type %s %d %d \n", my.ID, my.TYPE, my.ENDTYPE)
 			continue
