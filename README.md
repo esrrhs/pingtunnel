@@ -28,6 +28,8 @@ echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -catch 100
 ```
+* 这个是在某开放wifi上，利用shadowsocks、kcptun、pingtunnel绕过验证直接上网，可以看到wifi是受限的，但是仍然可以通过远程访问网络，ip地址显示是远程服务器的地址，因为他没有禁ping
+![image](show.png)
 
 # Usage
 
