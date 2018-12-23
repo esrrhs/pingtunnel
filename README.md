@@ -12,6 +12,23 @@ sudo ./pingtunnel -type server
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
+* 如果看到客户端不停的ping、pong日志输出，说明工作正常。If you see the client ping, pong log output, it means normal work
+```
+ping www.xx.com 2018-12-23 13:05:50.5724495 +0800 CST m=+3.023909301 8 0 1997 2
+pong from xx.xx.xx.xx 210.8078ms
+```
+
+# 注意
+对于某些网络，比如长城宽带、宽带通，需要特殊处理才能正常工作。方法是
+* 关闭服务器的系统ping，例如
+```
+echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all 
+```
+* 客户端添加catch参数，用来主动抓取服务器回包，100就是每秒主动抓100个包
+```
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -catch 100
+```
+
 # Usage
 
 
