@@ -202,6 +202,10 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
+	if packet.echoId != p.id {
+		return
+	}
+
 	if packet.msgType == PING {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
@@ -214,7 +218,7 @@ func (p *Client) processPacket(packet *Packet) {
 
 	clientConn := p.localIdToConnMap[packet.id]
 	if clientConn == nil {
-		fmt.Printf("processPacket no conn %s \n", packet.id)
+		//fmt.Printf("processPacket no conn %s \n", packet.id)
 		return
 	}
 
