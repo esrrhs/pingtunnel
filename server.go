@@ -7,14 +7,16 @@ import (
 	"time"
 )
 
-func NewServer(timeout int) (*Server, error) {
+func NewServer(timeout int, key int) (*Server, error) {
 	return &Server{
 		timeout: timeout,
+		key:     key,
 	}, nil
 }
 
 type Server struct {
 	timeout int
+	key     int
 
 	conn *icmp.PacketConn
 
@@ -73,6 +75,10 @@ func (p *Server) Run() {
 
 func (p *Server) processPacket(packet *Packet) {
 
+	if packet.key != p.key {
+		return
+	}
+
 	p.echoId = packet.echoId
 	p.echoSeq = packet.echoSeq
 
@@ -80,7 +86,8 @@ func (p *Server) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
 		fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
-		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data, packet.rproto, -1, 0)
+		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data,
+			packet.rproto, -1, 0, p.key)
 		return
 	}
 
@@ -121,7 +128,8 @@ func (p *Server) processPacket(packet *Packet) {
 	if packet.msgType == CATCH {
 		select {
 		case re := <-udpConn.catchQueue:
-			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(CATCH), re.data, re.conn.rproto, -1, 0)
+			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(CATCH), re.data,
+				re.conn.rproto, -1, 0, p.key)
 			p.sendCatchPacket++
 		case <-time.After(time.Duration(1) * time.Millisecond):
 		}
@@ -174,7 +182,8 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			case <-time.After(time.Duration(10) * time.Millisecond):
 			}
 		} else {
-			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n], conn.rproto, -1, 0)
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n],
+				conn.rproto, -1, 0, p.key)
 		}
 
 		p.sendPacket++
