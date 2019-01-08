@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int, key int) (*Client, error) {
 
 	ipaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -33,6 +33,7 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		sproto:       sproto,
 		rproto:       rproto,
 		catch:        catch,
+		key:          key,
 	}, nil
 }
 
@@ -44,6 +45,7 @@ type Client struct {
 	sproto  int
 	rproto  int
 	catch   int
+	key     int
 
 	ipaddr *net.UDPAddr
 	addr   string
@@ -180,7 +182,8 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeTime = now
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n], p.sproto, p.rproto, p.catch)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n],
+			p.sproto, p.rproto, p.catch, p.key)
 
 		p.sequence++
 
@@ -192,6 +195,10 @@ func (p *Client) Accept() error {
 func (p *Client) processPacket(packet *Packet) {
 
 	if packet.rproto >= 0 {
+		return
+	}
+
+	if packet.key != p.key {
 		return
 	}
 
@@ -259,7 +266,8 @@ func (p *Client) ping() {
 	if p.sendPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b, p.sproto, p.rproto, p.catch)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b,
+			p.sproto, p.rproto, p.catch, p.key)
 		fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
 	}
@@ -279,7 +287,8 @@ func (p *Client) showNet() {
 func (p *Client) sendCatch() {
 	if p.catch > 0 {
 		for _, conn := range p.localIdToConnMap {
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(CATCH), make([]byte, 0), p.sproto, p.rproto, p.catch)
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(CATCH), make([]byte, 0),
+				p.sproto, p.rproto, p.catch, p.key)
 			p.sequence++
 			p.sendCatchPacket++
 		}
