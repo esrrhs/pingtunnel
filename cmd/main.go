@@ -39,6 +39,9 @@ Usage:
 
     -catch    主动抓模式，每秒从服务器主动抓多少个reply包，默认0
               Active capture mode, how many reply packets are actively captured from the server per second, default 0
+
+    -key      设置的密码，默认0
+              Set password, default 0
 `
 
 func main() {
