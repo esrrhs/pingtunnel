@@ -207,7 +207,7 @@ func (p *Client) processPacket(packet *Packet) {
 
 	clientConn := p.localIdToConnMap[packet.id]
 	if clientConn == nil {
-		fmt.Printf("processPacket no conn %s \n", packet.id)
+		//fmt.Printf("processPacket no conn %s \n", packet.id)
 		return
 	}
 

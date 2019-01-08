@@ -50,7 +50,8 @@ func main() {
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	sproto := flag.Int("sproto", 8, "send ping proto")
 	rproto := flag.Int("rproto", 0, "recv ping proto")
-	catch := flag.Int("catch", 0, "catch mdoe")
+	catch := flag.Int("catch", 0, "catch mode")
+	key := flag.Int("key", 0, "key")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -63,9 +64,10 @@ func main() {
 	}
 
 	fmt.Println("start...")
+	fmt.Printf("key %d\n", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*timeout)
+		s, err := pingtunnel.NewServer(*timeout, *key)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
@@ -80,7 +82,7 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch, *key)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
