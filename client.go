@@ -1,7 +1,8 @@
 package pingtunnel
 
 import (
-	"fmt"
+	"github.com/esrrhs/go-engine/src/loggo"
+	"github.com/esrrhs/go-engine/src/rbuffergo"
 	"golang.org/x/net/icmp"
 	"math"
 	"math/rand"
@@ -9,11 +10,22 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int, key int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int, key int, tcpmode bool) (*Client, error) {
 
-	ipaddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, err
+	var ipaddr *net.UDPAddr
+	var tcpaddr *net.TCPAddr
+	var err error
+
+	if tcpmode {
+		tcpaddr, err = net.ResolveTCPAddr("tcp", addr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		ipaddr, err = net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ipaddrServer, err := net.ResolveIPAddr("ip", server)
@@ -25,6 +37,7 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 	return &Client{
 		id:           r.Intn(math.MaxInt16),
 		ipaddr:       ipaddr,
+		tcpaddr:      tcpaddr,
 		addr:         addr,
 		ipaddrServer: ipaddrServer,
 		addrServer:   server,
@@ -34,6 +47,7 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		rproto:       rproto,
 		catch:        catch,
 		key:          key,
+		tcpmode:      tcpmode,
 	}, nil
 }
 
@@ -46,17 +60,20 @@ type Client struct {
 	rproto  int
 	catch   int
 	key     int
+	tcpmode bool
 
-	ipaddr *net.UDPAddr
-	addr   string
+	ipaddr  *net.UDPAddr
+	tcpaddr *net.TCPAddr
+	addr    string
 
 	ipaddrServer *net.IPAddr
 	addrServer   string
 
 	targetAddr string
 
-	conn       *icmp.PacketConn
-	listenConn *net.UDPConn
+	conn          *icmp.PacketConn
+	listenConn    *net.UDPConn
+	tcplistenConn *net.TCPListener
 
 	localAddrToConnMap map[string]*ClientConn
 	localIdToConnMap   map[string]*ClientConn
@@ -72,9 +89,13 @@ type Client struct {
 
 type ClientConn struct {
 	ipaddr     *net.UDPAddr
+	tcpaddr    *net.TCPAddr
 	id         string
 	activeTime time.Time
 	close      bool
+
+	sendb *rbuffergo.RBuffergo
+	recvb *rbuffergo.RBuffergo
 }
 
 func (p *Client) Addr() string {
@@ -101,24 +122,38 @@ func (p *Client) Run() {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
-		fmt.Printf("Error listening for ICMP packets: %s\n", err.Error())
+		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return
 	}
 	defer conn.Close()
 	p.conn = conn
 
-	listener, err := net.ListenUDP("udp", p.ipaddr)
-	if err != nil {
-		fmt.Printf("Error listening for udp packets: %s\n", err.Error())
-		return
+	if p.tcpmode {
+		tcplistenConn, err := net.ListenTCP("tcp", p.tcpaddr)
+		if err != nil {
+			loggo.Error("Error listening for tcp packets: %s", err.Error())
+			return
+		}
+		defer tcplistenConn.Close()
+		p.tcplistenConn = tcplistenConn
+	} else {
+		listener, err := net.ListenUDP("udp", p.ipaddr)
+		if err != nil {
+			loggo.Error("Error listening for udp packets: %s", err.Error())
+			return
+		}
+		defer listener.Close()
+		p.listenConn = listener
 	}
-	defer listener.Close()
-	p.listenConn = listener
 
 	p.localAddrToConnMap = make(map[string]*ClientConn)
 	p.localIdToConnMap = make(map[string]*ClientConn)
 
-	go p.Accept()
+	if p.tcpmode {
+		go p.AcceptTcp()
+	} else {
+		go p.Accept()
+	}
 
 	recv := make(chan *Packet, 10000)
 	go recvICMP(*p.conn, recv)
@@ -150,9 +185,87 @@ func (p *Client) Run() {
 	}
 }
 
+func (p *Client) AcceptTcp() error {
+
+	loggo.Info("client waiting local accept tcp")
+
+	for {
+		p.tcplistenConn.SetDeadline(time.Now().Add(time.Millisecond * 100))
+
+		conn, err := p.tcplistenConn.AcceptTCP()
+		if err != nil {
+			if neterr, ok := err.(*net.OpError); ok {
+				if neterr.Timeout() {
+					// Read timeout
+					continue
+				} else {
+					loggo.Error("Error accept tcp %s", err)
+					continue
+				}
+			}
+		}
+
+		go p.AcceptTcpConn(conn)
+	}
+
+}
+
+func (p *Client) AcceptTcpConn(conn *net.TCPConn) error {
+
+	now := time.Now()
+	uuid := UniqueId()
+	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
+
+	sendb := rbuffergo.New(1024*1024, false)
+	recvb := rbuffergo.New(1024*1024, false)
+
+	cutsize := 800
+	sendwin := sendb.Capacity() / cutsize
+
+	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeTime: now, close: false, sendb: sendb, recvb: recvb}
+	p.localAddrToConnMap[tcpsrcaddr.String()] = clientConn
+	p.localIdToConnMap[uuid] = clientConn
+	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
+
+	bytes := make([]byte, 10240)
+
+	sendwinmap := make(map[string]*ClientConn)
+
+	for {
+		left := sendb.Capacity() - sendb.Size()
+		if left >= len(bytes) {
+			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+			n, srcaddr, err := p.conn.ReadFrom(bytes)
+			if err != nil {
+				if neterr, ok := err.(*net.OpError); ok {
+					if neterr.Timeout() {
+						// Read timeout
+						continue
+					} else {
+						loggo.Error("Error read tcp %s %s", srcaddr.String(), err)
+						break
+					}
+				}
+			}
+			if n > 0 {
+				sendb.Write(bytes[:n])
+			}
+		}
+
+		clientConn.activeTime = now
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n],
+			p.sproto, p.rproto, p.catch, p.key)
+
+		p.sequence++
+
+		p.sendPacket++
+		p.sendPacketSize += (uint64)(n)
+	}
+}
+
 func (p *Client) Accept() error {
 
-	fmt.Println("client waiting local accept")
+	loggo.Info("client waiting local accept udp")
 
 	bytes := make([]byte, 10240)
 
@@ -165,7 +278,7 @@ func (p *Client) Accept() error {
 					// Read timeout
 					continue
 				} else {
-					fmt.Printf("Error read udp %s\n", err)
+					loggo.Error("Error read udp %s", err)
 					continue
 				}
 			}
@@ -178,7 +291,7 @@ func (p *Client) Accept() error {
 			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeTime: now, close: false}
 			p.localAddrToConnMap[srcaddr.String()] = clientConn
 			p.localIdToConnMap[uuid] = clientConn
-			fmt.Printf("client accept new local %s %s\n", uuid, srcaddr.String())
+			loggo.Info("client accept new local udp %s %s", uuid, srcaddr.String())
 		}
 
 		clientConn.activeTime = now
@@ -210,15 +323,15 @@ func (p *Client) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
 		d := time.Now().Sub(t)
-		fmt.Printf("pong from %s %s\n", packet.src.String(), d.String())
+		loggo.Info("pong from %s %s", packet.src.String(), d.String())
 		return
 	}
 
-	//fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
+	//loggo.Debug("processPacket %s %s %d", packet.id, packet.src.String(), len(packet.data))
 
 	clientConn := p.localIdToConnMap[packet.id]
 	if clientConn == nil {
-		//fmt.Printf("processPacket no conn %s \n", packet.id)
+		//loggo.Debug("processPacket no conn %s ", packet.id)
 		return
 	}
 
@@ -233,7 +346,7 @@ func (p *Client) processPacket(packet *Packet) {
 
 	_, err := p.listenConn.WriteToUDP(packet.data, addr)
 	if err != nil {
-		fmt.Printf("WriteToUDP Error read udp %s\n", err)
+		loggo.Error("WriteToUDP Error read udp %s", err)
 		clientConn.close = true
 		return
 	}
@@ -260,7 +373,7 @@ func (p *Client) checkTimeoutConn() {
 
 	for id, conn := range p.localIdToConnMap {
 		if conn.close {
-			fmt.Printf("close inactive conn %s %s\n", id, conn.ipaddr.String())
+			loggo.Info("close inactive conn %s %s", id, conn.ipaddr.String())
 			p.Close(conn)
 		}
 	}
@@ -272,13 +385,13 @@ func (p *Client) ping() {
 		b, _ := now.MarshalBinary()
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b,
 			p.sproto, p.rproto, p.catch, p.key)
-		fmt.Printf("ping %s %s %d %d %d %d\n", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+		loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
 	}
 }
 
 func (p *Client) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s\n",
+	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s",
 		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendCatchPacket, p.recvCatchPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
