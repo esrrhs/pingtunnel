@@ -42,6 +42,9 @@ Usage:
 
     -key      设置的密码，默认0
               Set password, default 0
+
+    -tcp      设置是否转发tcp，默认false
+              Set the switch to forward tcp, the default is false
 `
 
 func main() {
@@ -55,6 +58,7 @@ func main() {
 	rproto := flag.Int("rproto", 0, "recv ping proto")
 	catch := flag.Int("catch", 0, "catch mode")
 	key := flag.Int("key", 0, "key")
+	tcpmode := flag.Bool("tcp", false, "tcp mode")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -85,7 +89,7 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch, *key)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch, *key, *tcpmode)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
