@@ -2,6 +2,7 @@ package pingtunnel
 
 import (
 	"github.com/esrrhs/go-engine/src/loggo"
+	"github.com/esrrhs/go-engine/src/pool"
 	"github.com/esrrhs/go-engine/src/rbuffergo"
 	"golang.org/x/net/icmp"
 	"math"
@@ -33,21 +34,29 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		return nil, err
 	}
 
+	var sendFramePool *pool.Pool
+	if tcpmode {
+		sendFramePool = pool.New(func() interface{} {
+			return Frame{size: 0, data: make([]byte, FRAME_MAX_SIZE)}
+		})
+	}
+
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Client{
-		id:           r.Intn(math.MaxInt16),
-		ipaddr:       ipaddr,
-		tcpaddr:      tcpaddr,
-		addr:         addr,
-		ipaddrServer: ipaddrServer,
-		addrServer:   server,
-		targetAddr:   target,
-		timeout:      timeout,
-		sproto:       sproto,
-		rproto:       rproto,
-		catch:        catch,
-		key:          key,
-		tcpmode:      tcpmode,
+		id:            r.Intn(math.MaxInt16),
+		ipaddr:        ipaddr,
+		tcpaddr:       tcpaddr,
+		addr:          addr,
+		ipaddrServer:  ipaddrServer,
+		addrServer:    server,
+		targetAddr:    target,
+		timeout:       timeout,
+		sproto:        sproto,
+		rproto:        rproto,
+		catch:         catch,
+		key:           key,
+		tcpmode:       tcpmode,
+		sendFramePool: sendFramePool,
 	}, nil
 }
 
@@ -61,6 +70,8 @@ type Client struct {
 	catch   int
 	key     int
 	tcpmode bool
+
+	sendFramePool *pool.Pool
 
 	ipaddr  *net.UDPAddr
 	tcpaddr *net.TCPAddr
@@ -219,7 +230,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) error {
 	sendb := rbuffergo.New(1024*1024, false)
 	recvb := rbuffergo.New(1024*1024, false)
 
-	cutsize := 800
+	cutsize := FRAME_MAX_SIZE
 	sendwin := sendb.Capacity() / cutsize
 
 	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeTime: now, close: false, sendb: sendb, recvb: recvb}
