@@ -206,8 +206,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		echoId := int(binary.BigEndian.Uint16(bytes[4:6]))
 		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
 
-		my := &MyMsg{
-		}
+		my := &MyMsg{}
 		my.Unmarshal(bytes[8:n])
 
 		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING) && my.TYPE != (uint32)(CATCH)) ||
@@ -260,5 +259,14 @@ type CatchMsg struct {
 	conn *ServerConn
 	id   string
 	src  *net.IPAddr
+	data []byte
+}
+
+const (
+	FRAME_MAX_SIZE int = 888
+)
+
+type Frame struct {
+	size int
 	data []byte
 }
