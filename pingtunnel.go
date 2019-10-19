@@ -264,9 +264,44 @@ type CatchMsg struct {
 
 const (
 	FRAME_MAX_SIZE int = 888
+	FRAME_MAX_ID   int = 999
+)
+
+const (
+	FRAME_TYPE_DATA int = 0x0101
+	FRAME_TYPE_REQ  int = 0x0202
+	FRAME_TYPE_ACK  int = 0x0303
 )
 
 type Frame struct {
-	size int
-	data []byte
+	ty       int
+	resend   bool
+	sendtime int64
+	id       int
+	size     int
+	data     []byte
+	dataid   []int
+}
+
+// Marshal implements the Marshal method of MessageBody interface.
+func (p *Frame) Marshal(proto int) ([]byte, error) {
+
+	b := make([]byte, p.Len(proto))
+
+	binary.BigEndian.PutUint16(b[:2], uint16(p.ty))
+
+	datalen := len(p.data)
+	binary.BigEndian.PutUint16(b[2:4], uint16(datalen))
+
+	// TODO
+
+	return b, nil
+}
+
+// Len implements the Len method of MessageBody interface.
+func (p *Frame) Len(proto int) int {
+	if p == nil {
+		return 0
+	}
+	return 4 + 2 + 4 + 4 // TODO
 }
