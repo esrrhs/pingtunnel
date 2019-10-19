@@ -2,8 +2,6 @@ package pingtunnel
 
 import (
 	"github.com/esrrhs/go-engine/src/loggo"
-	"github.com/esrrhs/go-engine/src/pool"
-	"github.com/esrrhs/go-engine/src/rbuffergo"
 	"golang.org/x/net/icmp"
 	"math"
 	"math/rand"
@@ -34,29 +32,21 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		return nil, err
 	}
 
-	var sendFramePool *pool.Pool
-	if tcpmode {
-		sendFramePool = pool.New(func() interface{} {
-			return Frame{size: 0, data: make([]byte, FRAME_MAX_SIZE)}
-		})
-	}
-
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Client{
-		id:            r.Intn(math.MaxInt16),
-		ipaddr:        ipaddr,
-		tcpaddr:       tcpaddr,
-		addr:          addr,
-		ipaddrServer:  ipaddrServer,
-		addrServer:    server,
-		targetAddr:    target,
-		timeout:       timeout,
-		sproto:        sproto,
-		rproto:        rproto,
-		catch:         catch,
-		key:           key,
-		tcpmode:       tcpmode,
-		sendFramePool: sendFramePool,
+		id:           r.Intn(math.MaxInt16),
+		ipaddr:       ipaddr,
+		tcpaddr:      tcpaddr,
+		addr:         addr,
+		ipaddrServer: ipaddrServer,
+		addrServer:   server,
+		targetAddr:   target,
+		timeout:      timeout,
+		sproto:       sproto,
+		rproto:       rproto,
+		catch:        catch,
+		key:          key,
+		tcpmode:      tcpmode,
 	}, nil
 }
 
@@ -64,14 +54,15 @@ type Client struct {
 	id       int
 	sequence int
 
-	timeout int
-	sproto  int
-	rproto  int
-	catch   int
-	key     int
-	tcpmode bool
-
-	sendFramePool *pool.Pool
+	timeout               int
+	sproto                int
+	rproto                int
+	catch                 int
+	key                   int
+	tcpmode               bool
+	tcpmode_buffersize    int
+	tcpmode_maxwin        int
+	tcpmode_resend_timems int
 
 	ipaddr  *net.UDPAddr
 	tcpaddr *net.TCPAddr
@@ -105,8 +96,7 @@ type ClientConn struct {
 	activeTime time.Time
 	close      bool
 
-	sendb *rbuffergo.RBuffergo
-	recvb *rbuffergo.RBuffergo
+	fm *FrameMgr
 }
 
 func (p *Client) Addr() string {
@@ -221,57 +211,71 @@ func (p *Client) AcceptTcp() error {
 
 }
 
-func (p *Client) AcceptTcpConn(conn *net.TCPConn) error {
+func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 	now := time.Now()
 	uuid := UniqueId()
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
 
-	sendb := rbuffergo.New(1024*1024, false)
-	recvb := rbuffergo.New(1024*1024, false)
+	fm := NewFrameMgr(p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 
-	cutsize := FRAME_MAX_SIZE
-	sendwin := sendb.Capacity() / cutsize
-
-	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeTime: now, close: false, sendb: sendb, recvb: recvb}
+	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeTime: now, close: false,
+		fm: fm}
 	p.localAddrToConnMap[tcpsrcaddr.String()] = clientConn
 	p.localIdToConnMap[uuid] = clientConn
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
 
 	bytes := make([]byte, 10240)
 
-	sendwinmap := make(map[string]*ClientConn)
-
 	for {
-		left := sendb.Capacity() - sendb.Size()
+		left := clientConn.fm.GetSendBufferLeft()
 		if left >= len(bytes) {
 			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-			n, srcaddr, err := p.conn.ReadFrom(bytes)
+			n, err := conn.Read(bytes)
 			if err != nil {
 				if neterr, ok := err.(*net.OpError); ok {
 					if neterr.Timeout() {
 						// Read timeout
-						continue
+						n = 0
 					} else {
-						loggo.Error("Error read tcp %s %s", srcaddr.String(), err)
+						loggo.Error("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
 						break
 					}
 				}
 			}
 			if n > 0 {
-				sendb.Write(bytes[:n])
+				clientConn.fm.WriteSendBuffer(bytes[:n])
 			}
 		}
 
+		clientConn.fm.Update()
+
+		sendlist := clientConn.fm.getSendList()
+
 		clientConn.activeTime = now
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n],
-			p.sproto, p.rproto, p.catch, p.key)
 
-		p.sequence++
+		for e := sendlist.Front(); e != nil; e = e.Next() {
 
-		p.sendPacket++
-		p.sendPacketSize += (uint64)(n)
+			f := e.Value.(Frame)
+			mb, err := f.Marshal(0)
+			if err != nil {
+				loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
+				break
+			}
+
+			p.sequence++
+
+			p.sendPacket++
+			p.sendPacketSize += (uint64)(f.size)
+
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), mb,
+				p.sproto, p.rproto, p.catch, p.key)
+		}
 	}
+
+	loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+	conn.Close()
+	p.Close(clientConn)
 }
 
 func (p *Client) Accept() error {
@@ -374,6 +378,11 @@ func (p *Client) Close(clientConn *ClientConn) {
 }
 
 func (p *Client) checkTimeoutConn() {
+
+	if p.tcpmode {
+		return
+	}
+
 	now := time.Now()
 	for _, conn := range p.localIdToConnMap {
 		diff := now.Sub(conn.activeTime)
