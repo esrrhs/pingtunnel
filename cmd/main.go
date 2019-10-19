@@ -89,7 +89,8 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch, *key, *tcpmode)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch, *key,
+			*tcpmode)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
