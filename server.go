@@ -1,7 +1,7 @@
 package pingtunnel
 
 import (
-	"fmt"
+	"github.com/esrrhs/go-engine/src/loggo"
 	"golang.org/x/net/icmp"
 	"net"
 	"time"
@@ -35,21 +35,23 @@ type Server struct {
 }
 
 type ServerConn struct {
-	ipaddrTarget *net.UDPAddr
-	conn         *net.UDPConn
-	id           string
-	activeTime   time.Time
-	close        bool
-	rproto       int
-	catch        int
-	catchQueue   chan *CatchMsg
+	ipaddrTarget  *net.UDPAddr
+	conn          *net.UDPConn
+	tcpaddrTarget *net.TCPAddr
+	tcpconn       *net.TCPConn
+	id            string
+	activeTime    time.Time
+	close         bool
+	rproto        int
+	catch         int
+	catchQueue    chan *CatchMsg
 }
 
 func (p *Server) Run() {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
-		fmt.Printf("Error listening for ICMP packets: %s\n", err.Error())
+		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return
 	}
 	p.conn = conn
@@ -85,51 +87,78 @@ func (p *Server) processPacket(packet *Packet) {
 	if packet.msgType == PING {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.data)
-		fmt.Printf("ping from %s %s %d %d %d\n", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
+		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data,
-			packet.rproto, -1, 0, p.key)
+			packet.rproto, -1, 0, p.key, packet.tcpmode)
 		return
 	}
 
-	//fmt.Printf("processPacket %s %s %d\n", packet.id, packet.src.String(), len(packet.data))
+	loggo.Debug("processPacket %s %s %d", packet.id, packet.src.String(), len(packet.data))
 
 	now := time.Now()
 
 	id := packet.id
-	udpConn := p.localConnMap[id]
-	if udpConn == nil {
+	localConn := p.localConnMap[id]
+	if localConn == nil {
 
-		addr := packet.target
-		ipaddrTarget, err := net.ResolveUDPAddr("udp", addr)
-		if err != nil {
-			fmt.Printf("Error ResolveUDPAddr for udp addr: %s %s\n", addr, err.Error())
-			return
+		if packet.tcpmode > 0 {
+
+			addr := packet.target
+			ipaddrTarget, err := net.ResolveTCPAddr("tcp", addr)
+			if err != nil {
+				loggo.Error("Error ResolveUDPAddr for tcp addr: %s %s", addr, err.Error())
+				return
+			}
+
+			targetConn, err := net.DialTCP("tcp", nil, ipaddrTarget)
+			if err != nil {
+				loggo.Error("Error listening for tcp packets: %s", err.Error())
+				return
+			}
+
+			catchQueue := make(chan *CatchMsg, packet.catch)
+
+			localConn = &ServerConn{tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
+				rproto: packet.rproto, catchQueue: catchQueue}
+
+			p.localConnMap[id] = localConn
+
+			go p.RecvTCP(localConn, id, packet.src)
+
+		} else {
+
+			addr := packet.target
+			ipaddrTarget, err := net.ResolveUDPAddr("udp", addr)
+			if err != nil {
+				loggo.Error("Error ResolveUDPAddr for udp addr: %s %s", addr, err.Error())
+				return
+			}
+
+			targetConn, err := net.DialUDP("udp", nil, ipaddrTarget)
+			if err != nil {
+				loggo.Error("Error listening for udp packets: %s", err.Error())
+				return
+			}
+
+			catchQueue := make(chan *CatchMsg, packet.catch)
+
+			localConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
+				rproto: packet.rproto, catchQueue: catchQueue}
+
+			p.localConnMap[id] = localConn
+
+			go p.Recv(localConn, id, packet.src)
 		}
-
-		targetConn, err := net.DialUDP("udp", nil, ipaddrTarget)
-		if err != nil {
-			fmt.Printf("Error listening for udp packets: %s\n", err.Error())
-			return
-		}
-
-		catchQueue := make(chan *CatchMsg, 1000)
-
-		udpConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-			rproto: packet.rproto, catchQueue: catchQueue}
-
-		p.localConnMap[id] = udpConn
-
-		go p.Recv(udpConn, id, packet.src)
 	}
 
-	udpConn.activeTime = now
-	udpConn.catch = packet.catch
+	localConn.activeTime = now
+	localConn.catch = packet.catch
 
 	if packet.msgType == CATCH {
 		select {
-		case re := <-udpConn.catchQueue:
+		case re := <-localConn.catchQueue:
 			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(CATCH), re.data,
-				re.conn.rproto, -1, 0, p.key)
+				re.conn.rproto, -1, 0, p.key, packet.tcpmode)
 			p.sendCatchPacket++
 		case <-time.After(time.Duration(1) * time.Millisecond):
 		}
@@ -139,10 +168,10 @@ func (p *Server) processPacket(packet *Packet) {
 
 	if packet.msgType == DATA {
 
-		_, err := udpConn.conn.Write(packet.data)
+		_, err := localConn.conn.Write(packet.data)
 		if err != nil {
-			fmt.Printf("WriteToUDP Error %s\n", err)
-			udpConn.close = true
+			loggo.Error("WriteToUDP Error %s", err)
+			localConn.close = true
 			return
 		}
 
@@ -153,7 +182,7 @@ func (p *Server) processPacket(packet *Packet) {
 
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
-	fmt.Printf("server waiting target response %s -> %s %s\n", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
+	loggo.Info("server waiting target response %s -> %s %s", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
 
 	for {
 		bytes := make([]byte, 2000)
@@ -166,7 +195,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 					// Read timeout
 					continue
 				} else {
-					fmt.Printf("ReadFromUDP Error read udp %s\n", err)
+					loggo.Error("ReadFromUDP Error read udp %s", err)
 					conn.close = true
 					return
 				}
@@ -183,7 +212,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			}
 		} else {
 			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n],
-				conn.rproto, -1, 0, p.key)
+				conn.rproto, -1, 0, p.key, packet.tcpmode)
 		}
 
 		p.sendPacket++
@@ -210,14 +239,14 @@ func (p *Server) checkTimeoutConn() {
 
 	for id, conn := range p.localConnMap {
 		if conn.close {
-			fmt.Printf("close inactive conn %s %s\n", id, conn.ipaddrTarget.String())
+			loggo.Info("close inactive conn %s %s", id, conn.ipaddrTarget.String())
 			p.Close(conn)
 		}
 	}
 }
 
 func (p *Server) showNet() {
-	fmt.Printf("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s\n",
+	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s",
 		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendCatchPacket, p.recvCatchPacket)
 	p.sendPacket = 0
 	p.recvPacket = 0
