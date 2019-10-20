@@ -58,7 +58,7 @@ func main() {
 	rproto := flag.Int("rproto", 0, "recv ping proto")
 	catch := flag.Int("catch", 0, "catch mode")
 	key := flag.Int("key", 0, "key")
-	tcpmode := flag.Bool("tcp", false, "tcp mode")
+	tcpmode := flag.Int("tcp", 0, "tcp mode")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}

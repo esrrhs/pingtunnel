@@ -9,13 +9,14 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int, key int, tcpmode bool) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int, key int,
+	tcpmode int) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
 	var err error
 
-	if tcpmode {
+	if tcpmode > 0 {
 		tcpaddr, err = net.ResolveTCPAddr("tcp", addr)
 		if err != nil {
 			return nil, err
@@ -59,7 +60,7 @@ type Client struct {
 	rproto                int
 	catch                 int
 	key                   int
-	tcpmode               bool
+	tcpmode               int
 	tcpmode_buffersize    int
 	tcpmode_maxwin        int
 	tcpmode_resend_timems int
@@ -129,7 +130,7 @@ func (p *Client) Run() {
 	defer conn.Close()
 	p.conn = conn
 
-	if p.tcpmode {
+	if p.tcpmode > 0 {
 		tcplistenConn, err := net.ListenTCP("tcp", p.tcpaddr)
 		if err != nil {
 			loggo.Error("Error listening for tcp packets: %s", err.Error())
@@ -150,7 +151,7 @@ func (p *Client) Run() {
 	p.localAddrToConnMap = make(map[string]*ClientConn)
 	p.localIdToConnMap = make(map[string]*ClientConn)
 
-	if p.tcpmode {
+	if p.tcpmode > 0 {
 		go p.AcceptTcp()
 	} else {
 		go p.Accept()
@@ -269,7 +270,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			p.sendPacketSize += (uint64)(f.size)
 
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), mb,
-				p.sproto, p.rproto, p.catch, p.key)
+				p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
 		}
 	}
 
@@ -311,7 +312,7 @@ func (p *Client) Accept() error {
 
 		clientConn.activeTime = now
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n],
-			p.sproto, p.rproto, p.catch, p.key)
+			p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
 
 		p.sequence++
 
@@ -379,7 +380,7 @@ func (p *Client) Close(clientConn *ClientConn) {
 
 func (p *Client) checkTimeoutConn() {
 
-	if p.tcpmode {
+	if p.tcpmode > 0 {
 		return
 	}
 
@@ -404,7 +405,7 @@ func (p *Client) ping() {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b,
-			p.sproto, p.rproto, p.catch, p.key)
+			p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
 		loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
 	}
@@ -425,7 +426,7 @@ func (p *Client) sendCatch() {
 	if p.catch > 0 {
 		for _, conn := range p.localIdToConnMap {
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(CATCH), make([]byte, 0),
-				p.sproto, p.rproto, p.catch, p.key)
+				p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
 			p.sequence++
 			p.sendCatchPacket++
 		}
