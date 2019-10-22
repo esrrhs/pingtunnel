@@ -27,9 +27,6 @@ type Server struct {
 	sendPacketSize uint64
 	recvPacketSize uint64
 
-	sendCatchPacket uint64
-	recvCatchPacket uint64
-
 	echoId  int
 	echoSeq int
 }
@@ -43,8 +40,6 @@ type ServerConn struct {
 	activeTime    time.Time
 	close         bool
 	rproto        int
-	catch         int
-	catchQueue    chan *CatchMsg
 }
 
 func (p *Server) Run() {
@@ -89,7 +84,7 @@ func (p *Server) processPacket(packet *Packet) {
 		t.UnmarshalBinary(packet.my.Data)
 		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
-			(int)(packet.my.Rproto), -1, 0, p.key,
+			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0)
 		return
 	}
@@ -117,10 +112,8 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
-			catchQueue := make(chan *CatchMsg, packet.my.Catch)
-
 			localConn = &ServerConn{tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-				rproto: (int)(packet.my.Rproto), catchQueue: catchQueue}
+				rproto: (int)(packet.my.Rproto)}
 
 			p.localConnMap[id] = localConn
 
@@ -141,10 +134,8 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
-			catchQueue := make(chan *CatchMsg, packet.my.Catch)
-
 			localConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-				rproto: (int)(packet.my.Rproto), catchQueue: catchQueue}
+				rproto: (int)(packet.my.Rproto)}
 
 			p.localConnMap[id] = localConn
 
@@ -153,20 +144,6 @@ func (p *Server) processPacket(packet *Packet) {
 	}
 
 	localConn.activeTime = now
-	localConn.catch = (int)(packet.my.Catch)
-
-	if packet.my.Type == (int32)(MyMsg_CATCH) {
-		select {
-		case re := <-localConn.catchQueue:
-			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(MyMsg_CATCH), re.data,
-				re.conn.rproto, -1, 0, p.key,
-				0, 0, 0, 0)
-			p.sendCatchPacket++
-		case <-time.After(time.Duration(1) * time.Millisecond):
-		}
-		p.recvCatchPacket++
-		return
-	}
 
 	if packet.my.Type == (int32)(MyMsg_DATA) {
 
@@ -207,16 +184,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		if conn.catch > 0 {
-			select {
-			case conn.catchQueue <- &CatchMsg{conn: conn, id: id, src: src, data: bytes[:n]}:
-			case <-time.After(time.Duration(10) * time.Millisecond):
-			}
-		} else {
-			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
-				conn.rproto, -1, 0, p.key,
-				0, 0, 0, 0)
-		}
+		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
+			conn.rproto, -1, p.key,
+			0, 0, 0, 0)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
@@ -248,16 +218,9 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := time.Now()
 		conn.activeTime = now
 
-		if conn.catch > 0 {
-			select {
-			case conn.catchQueue <- &CatchMsg{conn: conn, id: id, src: src, data: bytes[:n]}:
-			case <-time.After(time.Duration(10) * time.Millisecond):
-			}
-		} else {
-			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
-				conn.rproto, -1, 0, p.key,
-				0, 0, 0, 0)
-		}
+		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
+			conn.rproto, -1, p.key,
+			0, 0, 0, 0)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
@@ -290,12 +253,10 @@ func (p *Server) checkTimeoutConn() {
 }
 
 func (p *Server) showNet() {
-	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendCatchPacket, p.recvCatchPacket)
+	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
-	p.sendCatchPacket = 0
-	p.recvCatchPacket = 0
 }

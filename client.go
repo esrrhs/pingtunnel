@@ -15,8 +15,8 @@ const (
 	RECV_PROTO int = 0
 )
 
-func NewClient(addr string, server string, target string, timeout int, catch int, key int,
-	tcpmode int) (*Client, error) {
+func NewClient(addr string, server string, target string, timeout int, key int,
+	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -41,17 +41,19 @@ func NewClient(addr string, server string, target string, timeout int, catch int
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Client{
-		id:           r.Intn(math.MaxInt16),
-		ipaddr:       ipaddr,
-		tcpaddr:      tcpaddr,
-		addr:         addr,
-		ipaddrServer: ipaddrServer,
-		addrServer:   server,
-		targetAddr:   target,
-		timeout:      timeout,
-		catch:        catch,
-		key:          key,
-		tcpmode:      tcpmode,
+		id:                    r.Intn(math.MaxInt16),
+		ipaddr:                ipaddr,
+		tcpaddr:               tcpaddr,
+		addr:                  addr,
+		ipaddrServer:          ipaddrServer,
+		addrServer:            server,
+		targetAddr:            target,
+		timeout:               timeout,
+		key:                   key,
+		tcpmode:               tcpmode,
+		tcpmode_buffersize:    tcpmode_buffersize,
+		tcpmode_maxwin:        tcpmode_maxwin,
+		tcpmode_resend_timems: tcpmode_resend_timems,
 	}, nil
 }
 
@@ -62,7 +64,6 @@ type Client struct {
 	timeout               int
 	sproto                int
 	rproto                int
-	catch                 int
 	key                   int
 	tcpmode               int
 	tcpmode_buffersize    int
@@ -89,9 +90,6 @@ type Client struct {
 	recvPacket     uint64
 	sendPacketSize uint64
 	recvPacketSize uint64
-
-	sendCatchPacket uint64
-	recvCatchPacket uint64
 }
 
 type ClientConn struct {
@@ -167,24 +165,12 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	inter := 1000
-	if p.catch > 0 {
-		inter = 1000 / p.catch
-		if inter <= 0 {
-			inter = 1
-		}
-	}
-	intervalCatch := time.NewTicker(time.Millisecond * time.Duration(inter))
-	defer intervalCatch.Stop()
-
 	for {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
 			p.ping()
 			p.showNet()
-		case <-intervalCatch.C:
-			p.sendCatch()
 		case r := <-recv:
 			p.processPacket(r)
 		}
@@ -274,7 +260,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			p.sendPacketSize += (uint64)(len(mb))
 
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
-				SEND_PROTO, RECV_PROTO, p.catch, p.key,
+				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 		}
 	}
@@ -317,7 +303,7 @@ func (p *Client) Accept() error {
 
 		clientConn.activeTime = now
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
-			SEND_PROTO, RECV_PROTO, p.catch, p.key,
+			SEND_PROTO, RECV_PROTO, p.key,
 			p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 
 		p.sequence++
@@ -361,10 +347,6 @@ func (p *Client) processPacket(packet *Packet) {
 
 	now := time.Now()
 	clientConn.activeTime = now
-
-	if packet.my.Type == (int32)(MyMsg_CATCH) {
-		p.recvCatchPacket++
-	}
 
 	_, err := p.listenConn.WriteToUDP(packet.my.Data, addr)
 	if err != nil {
@@ -411,7 +393,7 @@ func (p *Client) ping() {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(MyMsg_PING), b,
-			SEND_PROTO, RECV_PROTO, p.catch, p.key,
+			SEND_PROTO, RECV_PROTO, p.key,
 			p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 		loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
@@ -419,24 +401,10 @@ func (p *Client) ping() {
 }
 
 func (p *Client) showNet() {
-	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s sendCatch %d/s recvCatch %d/s",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.sendCatchPacket, p.recvCatchPacket)
+	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
-	p.sendCatchPacket = 0
-	p.recvCatchPacket = 0
-}
-
-func (p *Client) sendCatch() {
-	if p.catch > 0 {
-		for _, conn := range p.localIdToConnMap {
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(MyMsg_CATCH), make([]byte, 0),
-				SEND_PROTO, RECV_PROTO, p.catch, p.key,
-				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
-			p.sequence++
-			p.sendCatchPacket++
-		}
-	}
 }

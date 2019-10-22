@@ -3,7 +3,6 @@ package pingtunnel
 import (
 	"container/list"
 	"github.com/esrrhs/go-engine/src/rbuffergo"
-	"math/rand"
 	"sync"
 	"time"
 )
@@ -27,7 +26,7 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
 
 	fm := &FrameMgr{sendb: sendb, recvb: recvb,
 		sendlock: &sync.Mutex{}, recvlock: &sync.Mutex{},
-		windowsize: windowsize, win: list.New(), sendid: rand.Int() % (FRAME_MAX_ID + 1),
+		windowsize: windowsize, win: list.New(), sendid: 0,
 		resend_timems: resend_timems, sendlist: list.New()}
 
 	return fm

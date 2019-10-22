@@ -17,7 +17,7 @@ import (
 )
 
 func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
-	connId string, msgType uint32, data []byte, sproto int, rproto int, catch int, key int,
+	connId string, msgType uint32, data []byte, sproto int, rproto int, key int,
 	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int) {
 
 	m := &MyMsg{
@@ -26,7 +26,6 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		Target:              target,
 		Data:                data,
 		Rproto:              (int32)(rproto),
-		Catch:               (int32)(catch),
 		Key:                 (int32)(key),
 		Tcpmode:             (int32)(tcpmode),
 		TcpmodeBuffersize:   (int32)(tcpmode_buffer_size),
@@ -135,20 +134,7 @@ func GetMd5String(s string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-type CatchMsg struct {
-	conn *ServerConn
-	id   string
-	src  *net.IPAddr
-	data []byte
-}
-
 const (
 	FRAME_MAX_SIZE int = 888
 	FRAME_MAX_ID   int = 999
-)
-
-const (
-	FRAME_TYPE_DATA int = 0x0101
-	FRAME_TYPE_REQ  int = 0x0202
-	FRAME_TYPE_ACK  int = 0x0303
 )
