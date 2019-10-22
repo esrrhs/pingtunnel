@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/esrrhs/go-engine/src/loggo"
+	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 	"io"
@@ -15,147 +16,29 @@ import (
 	"time"
 )
 
-const (
-	DATA  uint32 = 0x01010101
-	PING  uint32 = 0x02020202
-	CATCH uint32 = 0x03030303
-)
-
-type MyMsg struct {
-	TYPE    uint32
-	ID      string
-	TARGET  string
-	Data    []byte
-	RPROTO  uint16
-	CATCH   uint16
-	KEY     uint32
-	TCPMODE uint16
-	ENDTYPE uint32
-}
-
-// Len implements the Len method of MessageBody interface.
-func (p *MyMsg) Len(proto int) int {
-	if p == nil {
-		return 0
-	}
-	return 4 + p.LenString(p.ID) + p.LenString(p.TARGET) + p.LenData(p.Data) + 2 + 2 + 4 + 2 + 4
-}
-
-func (p *MyMsg) LenString(s string) int {
-	return 2 + len(s)
-}
-
-func (p *MyMsg) LenData(data []byte) int {
-	return 2 + len(data)
-}
-
-// Marshal implements the Marshal method of MessageBody interface.
-func (p *MyMsg) Marshal(proto int) ([]byte, error) {
-
-	b := make([]byte, p.Len(proto))
-
-	binary.BigEndian.PutUint32(b[:4], uint32(p.TYPE))
-
-	id := p.MarshalString(p.ID)
-	copy(b[4:], id)
-
-	target := p.MarshalString(p.TARGET)
-	copy(b[4+p.LenString(p.ID):], target)
-
-	data := p.MarshalData(p.Data)
-	copy(b[4+p.LenString(p.ID)+p.LenString(p.TARGET):], data)
-
-	binary.BigEndian.PutUint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data):], uint16(p.RPROTO))
-
-	binary.BigEndian.PutUint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+2:], uint16(p.CATCH))
-
-	binary.BigEndian.PutUint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+4:], uint32(p.KEY))
-
-	binary.BigEndian.PutUint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+8:], uint16(p.TCPMODE))
-
-	binary.BigEndian.PutUint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+10:], uint32(p.ENDTYPE))
-
-	return b, nil
-}
-
-func (p *MyMsg) MarshalString(s string) []byte {
-	b := make([]byte, p.LenString(s))
-	binary.BigEndian.PutUint16(b[:2], uint16(len(s)))
-	copy(b[2:], []byte(s))
-	return b
-}
-
-func (p *MyMsg) MarshalData(data []byte) []byte {
-	b := make([]byte, p.LenData(data))
-	binary.BigEndian.PutUint16(b[:2], uint16(len(data)))
-	copy(b[2:], []byte(data))
-	return b
-}
-
-// Marshal implements the Marshal method of MessageBody interface.
-func (p *MyMsg) Unmarshal(b []byte) error {
-	defer func() {
-		recover()
-	}()
-
-	p.TYPE = binary.BigEndian.Uint32(b[:4])
-
-	p.ID = p.UnmarshalString(b[4:])
-
-	p.TARGET = p.UnmarshalString(b[4+p.LenString(p.ID):])
-
-	p.Data = p.UnmarshalData(b[4+p.LenString(p.ID)+p.LenString(p.TARGET):])
-
-	p.RPROTO = binary.BigEndian.Uint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data):])
-
-	p.CATCH = binary.BigEndian.Uint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+2:])
-
-	p.KEY = binary.BigEndian.Uint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+4:])
-
-	p.TCPMODE = binary.BigEndian.Uint16(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+8:])
-
-	p.ENDTYPE = binary.BigEndian.Uint32(b[4+p.LenString(p.ID)+p.LenString(p.TARGET)+p.LenData(p.Data)+10:])
-
-	return nil
-}
-
-func (p *MyMsg) UnmarshalString(b []byte) string {
-	len := binary.BigEndian.Uint16(b[:2])
-	if len > 32 || len < 0 {
-		panic(nil)
-	}
-	data := make([]byte, len)
-	copy(data, b[2:])
-	return string(data)
-}
-
-func (p *MyMsg) UnmarshalData(b []byte) []byte {
-	len := binary.BigEndian.Uint16(b[:2])
-	if len > 2048 || len < 0 {
-		panic(nil)
-	}
-	data := make([]byte, len)
-	copy(data, b[2:])
-	return data
-}
-
 func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
 	connId string, msgType uint32, data []byte, sproto int, rproto int, catch int, key int,
-	tcpmode int) {
+	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int) {
 
 	m := &MyMsg{
-		ID:      connId,
-		TYPE:    msgType,
-		TARGET:  target,
-		Data:    data,
-		RPROTO:  (uint16)(rproto),
-		CATCH:   (uint16)(catch),
-		KEY:     (uint32)(key),
-		TCPMODE: (uint16)(tcpmode),
-		ENDTYPE: END,
+		Id:                  connId,
+		Type:                (int32)(msgType),
+		Target:              target,
+		Data:                data,
+		Rproto:              (int32)(rproto),
+		Catch:               (int32)(catch),
+		Key:                 (int32)(key),
+		Tcpmode:             (int32)(tcpmode),
+		TcpmodeBuffersize:   (int32)(tcpmode_buffer_size),
+		TcpmodeMaxwin:       (int32)(tcpmode_maxwin),
+		TcpmodeResendTimems: (int32)(tcpmode_resend_time),
 	}
 
-	mb, err := m.Marshal(0)
+	mb, err := proto.Marshal(m)
+	if err != nil {
+		loggo.Error("sendICMP Marshal MyMsg error %s %s", server.String(), err)
+		return
+	}
 
 	body := &icmp.Echo{
 		ID:   id,
@@ -213,38 +96,28 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
 
 		my := &MyMsg{}
-		my.Unmarshal(bytes[8:n])
-
-		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING) && my.TYPE != (uint32)(CATCH)) ||
-			my.ENDTYPE != (uint32)(END) {
-			loggo.Info("processPacket diff type %s %d %d ", my.ID, my.TYPE, my.ENDTYPE)
+		err = proto.Unmarshal(bytes[8:n], my)
+		if err != nil {
+			loggo.Debug("Unmarshal MyMsg error: %s", err)
 			continue
 		}
 
 		if my.Data == nil {
-			loggo.Info("processPacket data nil %s", my.ID)
+			loggo.Info("processPacket data nil %s", my.Id)
 			return
 		}
 
-		recv <- &Packet{msgType: my.TYPE, data: my.Data, id: my.ID, target: my.TARGET,
-			src: srcaddr.(*net.IPAddr), rproto: (int)((int16)(my.RPROTO)),
-			echoId: echoId, echoSeq: echoSeq, catch: (int)((int16)(my.CATCH)),
-			key: (int)(my.KEY), tcpmode: (int)((int16)(my.TCPMODE))}
+		recv <- &Packet{my: my,
+			src:    srcaddr.(*net.IPAddr),
+			echoId: echoId, echoSeq: echoSeq}
 	}
 }
 
 type Packet struct {
-	msgType uint32
-	data    []byte
-	id      string
-	target  string
+	my      *MyMsg
 	src     *net.IPAddr
-	rproto  int
 	echoId  int
 	echoSeq int
-	catch   int
-	key     int
-	tcpmode int
 }
 
 func UniqueId() string {
@@ -279,36 +152,3 @@ const (
 	FRAME_TYPE_REQ  int = 0x0202
 	FRAME_TYPE_ACK  int = 0x0303
 )
-
-type Frame struct {
-	ty       int
-	resend   bool
-	sendtime int64
-	id       int
-	size     int
-	data     []byte
-	dataid   []int
-}
-
-// Marshal implements the Marshal method of MessageBody interface.
-func (p *Frame) Marshal(proto int) ([]byte, error) {
-
-	b := make([]byte, p.Len(proto))
-
-	binary.BigEndian.PutUint16(b[:2], uint16(p.ty))
-
-	datalen := len(p.data)
-	binary.BigEndian.PutUint16(b[2:4], uint16(datalen))
-
-	// TODO
-
-	return b, nil
-}
-
-// Len implements the Len method of MessageBody interface.
-func (p *Frame) Len(proto int) int {
-	if p == nil {
-		return 0
-	}
-	return 4 + 2 + 4 + 4 // TODO
-}

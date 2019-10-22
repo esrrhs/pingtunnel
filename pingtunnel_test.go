@@ -2,27 +2,24 @@ package pingtunnel
 
 import (
 	"fmt"
-	"github.com/esrrhs/pingtunnel"
+	"github.com/golang/protobuf/proto"
 	"testing"
 )
 
 func Test0001(test *testing.T) {
 
-	my := &pingtunnel.MyMsg{
-	}
-	my.ID = "12345"
-	my.TARGET = "111:11"
-	my.TYPE = 12
+	my := &MyMsg{}
+	my.Id = "12345"
+	my.Target = "111:11"
+	my.Type = 12
 	my.Data = make([]byte, 3)
-	dst,_ := my.Marshal(0)
+	dst, _ := proto.Marshal(my)
 	fmt.Println("dst = ", dst)
 
-
-	my1 := &pingtunnel.MyMsg{
-	}
-	my1.Unmarshal(dst)
+	my1 := &MyMsg{}
+	proto.Unmarshal(dst, my1)
 	fmt.Println("my1 = ", my1)
 
-	my1.Unmarshal(dst[0:4])
+	proto.Unmarshal(dst[0:4], my1)
 	fmt.Println("my1 = ", my1)
 }

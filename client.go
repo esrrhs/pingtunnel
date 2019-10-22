@@ -2,6 +2,7 @@ package pingtunnel
 
 import (
 	"github.com/esrrhs/go-engine/src/loggo"
+	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"math"
 	"math/rand"
@@ -9,7 +10,12 @@ import (
 	"time"
 )
 
-func NewClient(addr string, server string, target string, timeout int, sproto int, rproto int, catch int, key int,
+const (
+	SEND_PROTO int = 8
+	RECV_PROTO int = 0
+)
+
+func NewClient(addr string, server string, target string, timeout int, catch int, key int,
 	tcpmode int) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
@@ -43,8 +49,6 @@ func NewClient(addr string, server string, target string, timeout int, sproto in
 		addrServer:   server,
 		targetAddr:   target,
 		timeout:      timeout,
-		sproto:       sproto,
-		rproto:       rproto,
 		catch:        catch,
 		key:          key,
 		tcpmode:      tcpmode,
@@ -258,7 +262,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 
 			f := e.Value.(Frame)
-			mb, err := f.Marshal(0)
+			mb, err := proto.Marshal(&f)
 			if err != nil {
 				loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
 				break
@@ -267,10 +271,11 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			p.sequence++
 
 			p.sendPacket++
-			p.sendPacketSize += (uint64)(f.size)
+			p.sendPacketSize += (uint64)(len(mb))
 
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), mb,
-				p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+				SEND_PROTO, RECV_PROTO, p.catch, p.key,
+				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 		}
 	}
 
@@ -311,8 +316,9 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeTime = now
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(DATA), bytes[:n],
-			p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
+			SEND_PROTO, RECV_PROTO, p.catch, p.key,
+			p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 
 		p.sequence++
 
@@ -323,11 +329,11 @@ func (p *Client) Accept() error {
 
 func (p *Client) processPacket(packet *Packet) {
 
-	if packet.rproto >= 0 {
+	if packet.my.Rproto >= 0 {
 		return
 	}
 
-	if packet.key != p.key {
+	if packet.my.Key != (int32)(p.key) {
 		return
 	}
 
@@ -335,19 +341,19 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
-	if packet.msgType == PING {
+	if packet.my.Type == (int32)(MyMsg_PING) {
 		t := time.Time{}
-		t.UnmarshalBinary(packet.data)
+		t.UnmarshalBinary(packet.my.Data)
 		d := time.Now().Sub(t)
 		loggo.Info("pong from %s %s", packet.src.String(), d.String())
 		return
 	}
 
-	//loggo.Debug("processPacket %s %s %d", packet.id, packet.src.String(), len(packet.data))
+	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
 
-	clientConn := p.localIdToConnMap[packet.id]
+	clientConn := p.localIdToConnMap[packet.my.Id]
 	if clientConn == nil {
-		//loggo.Debug("processPacket no conn %s ", packet.id)
+		loggo.Debug("processPacket no conn %s ", packet.my.Id)
 		return
 	}
 
@@ -356,11 +362,11 @@ func (p *Client) processPacket(packet *Packet) {
 	now := time.Now()
 	clientConn.activeTime = now
 
-	if packet.msgType == CATCH {
+	if packet.my.Type == (int32)(MyMsg_CATCH) {
 		p.recvCatchPacket++
 	}
 
-	_, err := p.listenConn.WriteToUDP(packet.data, addr)
+	_, err := p.listenConn.WriteToUDP(packet.my.Data, addr)
 	if err != nil {
 		loggo.Error("WriteToUDP Error read udp %s", err)
 		clientConn.close = true
@@ -368,7 +374,7 @@ func (p *Client) processPacket(packet *Packet) {
 	}
 
 	p.recvPacket++
-	p.recvPacketSize += (uint64)(len(packet.data))
+	p.recvPacketSize += (uint64)(len(packet.my.Data))
 }
 
 func (p *Client) Close(clientConn *ClientConn) {
@@ -404,8 +410,9 @@ func (p *Client) ping() {
 	if p.sendPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(PING), b,
-			p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(MyMsg_PING), b,
+			SEND_PROTO, RECV_PROTO, p.catch, p.key,
+			p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 		loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 		p.sequence++
 	}
@@ -425,8 +432,9 @@ func (p *Client) showNet() {
 func (p *Client) sendCatch() {
 	if p.catch > 0 {
 		for _, conn := range p.localIdToConnMap {
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(CATCH), make([]byte, 0),
-				p.sproto, p.rproto, p.catch, p.key, p.tcpmode)
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, conn.id, (uint32)(MyMsg_CATCH), make([]byte, 0),
+				SEND_PROTO, RECV_PROTO, p.catch, p.key,
+				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 			p.sequence++
 			p.sendCatchPacket++
 		}
