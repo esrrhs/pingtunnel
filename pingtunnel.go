@@ -19,7 +19,6 @@ const (
 	DATA  uint32 = 0x01010101
 	PING  uint32 = 0x02020202
 	CATCH uint32 = 0x03030303
-	END   uint32 = 0xAAAABBBB
 )
 
 type MyMsg struct {

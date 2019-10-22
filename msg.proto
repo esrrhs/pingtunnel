@@ -1,6 +1,12 @@
 syntax = "proto3";
 option go_package = "pingtunnel";
 message MyMsg {
+  enum TYPE {
+    DATA = 0;
+    PING = 1;
+    CATCH = 2;
+  }
+
   string id = 1;
   int32 type = 2;
   string target = 3;
