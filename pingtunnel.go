@@ -19,7 +19,6 @@ const (
 	DATA  uint32 = 0x01010101
 	PING  uint32 = 0x02020202
 	CATCH uint32 = 0x03030303
-	FRAME uint32 = 0x04040404
 	END   uint32 = 0xAAAABBBB
 )
 
@@ -217,7 +216,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		my := &MyMsg{}
 		my.Unmarshal(bytes[8:n])
 
-		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING) && my.TYPE != (uint32)(CATCH) && my.TYPE != (uint32)(FRAME)) ||
+		if (my.TYPE != (uint32)(DATA) && my.TYPE != (uint32)(PING) && my.TYPE != (uint32)(CATCH)) ||
 			my.ENDTYPE != (uint32)(END) {
 			loggo.Info("processPacket diff type %s %d %d ", my.ID, my.TYPE, my.ENDTYPE)
 			continue

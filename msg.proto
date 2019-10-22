@@ -1,0 +1,24 @@
+syntax = "proto3";
+option go_package = "pingtunnel";
+message MyMsg {
+  string id = 1;
+  int32 type = 2;
+  string target = 3;
+  bytes data = 4;
+  int32 rproto = 5;
+  int32 catch = 6;
+  int32 key = 7;
+  int32 tcpmode = 8;
+  int32 tcpmode_buffersize = 9;
+  int32 tcpmode_maxwin = 10;
+  int32 tcpmode_resend_timems = 11;
+}
+
+message Frame {
+  int32 type = 1;
+  bool resend = 2;
+  int64 sendtime = 3;
+  int32 id = 4;
+  bytes data = 5;
+  repeated int32 dataid = 6;
+}

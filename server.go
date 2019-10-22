@@ -180,6 +180,46 @@ func (p *Server) processPacket(packet *Packet) {
 	}
 }
 
+func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
+
+	loggo.Info("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
+
+	for {
+		bytes := make([]byte, 2000)
+
+		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+		n, _, err := conn.conn.ReadFromUDP(bytes)
+		if err != nil {
+			if neterr, ok := err.(*net.OpError); ok {
+				if neterr.Timeout() {
+					// Read timeout
+					continue
+				} else {
+					loggo.Error("ReadFromUDP Error read udp %s", err)
+					conn.close = true
+					return
+				}
+			}
+		}
+
+		now := time.Now()
+		conn.activeTime = now
+
+		if conn.catch > 0 {
+			select {
+			case conn.catchQueue <- &CatchMsg{conn: conn, id: id, src: src, data: bytes[:n]}:
+			case <-time.After(time.Duration(10) * time.Millisecond):
+			}
+		} else {
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n],
+				conn.rproto, -1, 0, p.key, 0)
+		}
+
+		p.sendPacket++
+		p.sendPacketSize += (uint64)(n)
+	}
+}
+
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
@@ -212,7 +252,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			}
 		} else {
 			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n],
-				conn.rproto, -1, 0, p.key, packet.tcpmode)
+				conn.rproto, -1, 0, p.key, 0)
 		}
 
 		p.sendPacket++
