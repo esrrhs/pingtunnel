@@ -4,7 +4,6 @@ message MyMsg {
   enum TYPE {
     DATA = 0;
     PING = 1;
-    CATCH = 2;
   }
 
   string id = 1;
@@ -12,7 +11,6 @@ message MyMsg {
   string target = 3;
   bytes data = 4;
   int32 rproto = 5;
-  int32 catch = 6;
   int32 key = 7;
   int32 tcpmode = 8;
   int32 tcpmode_buffersize = 9;
@@ -21,6 +19,12 @@ message MyMsg {
 }
 
 message Frame {
+  enum TYPE {
+    DATA = 0;
+    REQ = 1;
+    ACK = 2;
+  }
+  
   int32 type = 1;
   bool resend = 2;
   int64 sendtime = 3;
