@@ -60,10 +60,10 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 	}
 
 	for fm.sendb.Size() > FRAME_MAX_SIZE && fm.win.Len() < fm.windowsize {
-		f := Frame{resend: false, sendtime: 0,
-			id: fm.sendid, size: FRAME_MAX_SIZE,
-			data: make([]byte, FRAME_MAX_SIZE)}
-		fm.sendb.Read(f.data)
+		f := Frame{Resend: false, Sendtime: 0,
+			Id:   (int32)(fm.sendid),
+			Data: make([]byte, FRAME_MAX_SIZE)}
+		fm.sendb.Read(f.Data)
 
 		fm.sendid++
 		if fm.sendid > FRAME_MAX_ID {
@@ -74,10 +74,10 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 	}
 
 	if sendall && fm.sendb.Size() > 0 && fm.win.Len() < fm.windowsize {
-		f := Frame{resend: false, sendtime: 0,
-			id: fm.sendid, size: fm.sendb.Size(),
-			data: make([]byte, fm.sendb.Size())}
-		fm.sendb.Read(f.data)
+		f := Frame{Resend: false, Sendtime: 0,
+			Id:   (int32)(fm.sendid),
+			Data: make([]byte, fm.sendb.Size())}
+		fm.sendb.Read(f.Data)
 
 		fm.sendid++
 		if fm.sendid > FRAME_MAX_ID {
@@ -95,8 +95,8 @@ func (fm *FrameMgr) calSendList() {
 
 	for e := fm.win.Front(); e != nil; e = e.Next() {
 		f := e.Value.(Frame)
-		if f.resend || cur-f.sendtime > int64(fm.resend_timems*1000) {
-			f.sendtime = cur
+		if f.Resend || cur-f.Sendtime > int64(fm.resend_timems*1000) {
+			f.Sendtime = cur
 			fm.sendlist.PushBack(&f)
 		}
 	}

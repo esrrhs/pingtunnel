@@ -77,33 +77,34 @@ func (p *Server) Run() {
 
 func (p *Server) processPacket(packet *Packet) {
 
-	if packet.key != p.key {
+	if packet.my.Key != (int32)(p.key) {
 		return
 	}
 
 	p.echoId = packet.echoId
 	p.echoSeq = packet.echoSeq
 
-	if packet.msgType == PING {
+	if packet.my.Type == (int32)(MyMsg_PING) {
 		t := time.Time{}
-		t.UnmarshalBinary(packet.data)
-		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.rproto, packet.echoId, packet.echoSeq)
-		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(PING), packet.data,
-			packet.rproto, -1, 0, p.key, packet.tcpmode)
+		t.UnmarshalBinary(packet.my.Data)
+		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
+		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
+			(int)(packet.my.Rproto), -1, 0, p.key,
+			0, 0, 0, 0)
 		return
 	}
 
-	loggo.Debug("processPacket %s %s %d", packet.id, packet.src.String(), len(packet.data))
+	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
 
 	now := time.Now()
 
-	id := packet.id
+	id := packet.my.Id
 	localConn := p.localConnMap[id]
 	if localConn == nil {
 
-		if packet.tcpmode > 0 {
+		if packet.my.Tcpmode > 0 {
 
-			addr := packet.target
+			addr := packet.my.Target
 			ipaddrTarget, err := net.ResolveTCPAddr("tcp", addr)
 			if err != nil {
 				loggo.Error("Error ResolveUDPAddr for tcp addr: %s %s", addr, err.Error())
@@ -116,10 +117,10 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
-			catchQueue := make(chan *CatchMsg, packet.catch)
+			catchQueue := make(chan *CatchMsg, packet.my.Catch)
 
 			localConn = &ServerConn{tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-				rproto: packet.rproto, catchQueue: catchQueue}
+				rproto: (int)(packet.my.Rproto), catchQueue: catchQueue}
 
 			p.localConnMap[id] = localConn
 
@@ -127,7 +128,7 @@ func (p *Server) processPacket(packet *Packet) {
 
 		} else {
 
-			addr := packet.target
+			addr := packet.my.Target
 			ipaddrTarget, err := net.ResolveUDPAddr("udp", addr)
 			if err != nil {
 				loggo.Error("Error ResolveUDPAddr for udp addr: %s %s", addr, err.Error())
@@ -140,10 +141,10 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
-			catchQueue := make(chan *CatchMsg, packet.catch)
+			catchQueue := make(chan *CatchMsg, packet.my.Catch)
 
 			localConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-				rproto: packet.rproto, catchQueue: catchQueue}
+				rproto: (int)(packet.my.Rproto), catchQueue: catchQueue}
 
 			p.localConnMap[id] = localConn
 
@@ -152,13 +153,14 @@ func (p *Server) processPacket(packet *Packet) {
 	}
 
 	localConn.activeTime = now
-	localConn.catch = packet.catch
+	localConn.catch = (int)(packet.my.Catch)
 
-	if packet.msgType == CATCH {
+	if packet.my.Type == (int32)(MyMsg_CATCH) {
 		select {
 		case re := <-localConn.catchQueue:
-			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(CATCH), re.data,
-				re.conn.rproto, -1, 0, p.key, packet.tcpmode)
+			sendICMP(packet.echoId, packet.echoSeq, *p.conn, re.src, "", re.id, (uint32)(MyMsg_CATCH), re.data,
+				re.conn.rproto, -1, 0, p.key,
+				0, 0, 0, 0)
 			p.sendCatchPacket++
 		case <-time.After(time.Duration(1) * time.Millisecond):
 		}
@@ -166,9 +168,9 @@ func (p *Server) processPacket(packet *Packet) {
 		return
 	}
 
-	if packet.msgType == DATA {
+	if packet.my.Type == (int32)(MyMsg_DATA) {
 
-		_, err := localConn.conn.Write(packet.data)
+		_, err := localConn.conn.Write(packet.my.Data)
 		if err != nil {
 			loggo.Error("WriteToUDP Error %s", err)
 			localConn.close = true
@@ -176,7 +178,7 @@ func (p *Server) processPacket(packet *Packet) {
 		}
 
 		p.recvPacket++
-		p.recvPacketSize += (uint64)(len(packet.data))
+		p.recvPacketSize += (uint64)(len(packet.my.Data))
 	}
 }
 
@@ -211,8 +213,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			case <-time.After(time.Duration(10) * time.Millisecond):
 			}
 		} else {
-			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n],
-				conn.rproto, -1, 0, p.key, 0)
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
+				conn.rproto, -1, 0, p.key,
+				0, 0, 0, 0)
 		}
 
 		p.sendPacket++
@@ -251,8 +254,9 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			case <-time.After(time.Duration(10) * time.Millisecond):
 			}
 		} else {
-			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(DATA), bytes[:n],
-				conn.rproto, -1, 0, p.key, 0)
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
+				conn.rproto, -1, 0, p.key,
+				0, 0, 0, 0)
 		}
 
 		p.sendPacket++
