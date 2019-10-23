@@ -2,6 +2,7 @@ package pingtunnel
 
 import (
 	"github.com/esrrhs/go-engine/src/loggo"
+	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"net"
 	"time"
@@ -40,6 +41,8 @@ type ServerConn struct {
 	activeTime    time.Time
 	close         bool
 	rproto        int
+	fm            *FrameMgr
+	tcpmode       int
 }
 
 func (p *Server) Run() {
@@ -112,8 +115,10 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
+			fm := NewFrameMgr((int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems))
+
 			localConn = &ServerConn{tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-				rproto: (int)(packet.my.Rproto)}
+				rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
 
 			p.localConnMap[id] = localConn
 
@@ -135,7 +140,7 @@ func (p *Server) processPacket(packet *Packet) {
 			}
 
 			localConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
-				rproto: (int)(packet.my.Rproto)}
+				rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode)}
 
 			p.localConnMap[id] = localConn
 
@@ -147,11 +152,23 @@ func (p *Server) processPacket(packet *Packet) {
 
 	if packet.my.Type == (int32)(MyMsg_DATA) {
 
-		_, err := localConn.conn.Write(packet.my.Data)
-		if err != nil {
-			loggo.Error("WriteToUDP Error %s", err)
-			localConn.close = true
-			return
+		if packet.my.Tcpmode > 0 {
+			f := &Frame{}
+			err := proto.Unmarshal(packet.my.Data, f)
+			if err != nil {
+				loggo.Error("Unmarshal tcp Error %s", err)
+				return
+			}
+
+			localConn.fm.OnRecvFrame(f)
+
+		} else {
+			_, err := localConn.conn.Write(packet.my.Data)
+			if err != nil {
+				loggo.Error("WriteToUDP Error %s", err)
+				localConn.close = true
+				return
+			}
 		}
 
 		p.recvPacket++
@@ -163,33 +180,52 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
 
-	for {
-		bytes := make([]byte, 2000)
+	bytes := make([]byte, 10240)
 
-		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		n, _, err := conn.conn.ReadFromUDP(bytes)
-		if err != nil {
-			if neterr, ok := err.(*net.OpError); ok {
-				if neterr.Timeout() {
-					// Read timeout
-					continue
-				} else {
-					loggo.Error("ReadFromUDP Error read udp %s", err)
-					conn.close = true
-					return
+	for {
+		left := conn.fm.GetSendBufferLeft()
+		if left >= len(bytes) {
+			conn.tcpconn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+			n, err := conn.tcpconn.Read(bytes)
+			if err != nil {
+				if neterr, ok := err.(*net.OpError); ok {
+					if neterr.Timeout() {
+						// Read timeout
+						n = 0
+					} else {
+						loggo.Error("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+						break
+					}
 				}
 			}
+			if n > 0 {
+				conn.fm.WriteSendBuffer(bytes[:n])
+			}
 		}
+
+		conn.fm.Update()
+
+		sendlist := conn.fm.getSendList()
 
 		now := time.Now()
 		conn.activeTime = now
 
-		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
-			conn.rproto, -1, p.key,
-			0, 0, 0, 0)
+		for e := sendlist.Front(); e != nil; e = e.Next() {
 
-		p.sendPacket++
-		p.sendPacketSize += (uint64)(n)
+			f := e.Value.(Frame)
+			mb, err := proto.Marshal(&f)
+			if err != nil {
+				loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+				continue
+			}
+
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+				conn.rproto, -1, p.key,
+				0, 0, 0, 0)
+
+			p.sendPacket++
+			p.sendPacketSize += (uint64)(len(mb))
+		}
 	}
 }
 
@@ -238,6 +274,9 @@ func (p *Server) checkTimeoutConn() {
 
 	now := time.Now()
 	for _, conn := range p.localConnMap {
+		if conn.tcpmode > 0 {
+			continue
+		}
 		diff := now.Sub(conn.activeTime)
 		if diff > time.Second*(time.Duration(p.timeout)) {
 			conn.close = true
@@ -245,6 +284,9 @@ func (p *Server) checkTimeoutConn() {
 	}
 
 	for id, conn := range p.localConnMap {
+		if conn.tcpmode > 0 {
+			continue
+		}
 		if conn.close {
 			loggo.Info("close inactive conn %s %s", id, conn.ipaddrTarget.String())
 			p.Close(conn)

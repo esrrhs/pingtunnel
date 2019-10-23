@@ -204,7 +204,6 @@ func (p *Client) AcceptTcp() error {
 
 func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
-	now := time.Now()
 	uuid := UniqueId()
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
 
@@ -243,6 +242,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 		sendlist := clientConn.fm.getSendList()
 
+		now := time.Now()
 		clientConn.activeTime = now
 
 		for e := sendlist.Front(); e != nil; e = e.Next() {
@@ -251,7 +251,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			mb, err := proto.Marshal(&f)
 			if err != nil {
 				loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
-				break
+				continue
 			}
 
 			p.sequence++
