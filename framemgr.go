@@ -189,7 +189,7 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
-		if rf.Id < f.Id {
+		if rf.Id > (int32)(fm.recvid) && rf.Id < f.Id {
 			fm.recvwin.InsertBefore(rf, e)
 			return
 		}
