@@ -55,6 +55,8 @@ func (fm *FrameMgr) Update() {
 	fm.processRecvList(tmpreq, tmpack, tmpackto)
 
 	fm.calSendList()
+
+	fm.combineWindowToRecvBuffer()
 }
 
 func (fm *FrameMgr) cutSendBufferToWindow() {
@@ -72,7 +74,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		fm.sendb.Read(f.Data)
 
 		fm.sendid++
-		if fm.sendid > FRAME_MAX_ID {
+		if fm.sendid >= FRAME_MAX_ID {
 			fm.sendid = 0
 		}
 
@@ -86,7 +88,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		fm.sendb.Read(f.Data)
 
 		fm.sendid++
-		if fm.sendid > FRAME_MAX_ID {
+		if fm.sendid >= FRAME_MAX_ID {
 			fm.sendid = 0
 		}
 
@@ -180,6 +182,16 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 
 func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 
+	begin := fm.recvid
+	end := fm.recvid + fm.windowsize
+	id := (int)(rf.Id)
+	if id < begin {
+		id += FRAME_MAX_ID
+	}
+	if id > end || id < begin {
+		return
+	}
+
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
 		if f.Id == rf.Id {
@@ -189,15 +201,66 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
-		if rf.Id > (int32)(fm.recvid) && rf.Id < f.Id {
+		if fm.compareId(rf, f) < 0 {
 			fm.recvwin.InsertBefore(rf, e)
 			return
 		}
 	}
 
-	if fm.recvwin.Len() > 0 {
-		fm.recvwin.PushBack(rf)
-	} else {
-		fm.recvwin.PushBack(rf)
+	fm.recvwin.PushBack(rf)
+}
+
+func (fm *FrameMgr) compareId(lf *Frame, rf *Frame) int {
+
+	l := (int)(lf.Id)
+	r := (int)(rf.Id)
+	if l < fm.recvid {
+		l += FRAME_MAX_ID
 	}
+	if r < fm.recvid {
+		r += FRAME_MAX_ID
+	}
+
+	return l - r
+}
+
+func (fm *FrameMgr) combineWindowToRecvBuffer() {
+
+	id := fm.recvid
+
+	for {
+		done := false
+		for e := fm.recvwin.Front(); e != nil; e = e.Next() {
+			f := e.Value.(*Frame)
+			if f.Id == (int32)(id) {
+				left := fm.recvb.Capacity() - fm.recvb.Size()
+				if left >= len(f.Data) {
+					fm.recvb.Write(f.Data)
+					fm.recvwin.Remove(e)
+					done = true
+					break
+				}
+			}
+		}
+		if !done {
+			break
+		} else {
+			fm.recvid++
+			if fm.recvid >= FRAME_MAX_ID {
+				fm.recvid = 0
+			}
+		}
+	}
+}
+
+func (fm *FrameMgr) GetRecvBufferSize() int {
+	return fm.recvb.Size()
+}
+
+func (fm *FrameMgr) GetRecvReadLineBuffer() []byte {
+	return fm.recvb.GetReadLineBuffer()
+}
+
+func (fm *FrameMgr) SkipRecvBuffer(size int) {
+	fm.recvb.SkipRead(size)
 }

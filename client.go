@@ -186,14 +186,10 @@ func (p *Client) AcceptTcp() error {
 
 		conn, err := p.tcplistenConn.AcceptTCP()
 		if err != nil {
-			if neterr, ok := err.(*net.OpError); ok {
-				if neterr.Timeout() {
-					// Read timeout
-					continue
-				} else {
-					loggo.Error("Error accept tcp %s", err)
-					continue
-				}
+			nerr, ok := err.(net.Error)
+			if !ok || !nerr.Timeout() {
+				loggo.Error("Error accept tcp %s", err)
+				continue
 			}
 		}
 
@@ -209,6 +205,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 	fm := NewFrameMgr(p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 
+	now := time.Now()
 	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeTime: now, close: false,
 		fm: fm}
 	p.localAddrToConnMap[tcpsrcaddr.String()] = clientConn
@@ -223,14 +220,10 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 			n, err := conn.Read(bytes)
 			if err != nil {
-				if neterr, ok := err.(*net.OpError); ok {
-					if neterr.Timeout() {
-						// Read timeout
-						n = 0
-					} else {
-						loggo.Error("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
-						break
-					}
+				nerr, ok := err.(net.Error)
+				if !ok || !nerr.Timeout() {
+					loggo.Error("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
+					break
 				}
 			}
 			if n > 0 {
@@ -280,15 +273,14 @@ func (p *Client) Accept() error {
 		p.listenConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, srcaddr, err := p.listenConn.ReadFromUDP(bytes)
 		if err != nil {
-			if neterr, ok := err.(*net.OpError); ok {
-				if neterr.Timeout() {
-					// Read timeout
-					continue
-				} else {
-					loggo.Error("Error read udp %s", err)
-					continue
-				}
+			nerr, ok := err.(net.Error)
+			if !ok || !nerr.Timeout() {
+				loggo.Error("Error read udp %s", err)
+				continue
 			}
+		}
+		if n <= 0 {
+			continue
 		}
 
 		now := time.Now()
