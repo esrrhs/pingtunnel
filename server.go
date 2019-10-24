@@ -188,14 +188,10 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			conn.tcpconn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 			n, err := conn.tcpconn.Read(bytes)
 			if err != nil {
-				if neterr, ok := err.(*net.OpError); ok {
-					if neterr.Timeout() {
-						// Read timeout
-						n = 0
-					} else {
-						loggo.Error("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
-						break
-					}
+				nerr, ok := err.(net.Error)
+				if !ok || !nerr.Timeout() {
+					loggo.Error("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+					break
 				}
 			}
 			if n > 0 {
@@ -226,7 +222,27 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
+
+		if conn.fm.GetRecvBufferSize() > 0 {
+			rr := conn.fm.GetRecvReadLineBuffer()
+
+			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
+			n, err := conn.tcpconn.Write(rr)
+			if err != nil {
+				nerr, ok := err.(net.Error)
+				if !ok || !nerr.Timeout() {
+					loggo.Error("Error write tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+					break
+				}
+			}
+			if n > 0 {
+				conn.fm.SkipRecvBuffer(n)
+			}
+		}
 	}
+
+	loggo.Info("close tcp conn %s %s", conn.id, conn.tcpaddrTarget.String())
+	p.Close(conn)
 }
 
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
@@ -239,15 +255,11 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, _, err := conn.conn.ReadFromUDP(bytes)
 		if err != nil {
-			if neterr, ok := err.(*net.OpError); ok {
-				if neterr.Timeout() {
-					// Read timeout
-					continue
-				} else {
-					loggo.Error("ReadFromUDP Error read udp %s", err)
-					conn.close = true
-					return
-				}
+			nerr, ok := err.(net.Error)
+			if !ok || !nerr.Timeout() {
+				loggo.Error("ReadFromUDP Error read udp %s", err)
+				conn.close = true
+				return
 			}
 		}
 
