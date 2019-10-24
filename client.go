@@ -256,6 +256,23 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 		}
+
+		if clientConn.fm.GetRecvBufferSize() > 0 {
+			rr := clientConn.fm.GetRecvReadLineBuffer()
+
+			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
+			n, err := conn.Write(rr)
+			if err != nil {
+				nerr, ok := err.(net.Error)
+				if !ok || !nerr.Timeout() {
+					loggo.Error("Error write tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
+					break
+				}
+			}
+			if n > 0 {
+				clientConn.fm.SkipRecvBuffer(n)
+			}
+		}
 	}
 
 	loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
@@ -340,11 +357,22 @@ func (p *Client) processPacket(packet *Packet) {
 	now := time.Now()
 	clientConn.activeTime = now
 
-	_, err := p.listenConn.WriteToUDP(packet.my.Data, addr)
-	if err != nil {
-		loggo.Error("WriteToUDP Error read udp %s", err)
-		clientConn.close = true
-		return
+	if p.tcpmode > 0 {
+		f := &Frame{}
+		err := proto.Unmarshal(packet.my.Data, f)
+		if err != nil {
+			loggo.Error("Unmarshal tcp Error %s", err)
+			return
+		}
+
+		clientConn.fm.OnRecvFrame(f)
+	} else {
+		_, err := p.listenConn.WriteToUDP(packet.my.Data, addr)
+		if err != nil {
+			loggo.Error("WriteToUDP Error read udp %s", err)
+			clientConn.close = true
+			return
+		}
 	}
 
 	p.recvPacket++

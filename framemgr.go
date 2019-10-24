@@ -51,12 +51,13 @@ func (fm *FrameMgr) Update() {
 	fm.cutSendBufferToWindow()
 
 	fm.sendlist.Init()
+
 	tmpreq, tmpack, tmpackto := fm.preProcessRecvList()
 	fm.processRecvList(tmpreq, tmpack, tmpackto)
 
-	fm.calSendList()
-
 	fm.combineWindowToRecvBuffer()
+
+	fm.calSendList()
 }
 
 func (fm *FrameMgr) cutSendBufferToWindow() {
@@ -251,6 +252,34 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 			}
 		}
 	}
+
+	reqtmp := make(map[int]int)
+	e := fm.recvwin.Front()
+	id = fm.recvid
+	for len(reqtmp) < fm.windowsize && e != nil {
+		f := e.Value.(*Frame)
+		if f.Id != (int32)(id) {
+			reqtmp[id]++
+		} else {
+			reqtmp[id]++
+			e = e.Next()
+		}
+
+		id++
+		if fm.recvid >= FRAME_MAX_ID {
+			fm.recvid = 0
+		}
+	}
+
+	f := &Frame{Type: (int32)(Frame_REQ), Resend: false, Sendtime: 0,
+		Id:     0,
+		Dataid: make([]int32, len(reqtmp))}
+	index := 0
+	for id, _ := range reqtmp {
+		f.Dataid[index] = (int32)(id)
+		index++
+	}
+	fm.sendlist.PushBack(f)
 }
 
 func (fm *FrameMgr) GetRecvBufferSize() int {
