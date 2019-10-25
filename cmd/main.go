@@ -31,20 +31,20 @@ Usage:
     -timeout  本地记录连接超时的时间，单位是秒，默认60s
               The time when the local record connection timed out, in seconds, 60 seconds by default
 
-    -sproto   客户端发送ping协议的协议，默认是8
-              The protocol that the client sends the ping. The default is 8.
-
-    -rproto   客户端接收ping协议的协议，默认是0
-              The protocol that the client receives the ping. The default is 0.
-
-    -catch    主动抓模式，每秒从服务器主动抓多少个reply包，默认0
-              Active capture mode, how many reply packets are actively captured from the server per second, default 0
-
     -key      设置的密码，默认0
               Set password, default 0
 
     -tcp      设置是否转发tcp，默认false
               Set the switch to forward tcp, the default is false
+
+    -tcp_bs   tcp的发送接收缓冲区大小，默认1MB
+              Tcp send and receive buffer size, default 1MB
+
+    -tcp_mw   tcp的最大窗口，默认100
+              The maximum window of tcp, the default is 100
+
+    -tcp_rst  tcp的超时发送时间，默认200ms
+              Tcp timeout resend time, default 200ms
 `
 
 func main() {
@@ -54,11 +54,11 @@ func main() {
 	target := flag.String("t", "", "target addr")
 	server := flag.String("s", "", "server addr")
 	timeout := flag.Int("timeout", 60, "conn timeout")
-	sproto := flag.Int("sproto", 8, "send ping proto")
-	rproto := flag.Int("rproto", 0, "recv ping proto")
-	catch := flag.Int("catch", 0, "catch mode")
 	key := flag.Int("key", 0, "key")
 	tcpmode := flag.Int("tcp", 0, "tcp mode")
+	tcpmode_buffersize := flag.Int("tcp_bs", 1024*1024, "tcp mode buffer size")
+	tcpmode_maxwin := flag.Int("tcp_mw", 100, "tcp mode max win")
+	tcpmode_resend_timems := flag.Int("tcp_rst", 200, "tcp mode resend time ms")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -89,8 +89,8 @@ func main() {
 		fmt.Printf("server %s\n", *server)
 		fmt.Printf("target %s\n", *target)
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *sproto, *rproto, *catch, *key,
-			*tcpmode)
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
+			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems)
 		if err != nil {
 			fmt.Printf("ERROR: %s\n", err.Error())
 			return
