@@ -182,7 +182,7 @@ func (p *Client) AcceptTcp() error {
 	loggo.Info("client waiting local accept tcp")
 
 	for {
-		p.tcplistenConn.SetDeadline(time.Now().Add(time.Millisecond * 100))
+		p.tcplistenConn.SetDeadline(time.Now().Add(time.Millisecond * 1000))
 
 		conn, err := p.tcplistenConn.AcceptTCP()
 		if err != nil {
@@ -193,7 +193,9 @@ func (p *Client) AcceptTcp() error {
 			}
 		}
 
-		go p.AcceptTcpConn(conn)
+		if conn != nil {
+			go p.AcceptTcpConn(conn)
+		}
 	}
 
 }
@@ -240,8 +242,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 
-			f := e.Value.(Frame)
-			mb, err := proto.Marshal(&f)
+			f := e.Value.(*Frame)
+			mb, err := proto.Marshal(f)
 			if err != nil {
 				loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
 				continue
