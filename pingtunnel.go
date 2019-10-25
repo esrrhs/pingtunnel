@@ -102,7 +102,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 			continue
 		}
 
-		if my.Magic == (int32)(MyMsg_MAGIC) {
+		if my.Magic != (int32)(MyMsg_MAGIC) {
 			loggo.Debug("processPacket data invalid %s", my.Id)
 			continue
 		}
