@@ -102,8 +102,8 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		}
 
 		if my.Data == nil {
-			loggo.Info("processPacket data nil %s", my.Id)
-			return
+			loggo.Debug("processPacket data nil %s", my.Id)
+			continue
 		}
 
 		recv <- &Packet{my: my,
