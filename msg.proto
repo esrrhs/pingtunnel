@@ -1,9 +1,11 @@
 syntax = "proto3";
 option go_package = "pingtunnel";
+
 message MyMsg {
   enum TYPE {
     DATA = 0;
     PING = 1;
+    MAGIC = 0xdead;
   }
 
   string id = 1;
@@ -11,6 +13,7 @@ message MyMsg {
   string target = 3;
   bytes data = 4;
   int32 rproto = 5;
+  int32 magic = 6;
   int32 key = 7;
   int32 tcpmode = 8;
   int32 tcpmode_buffersize = 9;
