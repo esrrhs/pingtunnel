@@ -31,6 +31,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		TcpmodeBuffersize:   (int32)(tcpmode_buffer_size),
 		TcpmodeMaxwin:       (int32)(tcpmode_maxwin),
 		TcpmodeResendTimems: (int32)(tcpmode_resend_time),
+		Magic:               (int32)(MyMsg_MAGIC),
 	}
 
 	mb, err := proto.Marshal(m)
@@ -101,8 +102,13 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 			continue
 		}
 
+		if my.Magic == (int32)(MyMsg_MAGIC) {
+			loggo.Debug("processPacket data invalid %s", my.Id)
+			continue
+		}
+
 		if my.Data == nil {
-			loggo.Debug("processPacket data nil %s", my.Id)
+			loggo.Error("processPacket data nil %s", my.Id)
 			continue
 		}
 
