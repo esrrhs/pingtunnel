@@ -33,16 +33,17 @@ type Server struct {
 }
 
 type ServerConn struct {
-	ipaddrTarget  *net.UDPAddr
-	conn          *net.UDPConn
-	tcpaddrTarget *net.TCPAddr
-	tcpconn       *net.TCPConn
-	id            string
-	activeTime    time.Time
-	close         bool
-	rproto        int
-	fm            *FrameMgr
-	tcpmode       int
+	ipaddrTarget   *net.UDPAddr
+	conn           *net.UDPConn
+	tcpaddrTarget  *net.TCPAddr
+	tcpconn        *net.TCPConn
+	id             string
+	activeRecvTime time.Time
+	activeSendTime time.Time
+	close          bool
+	rproto         int
+	fm             *FrameMgr
+	tcpmode        int
 }
 
 func (p *Server) Run() {
@@ -117,7 +118,7 @@ func (p *Server) processPacket(packet *Packet) {
 
 			fm := NewFrameMgr((int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems))
 
-			localConn = &ServerConn{tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
+			localConn = &ServerConn{tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
 
 			p.localConnMap[id] = localConn
@@ -139,7 +140,7 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
-			localConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeTime: now, close: false,
+			localConn = &ServerConn{conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode)}
 
 			p.localConnMap[id] = localConn
@@ -148,7 +149,7 @@ func (p *Server) processPacket(packet *Packet) {
 		}
 	}
 
-	localConn.activeTime = now
+	localConn.activeRecvTime = now
 
 	if packet.my.Type == (int32)(MyMsg_DATA) {
 
@@ -204,7 +205,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		sendlist := conn.fm.getSendList()
 
 		now := time.Now()
-		conn.activeTime = now
+		conn.activeSendTime = now
 
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 
@@ -239,6 +240,13 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				conn.fm.SkipRecvBuffer(n)
 			}
 		}
+
+		diffrecv := now.Sub(conn.activeRecvTime)
+		diffsend := now.Sub(conn.activeSendTime)
+		if diffrecv > time.Second*(time.Duration(p.timeout)) || diffsend > time.Second*(time.Duration(p.timeout)) {
+			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
+			break
+		}
 	}
 
 	loggo.Info("close tcp conn %s %s", conn.id, conn.tcpaddrTarget.String())
@@ -264,7 +272,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 
 		now := time.Now()
-		conn.activeTime = now
+		conn.activeSendTime = now
 
 		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
 			conn.rproto, -1, p.key,
@@ -289,8 +297,9 @@ func (p *Server) checkTimeoutConn() {
 		if conn.tcpmode > 0 {
 			continue
 		}
-		diff := now.Sub(conn.activeTime)
-		if diff > time.Second*(time.Duration(p.timeout)) {
+		diffrecv := now.Sub(conn.activeRecvTime)
+		diffsend := now.Sub(conn.activeSendTime)
+		if diffrecv > time.Second*(time.Duration(p.timeout)) || diffsend > time.Second*(time.Duration(p.timeout)) {
 			conn.close = true
 		}
 	}
