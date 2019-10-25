@@ -208,8 +208,8 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 
-			f := e.Value.(Frame)
-			mb, err := proto.Marshal(&f)
+			f := e.Value.(*Frame)
+			mb, err := proto.Marshal(f)
 			if err != nil {
 				loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 				continue
