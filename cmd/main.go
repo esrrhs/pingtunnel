@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/pingtunnel"
 )
 
@@ -70,32 +71,32 @@ func main() {
 		return
 	}
 
-	fmt.Println("start...")
-	fmt.Printf("key %d\n", *key)
+	loggo.Info("start...")
+	loggo.Info("key %d", *key)
 
 	if *t == "server" {
 		s, err := pingtunnel.NewServer(*timeout, *key)
 		if err != nil {
-			fmt.Printf("ERROR: %s\n", err.Error())
+			loggo.Error("ERROR: %s", err.Error())
 			return
 		}
-		fmt.Printf("Server start\n")
+		loggo.Info("Server start")
 		s.Run()
 	}
 	if *t == "client" {
 
-		fmt.Printf("type %s\n", *t)
-		fmt.Printf("listen %s\n", *listen)
-		fmt.Printf("server %s\n", *server)
-		fmt.Printf("target %s\n", *target)
+		loggo.Info("type %s", *t)
+		loggo.Info("listen %s", *listen)
+		loggo.Info("server %s", *server)
+		loggo.Info("target %s", *target)
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems)
 		if err != nil {
-			fmt.Printf("ERROR: %s\n", err.Error())
+			loggo.Error("ERROR: %s", err.Error())
 			return
 		}
-		fmt.Printf("Client Listen %s (%s) Server %s (%s) TargetPort %s:\n", c.Addr(), c.IPAddr(),
+		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s:", c.Addr(), c.IPAddr(),
 			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr())
 		c.Run()
 	}
