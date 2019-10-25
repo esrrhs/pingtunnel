@@ -87,6 +87,10 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 			}
 		}
 
+		if n <= 0 {
+			continue
+		}
+
 		echoId := int(binary.BigEndian.Uint16(bytes[4:6]))
 		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
 
