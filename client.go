@@ -93,11 +93,12 @@ type Client struct {
 }
 
 type ClientConn struct {
-	ipaddr     *net.UDPAddr
-	tcpaddr    *net.TCPAddr
-	id         string
-	activeTime time.Time
-	close      bool
+	ipaddr         *net.UDPAddr
+	tcpaddr        *net.TCPAddr
+	id             string
+	activeRecvTime time.Time
+	activeSendTime time.Time
+	close          bool
 
 	fm *FrameMgr
 }
@@ -208,7 +209,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 	fm := NewFrameMgr(p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
 
 	now := time.Now()
-	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeTime: now, close: false,
+	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false,
 		fm: fm}
 	p.localAddrToConnMap[tcpsrcaddr.String()] = clientConn
 	p.localIdToConnMap[uuid] = clientConn
@@ -238,7 +239,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 		sendlist := clientConn.fm.getSendList()
 
 		now := time.Now()
-		clientConn.activeTime = now
+		clientConn.activeSendTime = now
 
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 
@@ -275,9 +276,16 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				clientConn.fm.SkipRecvBuffer(n)
 			}
 		}
+
+		diffrecv := now.Sub(clientConn.activeRecvTime)
+		diffsend := now.Sub(clientConn.activeSendTime)
+		if diffrecv > time.Second*(time.Duration(p.timeout)) || diffsend > time.Second*(time.Duration(p.timeout)) {
+			loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+			break
+		}
 	}
 
-	loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+	loggo.Info("close tcp conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 	conn.Close()
 	p.Close(clientConn)
 }
@@ -306,13 +314,13 @@ func (p *Client) Accept() error {
 		clientConn := p.localAddrToConnMap[srcaddr.String()]
 		if clientConn == nil {
 			uuid := UniqueId()
-			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeTime: now, close: false}
+			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false}
 			p.localAddrToConnMap[srcaddr.String()] = clientConn
 			p.localIdToConnMap[uuid] = clientConn
 			loggo.Info("client accept new local udp %s %s", uuid, srcaddr.String())
 		}
 
-		clientConn.activeTime = now
+		clientConn.activeSendTime = now
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
 			SEND_PROTO, RECV_PROTO, p.key,
 			p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems)
@@ -357,7 +365,7 @@ func (p *Client) processPacket(packet *Packet) {
 	addr := clientConn.ipaddr
 
 	now := time.Now()
-	clientConn.activeTime = now
+	clientConn.activeRecvTime = now
 
 	if p.tcpmode > 0 {
 		f := &Frame{}
@@ -396,8 +404,9 @@ func (p *Client) checkTimeoutConn() {
 
 	now := time.Now()
 	for _, conn := range p.localIdToConnMap {
-		diff := now.Sub(conn.activeTime)
-		if diff > time.Second*(time.Duration(p.timeout)) {
+		diffrecv := now.Sub(conn.activeRecvTime)
+		diffsend := now.Sub(conn.activeSendTime)
+		if diffrecv > time.Second*(time.Duration(p.timeout)) || diffsend > time.Second*(time.Duration(p.timeout)) {
 			conn.close = true
 		}
 	}
