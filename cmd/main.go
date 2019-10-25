@@ -71,6 +71,7 @@ func main() {
 		return
 	}
 
+	loggo.Ini(loggo.Config{Level: loggo.LEVEL_DEBUG, Prefix: "pingtunnel", MaxDay: 7})
 	loggo.Info("start...")
 	loggo.Info("key %d", *key)
 
@@ -89,6 +90,12 @@ func main() {
 		loggo.Info("listen %s", *listen)
 		loggo.Info("server %s", *server)
 		loggo.Info("target %s", *target)
+
+		if *tcpmode == 0 {
+			*tcpmode_buffersize = 0
+			*tcpmode_maxwin = 0
+			*tcpmode_resend_timems = 0
+		}
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems)
