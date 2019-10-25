@@ -80,14 +80,10 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		n, srcaddr, err := conn.ReadFrom(bytes)
 
 		if err != nil {
-			if neterr, ok := err.(*net.OpError); ok {
-				if neterr.Timeout() {
-					// Read timeout
-					continue
-				} else {
-					loggo.Error("Error read icmp message %s", err)
-					continue
-				}
+			nerr, ok := err.(net.Error)
+			if !ok || !nerr.Timeout() {
+				loggo.Error("Error read icmp message %s", err)
+				continue
 			}
 		}
 
