@@ -72,7 +72,7 @@ func main() {
 		return
 	}
 	if *tcpmode_maxwin*10 > pingtunnel.FRAME_MAX_ID {
-		fmt.Println("set tcp win to big max = " + strconv.Itoa(pingtunnel.FRAME_MAX_ID/10))
+		fmt.Println("set tcp win to big, max = " + strconv.Itoa(pingtunnel.FRAME_MAX_ID/10))
 		return
 	}
 
