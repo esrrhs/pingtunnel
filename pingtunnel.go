@@ -65,7 +65,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 					continue
 				}
 			}
-			loggo.Error("sendICMP WriteTo error %s %s", server.String(), err)
+			loggo.Info("sendICMP WriteTo error %s %s", server.String(), err)
 		}
 		break
 	}
@@ -83,7 +83,7 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 		if err != nil {
 			nerr, ok := err.(net.Error)
 			if !ok || !nerr.Timeout() {
-				loggo.Error("Error read icmp message %s", err)
+				loggo.Info("Error read icmp message %s", err)
 				continue
 			}
 		}
@@ -104,11 +104,6 @@ func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
 
 		if my.Magic != (int32)(MyMsg_MAGIC) {
 			loggo.Debug("processPacket data invalid %s", my.Id)
-			continue
-		}
-
-		if my.Data == nil {
-			loggo.Error("processPacket data nil %s", my.Id)
 			continue
 		}
 
