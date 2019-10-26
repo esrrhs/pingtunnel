@@ -19,6 +19,7 @@ message MyMsg {
   int32 tcpmode_buffersize = 9;
   int32 tcpmode_maxwin = 10;
   int32 tcpmode_resend_timems = 11;
+  int32 timeout = 12;
 }
 
 message Frame {

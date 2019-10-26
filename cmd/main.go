@@ -76,7 +76,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*timeout, *key)
+		s, err := pingtunnel.NewServer(*key)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
