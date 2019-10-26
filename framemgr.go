@@ -28,6 +28,9 @@ type FrameMgr struct {
 	close        bool
 	remoteclosed bool
 	closesend    bool
+
+	lastPingTime int64
+	rttms        int
 }
 
 func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
@@ -40,7 +43,8 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
 		windowsize: windowsize, resend_timems: resend_timems,
 		sendwin: list.New(), sendlist: list.New(), sendid: 0,
 		recvwin: list.New(), recvlist: list.New(), recvid: 0,
-		close: false, remoteclosed: false, closesend: false}
+		close: false, remoteclosed: false, closesend: false,
+		lastPingTime: time.Now().UnixNano(), rttms: resend_timems}
 
 	return fm
 }
@@ -66,6 +70,8 @@ func (fm *FrameMgr) Update() {
 	fm.combineWindowToRecvBuffer()
 
 	fm.calSendList()
+
+	fm.ping()
 }
 
 func (fm *FrameMgr) cutSendBufferToWindow() {
@@ -166,6 +172,10 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 		} else if f.Type == (int32)(Frame_DATA) {
 			tmpackto[f.Id] = f
 			loggo.Debug("recv data %d %d", f.Id, len(f.Data))
+		} else if f.Type == (int32)(Frame_PING) {
+			fm.processPing(f)
+		} else if f.Type == (int32)(Frame_PONG) {
+			fm.processPong(f)
 		}
 	}
 	fm.recvlist.Init()
@@ -202,17 +212,18 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			Dataid: make([]int32, len(tmpackto))}
 		index := 0
 		for id, rf := range tmpackto {
-			f.Dataid[index] = id
-			index++
-			fm.addToRecvWin(rf)
-			loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data))
+			if fm.addToRecvWin(rf) {
+				f.Dataid[index] = id
+				index++
+				loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data))
+			}
 		}
 		fm.sendlist.PushBack(f)
 		loggo.Debug("send ack %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 	}
 }
 
-func (fm *FrameMgr) addToRecvWin(rf *Frame) {
+func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 
 	begin := fm.recvid
 	end := fm.recvid + fm.windowsize
@@ -222,14 +233,14 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 	}
 	if id > end || id < begin {
 		loggo.Debug("recv frame not in range %d %d %d", begin, end, id)
-		return
+		return false
 	}
 
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
 		if f.Id == rf.Id {
 			loggo.Debug("recv frame ignore %d %d", f.Id, len(f.Data))
-			return
+			return true
 		}
 	}
 
@@ -239,12 +250,13 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 		if fm.compareId(rf, f) < 0 {
 			fm.recvwin.InsertBefore(rf, e)
 			loggo.Debug("insert recv win %d %d before %d", rf.Id, len(rf.Data), f.Id)
-			return
+			return true
 		}
 	}
 
 	fm.recvwin.PushBack(rf)
 	loggo.Debug("insert recv win last %d %d", rf.Id, len(rf.Data))
+	return true
 }
 
 func (fm *FrameMgr) compareId(lf *Frame, rf *Frame) int {
@@ -300,7 +312,7 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 	id = fm.recvid
 	for len(reqtmp) < fm.windowsize && e != nil {
 		f := e.Value.(*Frame)
-		loggo.Debug("start add req id %d %d", f.Id, id)
+		loggo.Debug("start add req id %d %d %d", fm.recvid, f.Id, id)
 		if f.Id != (int32)(id) {
 			reqtmp[id]++
 			loggo.Debug("add req id %d ", id)
@@ -352,4 +364,31 @@ func (fm *FrameMgr) Close() {
 
 func (fm *FrameMgr) IsRemoteClosed() bool {
 	return fm.remoteclosed
+}
+
+func (fm *FrameMgr) ping() {
+	cur := time.Now().UnixNano()
+	if cur-fm.lastPingTime > int64(1000*1000) {
+		f := &Frame{Type: (int32)(Frame_PING), Resend: false, Sendtime: cur,
+			Id: 0}
+		fm.sendlist.PushBack(f)
+		loggo.Debug("send ping %d", cur)
+		fm.lastPingTime = cur
+	}
+}
+
+func (fm *FrameMgr) processPing(f *Frame) {
+	rf := &Frame{Type: (int32)(Frame_PONG), Resend: false, Sendtime: f.Sendtime,
+		Id: 0}
+	fm.sendlist.PushBack(rf)
+	loggo.Debug("recv ping %d", f.Sendtime)
+}
+
+func (fm *FrameMgr) processPong(f *Frame) {
+	cur := time.Now().UnixNano()
+	if cur > f.Sendtime {
+		rtt := (cur - f.Sendtime) / 1000
+		fm.rttms = (fm.rttms + (int)(rtt)) / 2
+		loggo.Debug("recv pong %d %d", rtt, fm.rttms)
+	}
 }
