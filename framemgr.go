@@ -225,14 +225,8 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 
 func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 
-	begin := fm.recvid
-	end := fm.recvid + fm.windowsize
-	id := (int)(rf.Id)
-	if id < begin {
-		id += FRAME_MAX_ID
-	}
-	if id > end || id < begin {
-		loggo.Debug("recv frame not in range %d %d %d", begin, end, id)
+	if !fm.isIdInRange((int)(rf.Id), FRAME_MAX_ID) {
+		loggo.Debug("recv frame not in range %d %d", rf.Id, fm.recvid)
 		return false
 	}
 
@@ -247,7 +241,7 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
 		loggo.Debug("start insert recv win %d %d %d", fm.recvid, rf.Id, f.Id)
-		if fm.compareId(rf, f) < 0 {
+		if fm.compareId((int)(rf.Id), (int)(f.Id)) < 0 {
 			fm.recvwin.InsertBefore(rf, e)
 			loggo.Debug("insert recv win %d %d before %d", rf.Id, len(rf.Data), f.Id)
 			return true
@@ -259,10 +253,8 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 	return true
 }
 
-func (fm *FrameMgr) compareId(lf *Frame, rf *Frame) int {
+func (fm *FrameMgr) compareId(l int, r int) int {
 
-	l := (int)(lf.Id)
-	r := (int)(rf.Id)
 	if l < fm.recvid {
 		l += FRAME_MAX_ID
 	}
@@ -310,7 +302,7 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 	reqtmp := make(map[int]int)
 	e := fm.recvwin.Front()
 	id = fm.recvid
-	for len(reqtmp) < fm.windowsize && e != nil {
+	for len(reqtmp) < fm.windowsize && len(reqtmp)*4 < FRAME_MAX_SIZE/2 && e != nil {
 		f := e.Value.(*Frame)
 		loggo.Debug("start add req id %d %d %d", fm.recvid, f.Id, id)
 		if f.Id != (int32)(id) {
@@ -391,4 +383,19 @@ func (fm *FrameMgr) processPong(f *Frame) {
 		fm.rttms = (fm.rttms + (int)(rtt)) / 2
 		loggo.Debug("recv pong %d %d", rtt, fm.rttms)
 	}
+}
+
+func (fm *FrameMgr) isIdInRange(id int, maxid int) bool {
+	begin := fm.recvid
+	end := fm.recvid + fm.windowsize
+	if end >= maxid {
+		if id >= 0 && id < end-maxid {
+			return true
+		}
+		end = maxid
+	}
+	if id >= begin && id < end {
+		return true
+	}
+	return false
 }
