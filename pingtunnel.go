@@ -139,5 +139,5 @@ func GetMd5String(s string) string {
 
 const (
 	FRAME_MAX_SIZE int = 888
-	FRAME_MAX_ID   int = 10000
+	FRAME_MAX_ID   int = 100000
 )

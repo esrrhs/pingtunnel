@@ -75,4 +75,8 @@ func Test0001(t *testing.T) {
 	fm.recvid = 7
 	fm.windowsize = 5
 	fmt.Println("fm.isIdInRange  = ", fm.isIdInRange(9, 10))
+
+	fm.recvid = 10
+	fm.windowsize = 10000
+	fmt.Println("fm.isIdInRange  = ", fm.isIdInRange(0, FRAME_MAX_ID))
 }
