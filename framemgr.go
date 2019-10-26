@@ -207,19 +207,22 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 	}
 
 	if len(tmpackto) > 0 {
-		f := &Frame{Type: (int32)(Frame_ACK), Resend: false, Sendtime: 0,
-			Id:     0,
-			Dataid: make([]int32, len(tmpackto))}
+		tmp := make([]int32, len(tmpackto))
 		index := 0
 		for id, rf := range tmpackto {
 			if fm.addToRecvWin(rf) {
-				f.Dataid[index] = id
+				tmp[index] = id
 				index++
 				loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data))
 			}
 		}
-		fm.sendlist.PushBack(f)
-		loggo.Debug("send ack %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
+		if index > 0 {
+			f := &Frame{Type: (int32)(Frame_ACK), Resend: false, Sendtime: 0,
+				Id:     0,
+				Dataid: tmp[0:index]}
+			fm.sendlist.PushBack(f)
+			loggo.Debug("send ack %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
+		}
 	}
 }
 
@@ -267,13 +270,11 @@ func (fm *FrameMgr) compareId(l int, r int) int {
 
 func (fm *FrameMgr) combineWindowToRecvBuffer() {
 
-	id := fm.recvid
-
 	for {
 		done := false
 		for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*Frame)
-			if f.Id == (int32)(id) {
+			if f.Id == (int32)(fm.recvid) {
 				left := fm.recvb.Capacity() - fm.recvb.Size()
 				if left >= len(f.Data) {
 					if len(f.Data) == 0 {
@@ -301,7 +302,7 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 
 	reqtmp := make(map[int]int)
 	e := fm.recvwin.Front()
-	id = fm.recvid
+	id := fm.recvid
 	for len(reqtmp) < fm.windowsize && len(reqtmp)*4 < FRAME_MAX_SIZE/2 && e != nil {
 		f := e.Value.(*Frame)
 		loggo.Debug("start add req id %d %d %d", fm.recvid, f.Id, id)
