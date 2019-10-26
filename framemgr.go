@@ -231,7 +231,7 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 
 	if !fm.isIdInRange((int)(rf.Id), FRAME_MAX_ID) {
 		loggo.Debug("recv frame not in range %d %d", rf.Id, fm.recvid)
-		if !fm.isIdOld((int)(rf.Id), FRAME_MAX_ID) {
+		if fm.isIdOld((int)(rf.Id), FRAME_MAX_ID) {
 			return true
 		}
 		return false
