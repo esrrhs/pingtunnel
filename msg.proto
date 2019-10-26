@@ -27,6 +27,8 @@ message Frame {
     DATA = 0;
     REQ = 1;
     ACK = 2;
+    PING = 3;
+    PONG = 4;
   }
   
   int32 type = 1;
