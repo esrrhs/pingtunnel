@@ -238,6 +238,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			}
 			if n > 0 {
 				clientConn.fm.WriteSendBuffer(bytes[:n])
+				tcpActiveRecvTime = now
 			}
 		}
 
@@ -277,6 +278,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			}
 			if n > 0 {
 				clientConn.fm.SkipRecvBuffer(n)
+				tcpActiveSendTime = now
 			}
 		}
 
