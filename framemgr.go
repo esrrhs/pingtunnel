@@ -372,7 +372,7 @@ func (fm *FrameMgr) processPing(f *Frame) {
 func (fm *FrameMgr) processPong(f *Frame) {
 	cur := time.Now().UnixNano()
 	if cur > f.Sendtime {
-		rtt := (cur - f.Sendtime) / 1000
+		rtt := (cur - f.Sendtime) / (int64)(time.Millisecond)
 		fm.rttms = (fm.rttms + (int)(rtt)) / 2
 		loggo.Debug("recv pong %d %d", rtt, fm.rttms)
 	}
