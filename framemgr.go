@@ -22,6 +22,9 @@ type FrameMgr struct {
 	recvwin  *list.List
 	recvlist *list.List
 	recvid   int
+
+	close        bool
+	remoteclosed bool
 }
 
 func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
@@ -33,7 +36,8 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
 		recvlock:   &sync.Mutex{},
 		windowsize: windowsize, resend_timems: resend_timems,
 		sendwin: list.New(), sendlist: list.New(), sendid: 0,
-		recvwin: list.New(), recvlist: list.New(), recvid: 0}
+		recvwin: list.New(), recvlist: list.New(), recvid: 0,
+		close: false, remoteclosed: false}
 
 	return fm
 }
@@ -95,6 +99,18 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 
 		fm.sendwin.PushBack(f)
 	}
+
+	if fm.sendb.Empty() && fm.close {
+		f := &Frame{Type: (int32)(Frame_DATA), Resend: false, Sendtime: 0,
+			Id:   (int32)(fm.sendid),
+			Data: make([]byte, 0)}
+		fm.sendwin.PushBack(f)
+
+		fm.sendid++
+		if fm.sendid >= FRAME_MAX_ID {
+			fm.sendid = 0
+		}
+	}
 }
 
 func (fm *FrameMgr) calSendList() {
@@ -116,7 +132,6 @@ func (fm *FrameMgr) getSendList() *list.List {
 func (fm *FrameMgr) OnRecvFrame(f *Frame) {
 	fm.recvlock.Lock()
 	defer fm.recvlock.Unlock()
-
 	fm.recvlist.PushBack(f)
 }
 
@@ -236,6 +251,9 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 			if f.Id == (int32)(id) {
 				left := fm.recvb.Capacity() - fm.recvb.Size()
 				if left >= len(f.Data) {
+					if len(f.Data) == 0 {
+						fm.remoteclosed = true
+					}
 					fm.recvb.Write(f.Data)
 					fm.recvwin.Remove(e)
 					done = true
@@ -261,14 +279,22 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 		if f.Id != (int32)(id) {
 			reqtmp[id]++
 		} else {
-			reqtmp[id]++
 			e = e.Next()
 		}
 
 		id++
-		if fm.recvid >= FRAME_MAX_ID {
-			fm.recvid = 0
+		if id >= FRAME_MAX_ID {
+			id = 0
 		}
+	}
+
+	for len(reqtmp) < fm.windowsize {
+		reqtmp[id]++
+		id++
+		if id >= FRAME_MAX_ID {
+			id = 0
+		}
+		break
 	}
 
 	f := &Frame{Type: (int32)(Frame_REQ), Resend: false, Sendtime: 0,
@@ -292,4 +318,15 @@ func (fm *FrameMgr) GetRecvReadLineBuffer() []byte {
 
 func (fm *FrameMgr) SkipRecvBuffer(size int) {
 	fm.recvb.SkipRead(size)
+}
+
+func (fm *FrameMgr) Close() {
+	fm.recvlock.Lock()
+	defer fm.recvlock.Unlock()
+
+	fm.close = true
+}
+
+func (fm *FrameMgr) IsRemoteClosed() bool {
+	return fm.remoteclosed
 }
