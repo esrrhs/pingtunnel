@@ -52,6 +52,7 @@ func (fm *FrameMgr) GetSendBufferLeft() int {
 
 func (fm *FrameMgr) WriteSendBuffer(data []byte) {
 	fm.sendb.Write(data)
+	loggo.Debug("WriteSendBuffer %d %d", fm.sendb.Size(), len(data))
 }
 
 func (fm *FrameMgr) Update() {
@@ -87,7 +88,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		}
 
 		fm.sendwin.PushBack(f)
-		loggo.Debug("cut frame push to send win %d %d %d", FRAME_MAX_SIZE, f.Id, fm.sendwin.Len())
+		loggo.Debug("cut frame push to send win %d %d %d", f.Id, FRAME_MAX_SIZE, fm.sendwin.Len())
 	}
 
 	if sendall && fm.sendb.Size() > 0 && fm.sendwin.Len() < fm.windowsize {
@@ -102,7 +103,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		}
 
 		fm.sendwin.PushBack(f)
-		loggo.Debug("cut frame push to send win %d %d %d", fm.sendb.Size(), f.Id, fm.sendwin.Len())
+		loggo.Debug("cut small frame push to send win %d %d %d", f.Id, len(f.Data), fm.sendwin.Len())
 	}
 
 	if fm.sendb.Empty() && fm.close && !fm.closesend && fm.sendwin.Len() < fm.windowsize {
@@ -155,12 +156,12 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 		if f.Type == (int32)(Frame_REQ) {
 			for _, id := range f.Dataid {
 				tmpreq[id]++
-				loggo.Debug("recv req %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
+				loggo.Debug("recv req %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 			}
 		} else if f.Type == (int32)(Frame_ACK) {
 			for _, id := range f.Dataid {
 				tmpack[id]++
-				loggo.Debug("recv ack %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
+				loggo.Debug("recv ack %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 			}
 		} else if f.Type == (int32)(Frame_DATA) {
 			tmpackto[f.Id] = f
@@ -204,10 +205,10 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			f.Dataid[index] = id
 			index++
 			fm.addToRecvWin(rf)
-			loggo.Debug("add data to win %d %d", f.Id, len(f.Data))
+			loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data))
 		}
 		fm.sendlist.PushBack(f)
-		loggo.Debug("send ack %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
+		loggo.Debug("send ack %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 	}
 }
 
@@ -237,13 +238,13 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 		loggo.Debug("start insert recv win %d %d %d", fm.recvid, rf.Id, f.Id)
 		if fm.compareId(rf, f) < 0 {
 			fm.recvwin.InsertBefore(rf, e)
-			loggo.Debug("insert recv win %d before %d", rf.Id, f.Id)
+			loggo.Debug("insert recv win %d %d before %d", rf.Id, len(rf.Data), f.Id)
 			return
 		}
 	}
 
 	fm.recvwin.PushBack(rf)
-	loggo.Debug("insert recv win last %d", rf.Id)
+	loggo.Debug("insert recv win last %d %d", rf.Id, len(rf.Data))
 }
 
 func (fm *FrameMgr) compareId(lf *Frame, rf *Frame) int {
@@ -323,7 +324,7 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 			index++
 		}
 		fm.sendlist.PushBack(f)
-		loggo.Debug("send req %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
+		loggo.Debug("send req %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 	}
 }
 
@@ -332,11 +333,14 @@ func (fm *FrameMgr) GetRecvBufferSize() int {
 }
 
 func (fm *FrameMgr) GetRecvReadLineBuffer() []byte {
-	return fm.recvb.GetReadLineBuffer()
+	ret := fm.recvb.GetReadLineBuffer()
+	loggo.Debug("GetRecvReadLineBuffer %d %d", fm.recvb.Size(), len(ret))
+	return ret
 }
 
 func (fm *FrameMgr) SkipRecvBuffer(size int) {
 	fm.recvb.SkipRead(size)
+	loggo.Debug("SkipRead %d %d", fm.recvb.Size(), size)
 }
 
 func (fm *FrameMgr) Close() {
