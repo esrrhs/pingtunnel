@@ -2,6 +2,8 @@ package pingtunnel
 
 import (
 	"container/list"
+	"github.com/esrrhs/go-engine/src/common"
+	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/rbuffergo"
 	"sync"
 	"time"
@@ -85,6 +87,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		}
 
 		fm.sendwin.PushBack(f)
+		loggo.Debug("cut frame push to send win %d %d %d", FRAME_MAX_SIZE, f.Id, fm.sendwin.Len())
 	}
 
 	if sendall && fm.sendb.Size() > 0 && fm.sendwin.Len() < fm.windowsize {
@@ -99,9 +102,10 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		}
 
 		fm.sendwin.PushBack(f)
+		loggo.Debug("cut frame push to send win %d %d %d", fm.sendb.Size(), f.Id, fm.sendwin.Len())
 	}
 
-	if fm.sendb.Empty() && fm.close && !fm.closesend {
+	if fm.sendb.Empty() && fm.close && !fm.closesend && fm.sendwin.Len() < fm.windowsize {
 		f := &Frame{Type: (int32)(Frame_DATA), Resend: false, Sendtime: 0,
 			Id:   (int32)(fm.sendid),
 			Data: make([]byte, 0)}
@@ -113,6 +117,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		}
 
 		fm.closesend = true
+		loggo.Debug("close frame push to send win %d %d", f.Id, fm.sendwin.Len())
 	}
 }
 
@@ -150,13 +155,16 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 		if f.Type == (int32)(Frame_REQ) {
 			for _, id := range f.Dataid {
 				tmpreq[id]++
+				loggo.Debug("recv req %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 			}
 		} else if f.Type == (int32)(Frame_ACK) {
 			for _, id := range f.Dataid {
 				tmpack[id]++
+				loggo.Debug("recv ack %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 			}
 		} else if f.Type == (int32)(Frame_DATA) {
 			tmpackto[f.Id] = f
+			loggo.Debug("recv data %d %d", f.Id, len(f.Data))
 		}
 	}
 	fm.recvlist.Init()
@@ -170,6 +178,7 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			f := e.Value.(*Frame)
 			if f.Id == id {
 				f.Resend = true
+				loggo.Debug("choose resend win %d %d", f.Id, len(f.Data))
 				break
 			}
 		}
@@ -180,6 +189,7 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			f := e.Value.(*Frame)
 			if f.Id == id {
 				fm.sendwin.Remove(e)
+				loggo.Debug("remove send win %d %d", f.Id, len(f.Data))
 				break
 			}
 		}
@@ -194,8 +204,10 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			f.Dataid[index] = id
 			index++
 			fm.addToRecvWin(rf)
+			loggo.Debug("add data to win %d %d", f.Id, len(f.Data))
 		}
 		fm.sendlist.PushBack(f)
+		loggo.Debug("send ack %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 	}
 }
 
@@ -208,25 +220,30 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) {
 		id += FRAME_MAX_ID
 	}
 	if id > end || id < begin {
+		loggo.Debug("recv frame not in range %d %d %d", begin, end, id)
 		return
 	}
 
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
 		if f.Id == rf.Id {
+			loggo.Debug("recv frame ignore %d %d", f.Id, len(f.Data))
 			return
 		}
 	}
 
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
+		loggo.Debug("start insert recv win %d %d %d", fm.recvid, rf.Id, f.Id)
 		if fm.compareId(rf, f) < 0 {
 			fm.recvwin.InsertBefore(rf, e)
+			loggo.Debug("insert recv win %d before %d", rf.Id, f.Id)
 			return
 		}
 	}
 
 	fm.recvwin.PushBack(rf)
+	loggo.Debug("insert recv win last %d", rf.Id)
 }
 
 func (fm *FrameMgr) compareId(lf *Frame, rf *Frame) int {
@@ -256,10 +273,12 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 				if left >= len(f.Data) {
 					if len(f.Data) == 0 {
 						fm.remoteclosed = true
+						loggo.Debug("recv remote close frame %d", f.Id)
 					}
 					fm.recvb.Write(f.Data)
 					fm.recvwin.Remove(e)
 					done = true
+					loggo.Debug("combined recv frame to recv buffer %d %d", f.Id, len(f.Data))
 					break
 				}
 			}
@@ -271,6 +290,7 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 			if fm.recvid >= FRAME_MAX_ID {
 				fm.recvid = 0
 			}
+			loggo.Debug("combined ok add recvid %d ", fm.recvid)
 		}
 	}
 
@@ -279,8 +299,10 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 	id = fm.recvid
 	for len(reqtmp) < fm.windowsize && e != nil {
 		f := e.Value.(*Frame)
+		loggo.Debug("start add req id %d %d", f.Id, id)
 		if f.Id != (int32)(id) {
 			reqtmp[id]++
+			loggo.Debug("add req id %d ", id)
 		} else {
 			e = e.Next()
 		}
@@ -301,6 +323,7 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 			index++
 		}
 		fm.sendlist.PushBack(f)
+		loggo.Debug("send req %d %d", f.Id, common.Int32ArrayToString(f.Dataid, ","))
 	}
 }
 

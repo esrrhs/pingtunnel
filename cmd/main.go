@@ -71,7 +71,7 @@ func main() {
 		return
 	}
 
-	loggo.Ini(loggo.Config{Level: loggo.LEVEL_INFO, Prefix: "pingtunnel", MaxDay: 3})
+	loggo.Ini(loggo.Config{Level: loggo.LEVEL_DEBUG, Prefix: "pingtunnel", MaxDay: 3})
 	loggo.Info("start...")
 	loggo.Info("key %d", *key)
 
