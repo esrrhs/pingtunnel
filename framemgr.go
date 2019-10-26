@@ -288,15 +288,6 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 		}
 	}
 
-	for len(reqtmp) < fm.windowsize {
-		reqtmp[id]++
-		id++
-		if id >= FRAME_MAX_ID {
-			id = 0
-		}
-		break
-	}
-
 	f := &Frame{Type: (int32)(Frame_REQ), Resend: false, Sendtime: 0,
 		Id:     0,
 		Dataid: make([]int32, len(reqtmp))}
