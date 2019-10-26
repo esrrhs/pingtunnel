@@ -136,6 +136,7 @@ func (fm *FrameMgr) calSendList() {
 			f.Sendtime = cur
 			fm.sendlist.PushBack(f)
 			f.Resend = false
+			loggo.Debug("push frame to sendlist %d %d", f.Id, len(f.Data))
 		}
 	}
 }
