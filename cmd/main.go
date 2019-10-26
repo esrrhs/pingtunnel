@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/pingtunnel"
+	"strconv"
 )
 
 var usage = `
@@ -68,6 +69,10 @@ func main() {
 
 	if (*t != "client" && *t != "server") || (*t == "client" && (len(*listen) == 0 || len(*target) == 0 || len(*server) == 0)) {
 		flag.Usage()
+		return
+	}
+	if *tcpmode_maxwin*10 > pingtunnel.FRAME_MAX_ID {
+		fmt.Println("set tcp win to big max = " + strconv.Itoa(pingtunnel.FRAME_MAX_ID/10))
 		return
 	}
 
