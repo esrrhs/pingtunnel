@@ -18,7 +18,8 @@ import (
 
 func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
 	connId string, msgType uint32, data []byte, sproto int, rproto int, key int,
-	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int) {
+	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int,
+	timeout int) {
 
 	m := &MyMsg{
 		Id:                  connId,
@@ -31,6 +32,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		TcpmodeBuffersize:   (int32)(tcpmode_buffer_size),
 		TcpmodeMaxwin:       (int32)(tcpmode_maxwin),
 		TcpmodeResendTimems: (int32)(tcpmode_resend_time),
+		Timeout:             (int32)(timeout),
 		Magic:               (int32)(MyMsg_MAGIC),
 	}
 
