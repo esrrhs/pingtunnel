@@ -25,6 +25,7 @@ type FrameMgr struct {
 
 	close        bool
 	remoteclosed bool
+	closesend    bool
 }
 
 func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
@@ -37,7 +38,7 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
 		windowsize: windowsize, resend_timems: resend_timems,
 		sendwin: list.New(), sendlist: list.New(), sendid: 0,
 		recvwin: list.New(), recvlist: list.New(), recvid: 0,
-		close: false, remoteclosed: false}
+		close: false, remoteclosed: false, closesend: false}
 
 	return fm
 }
@@ -100,7 +101,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		fm.sendwin.PushBack(f)
 	}
 
-	if fm.sendb.Empty() && fm.close {
+	if fm.sendb.Empty() && fm.close && !fm.closesend {
 		f := &Frame{Type: (int32)(Frame_DATA), Resend: false, Sendtime: 0,
 			Id:   (int32)(fm.sendid),
 			Data: make([]byte, 0)}
@@ -110,6 +111,8 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		if fm.sendid >= FRAME_MAX_ID {
 			fm.sendid = 0
 		}
+
+		fm.closesend = true
 	}
 }
 
@@ -288,15 +291,17 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 		}
 	}
 
-	f := &Frame{Type: (int32)(Frame_REQ), Resend: false, Sendtime: 0,
-		Id:     0,
-		Dataid: make([]int32, len(reqtmp))}
-	index := 0
-	for id, _ := range reqtmp {
-		f.Dataid[index] = (int32)(id)
-		index++
+	if len(reqtmp) > 0 {
+		f := &Frame{Type: (int32)(Frame_REQ), Resend: false, Sendtime: 0,
+			Id:     0,
+			Dataid: make([]int32, len(reqtmp))}
+		index := 0
+		for id, _ := range reqtmp {
+			f.Dataid[index] = (int32)(id)
+			index++
+		}
+		fm.sendlist.PushBack(f)
 	}
-	fm.sendlist.PushBack(f)
 }
 
 func (fm *FrameMgr) GetRecvBufferSize() int {
