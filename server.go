@@ -285,7 +285,12 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 func (p *Server) Close(conn *ServerConn) {
 	if p.localConnMap[conn.id] != nil {
-		conn.conn.Close()
+		if conn.conn != nil {
+			conn.conn.Close()
+		}
+		if conn.tcpconn != nil {
+			conn.tcpconn.Close()
+		}
 		delete(p.localConnMap, conn.id)
 	}
 }
