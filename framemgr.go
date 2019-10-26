@@ -132,7 +132,7 @@ func (fm *FrameMgr) calSendList() {
 	cur := time.Now().UnixNano()
 	for e := fm.sendwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
-		if f.Resend || cur-f.Sendtime > int64(fm.resend_timems*1000) {
+		if f.Resend || cur-f.Sendtime > int64(fm.resend_timems*(int)(time.Millisecond)) {
 			f.Sendtime = cur
 			fm.sendlist.PushBack(f)
 			f.Resend = false
@@ -368,7 +368,7 @@ func (fm *FrameMgr) IsRemoteClosed() bool {
 
 func (fm *FrameMgr) ping() {
 	cur := time.Now().UnixNano()
-	if cur-fm.lastPingTime > int64(1000*1000) {
+	if cur-fm.lastPingTime > (int64)(time.Second) {
 		f := &Frame{Type: (int32)(Frame_PING), Resend: false, Sendtime: cur,
 			Id: 0}
 		fm.sendlist.PushBack(f)
