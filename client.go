@@ -262,6 +262,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
+		} else {
+			time.Sleep(time.Millisecond * 10)
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
@@ -280,6 +282,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				clientConn.fm.SkipRecvBuffer(n)
 				tcpActiveSendTime = now
 			}
+		} else {
+			time.Sleep(time.Millisecond * 10)
 		}
 
 		diffrecv := now.Sub(clientConn.activeRecvTime)
