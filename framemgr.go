@@ -231,6 +231,9 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 
 	if !fm.isIdInRange((int)(rf.Id), FRAME_MAX_ID) {
 		loggo.Debug("recv frame not in range %d %d", rf.Id, fm.recvid)
+		if !fm.isIdOld((int)(rf.Id), FRAME_MAX_ID) {
+			return true
+		}
 		return false
 	}
 
@@ -255,18 +258,6 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 	fm.recvwin.PushBack(rf)
 	loggo.Debug("insert recv win last %d %d", rf.Id, len(rf.Data))
 	return true
-}
-
-func (fm *FrameMgr) compareId(l int, r int) int {
-
-	if l < fm.recvid {
-		l += FRAME_MAX_ID
-	}
-	if r < fm.recvid {
-		r += FRAME_MAX_ID
-	}
-
-	return l - r
 }
 
 func (fm *FrameMgr) combineWindowToRecvBuffer() {
@@ -399,5 +390,36 @@ func (fm *FrameMgr) isIdInRange(id int, maxid int) bool {
 	if id >= begin && id < end {
 		return true
 	}
+	return false
+}
+
+func (fm *FrameMgr) compareId(l int, r int) int {
+
+	if l < fm.recvid {
+		l += FRAME_MAX_ID
+	}
+	if r < fm.recvid {
+		r += FRAME_MAX_ID
+	}
+
+	return l - r
+}
+
+func (fm *FrameMgr) isIdOld(id int, maxid int) bool {
+	if id > fm.recvid {
+		return false
+	}
+
+	end := fm.recvid + fm.windowsize*2
+	if end >= maxid {
+		if id >= end-maxid && id < fm.recvid {
+			return true
+		}
+	} else {
+		if id < fm.recvid {
+			return true
+		}
+	}
+
 	return false
 }
