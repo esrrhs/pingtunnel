@@ -98,7 +98,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 			Data: make([]byte, FRAME_MAX_SIZE)}
 		fm.sendb.Read(fd.Data)
 
-		if fm.compress > 0 {
+		if fm.compress > 0 && len(fd.Data) > fm.compress {
 			newb := fm.compressData(fd.Data)
 			if len(newb) < len(fd.Data) {
 				fd.Data = newb
@@ -124,7 +124,7 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 			Data: make([]byte, fm.sendb.Size())}
 		fm.sendb.Read(fd.Data)
 
-		if fm.compress > 0 {
+		if fm.compress > 0 && len(fd.Data) > fm.compress {
 			newb := fm.compressData(fd.Data)
 			if len(newb) < len(fd.Data) {
 				fd.Data = newb
@@ -218,7 +218,7 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 		} else if f.Type == (int32)(Frame_PONG) {
 			fm.processPong(f)
 		} else {
-			loggo.Error("error frame type %s", f.Type)
+			loggo.Error("error frame type %d", f.Type)
 		}
 	}
 	fm.recvlist.Init()
@@ -552,6 +552,7 @@ func (fm *FrameMgr) compressData(src []byte) []byte {
 	var b bytes.Buffer
 	w := zlib.NewWriter(&b)
 	w.Write(src)
+	w.Close()
 	return b.Bytes()
 }
 
