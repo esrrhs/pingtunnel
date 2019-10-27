@@ -182,6 +182,36 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
 
+	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+	startConnectTime := time.Now()
+	for {
+		if conn.fm.IsRemoteConnected() {
+			break
+		}
+		conn.fm.Update()
+		sendlist := conn.fm.getSendList()
+		for e := sendlist.Front(); e != nil; e = e.Next() {
+			f := e.Value.(*Frame)
+			mb, _ := proto.Marshal(f)
+			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+				conn.rproto, -1, p.key,
+				0, 0, 0, 0,
+				0)
+			p.sendPacket++
+			p.sendPacketSize += (uint64)(len(mb))
+		}
+		time.Sleep(time.Millisecond * 10)
+		now := time.Now()
+		diffclose := now.Sub(startConnectTime)
+		if diffclose > time.Second*(time.Duration(conn.timeout)) {
+			loggo.Info("can not connect remote tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+			p.Close(conn)
+			return
+		}
+	}
+
+	loggo.Info("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+
 	bytes := make([]byte, 10240)
 
 	tcpActiveRecvTime := time.Now()
