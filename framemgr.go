@@ -203,7 +203,7 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 			fm.processReg(f)
 		} else if f.Type == (int32)(Frame_REGACK) {
 			fm.processRegAck(f)
-		} else if f.Type == (int32)(Frame_REG) {
+		} else if f.Type == (int32)(Frame_REGAGAIN) {
 			fm.processRegAgain(f)
 		}
 	}
