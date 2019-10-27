@@ -205,8 +205,6 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 			fm.processRegAck(f)
 		} else if f.Type == (int32)(Frame_REG) {
 			fm.processRegAgain(f)
-			fm.remote_connected = true
-			loggo.Debug("recv reg again %d %d", f.Id, len(f.Data))
 		}
 	}
 	fm.recvlist.Init()
