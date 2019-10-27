@@ -48,8 +48,8 @@ Usage:
     -tcp_rst  tcp的超时发送时间，默认400ms
               Tcp timeout resend time, default 400ms
 
-	-tcp_gz   tcp数据开启压缩，默认0
-              Whether the tcp data is compressed or not, the default is 0.
+	-tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
+              Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
 `
 
 func main() {
