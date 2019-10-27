@@ -17,31 +17,20 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 ping www.xx.com 2018-12-23 13:05:50.5724495 +0800 CST m=+3.023909301 8 0 1997 2
 pong from xx.xx.xx.xx 210.8078ms
 ```
-
-# 注意
-对于某些网络，比如长城宽带、宽带通，需要特殊处理才能正常工作。方法是
-* 关闭服务器的系统ping，例如
+* 如果想转发tcp流量，只需要在客户端加上-tcp的参数。If you want to forward tcp traffic, you only need to add the -tcp parameter to the client.
 ```
-echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all 
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
 ```
-* 客户端添加catch参数，用来主动抓取服务器回包，100就是每秒主动抓100个包
-```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -catch 100
-```
-* 这个是在某开放wifi上，利用shadowsocks、kcptun、pingtunnel绕过验证直接上网，可以看到wifi是受限的，但是仍然可以通过远程访问网络，ip地址显示是远程服务器的地址，因为他没有禁ping
-![image](show.png)
-
 # Usage
 
+	通过伪造ping，把tcp/udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
+	By forging ping, the tcp/udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
-    通过伪造ping，把udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁UDP流量。
-    By forging ping, the udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block UDP traffic.
-
-    Usage:
+Usage:
 
     pingtunnel -type server
 
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -tcp 1
 
     -type     服务器或者客户端
               client or server
@@ -55,17 +44,26 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
     -t        远端服务器转发的目的地址，流量将转发到这个地址
               Destination address forwarded by the remote server, traffic will be forwarded to this address
 
-    -timeout  本地记录连接超时的时间，单位是秒
-              The time when the local record connection timed out, in seconds
-
-    -sproto   客户端发送ping协议的协议，默认是13
-              The protocol that the client sends the ping. The default is 13.
-
-    -rproto   客户端接收ping协议的协议，默认是14
-              The protocol that the client receives the ping. The default is 14.
-
-    -catch    主动抓模式，每秒从服务器主动抓多少个reply包，默认0
-              Active capture mode, how many reply packets are actively captured from the server per second, default 0
+    -timeout  本地记录连接超时的时间，单位是秒，默认60s
+              The time when the local record connection timed out, in seconds, 60 seconds by default
 
     -key      设置的密码，默认0
               Set password, default 0
+
+    -tcp      设置是否转发tcp，默认0
+              Set the switch to forward tcp, the default is 0
+
+    -tcp_bs   tcp的发送接收缓冲区大小，默认10MB
+              Tcp send and receive buffer size, default 10MB
+
+    -tcp_mw   tcp的最大窗口，默认10000
+              The maximum window of tcp, the default is 10000
+
+    -tcp_rst  tcp的超时发送时间，默认400ms
+              Tcp timeout resend time, default 400ms
+
+	-tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
+              Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
+
+    -nolog    不写日志文件，只打印标准输出，默认0
+              Do not write log files, only print standard output, default 0 is off
