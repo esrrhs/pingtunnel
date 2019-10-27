@@ -223,6 +223,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 	for {
 		now := time.Now()
+		sleep := true
 
 		left := common.MinOfInt(clientConn.fm.GetSendBufferLeft(), len(bytes))
 		if left > 0 {
@@ -237,6 +238,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				}
 			}
 			if n > 0 {
+				sleep = false
 				clientConn.fm.WriteSendBuffer(bytes[:n])
 				tcpActiveRecvTime = now
 			}
@@ -246,6 +248,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 		sendlist := clientConn.fm.getSendList()
 		if sendlist.Len() > 0 {
+			sleep = false
 			clientConn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*Frame)
@@ -265,6 +268,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
+			sleep = false
 			rr := clientConn.fm.GetRecvReadLineBuffer()
 			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 1))
 			n, err := conn.Write(rr)
@@ -280,6 +284,10 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				clientConn.fm.SkipRecvBuffer(n)
 				tcpActiveSendTime = now
 			}
+		}
+
+		if sleep {
+			time.Sleep(time.Millisecond * 1)
 		}
 
 		diffrecv := now.Sub(clientConn.activeRecvTime)
