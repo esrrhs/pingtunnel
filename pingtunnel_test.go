@@ -95,4 +95,10 @@ func Test0001(t *testing.T) {
 	fm.recvid = 13
 	fm.windowsize = 10000
 	fmt.Println("fm.isIdOld  = ", fm.isIdOld(9, FRAME_MAX_ID))
+
+	dd := fm.compressData(([]byte)("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+	fmt.Println("fm.compressData  = ", len(dd))
+
+	_, ddd := fm.deCompressData(dd)
+	fmt.Println("fm.deCompressData  = ", (string)(ddd))
 }
