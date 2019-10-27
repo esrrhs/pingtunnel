@@ -192,7 +192,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 		left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
 		if left > 0 {
-			conn.tcpconn.SetReadDeadline(time.Now().Add(time.Millisecond * 10))
+			conn.tcpconn.SetReadDeadline(time.Now().Add(time.Millisecond * 1))
 			n, err := conn.tcpconn.Read(bytes[0:left])
 			if err != nil {
 				nerr, ok := err.(net.Error)
@@ -231,7 +231,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 		if conn.fm.GetRecvBufferSize() > 0 {
 			rr := conn.fm.GetRecvReadLineBuffer()
-			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 10))
+			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 1))
 			n, err := conn.tcpconn.Write(rr)
 			if err != nil {
 				nerr, ok := err.(net.Error)
