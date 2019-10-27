@@ -217,9 +217,10 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
 
 	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
+	clientConn.fm.Connect()
 	startConnectTime := time.Now()
 	for {
-		if clientConn.fm.IsRemoteConnected() {
+		if clientConn.fm.IsConnected() {
 			break
 		}
 		clientConn.fm.Update()

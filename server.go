@@ -185,7 +185,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := time.Now()
 	for {
-		if conn.fm.IsRemoteConnected() {
+		if conn.fm.IsConnected() {
 			break
 		}
 		conn.fm.Update()

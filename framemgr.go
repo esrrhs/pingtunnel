@@ -35,7 +35,7 @@ type FrameMgr struct {
 	reqmap  map[int32]int64
 	sendmap map[int32]int64
 
-	remote_connected bool
+	connected bool
 }
 
 func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
@@ -51,7 +51,7 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
 		close: false, remoteclosed: false, closesend: false,
 		lastPingTime: time.Now().UnixNano(), rttns: (int64)(resend_timems * 1000),
 		reqmap: make(map[int32]int64), sendmap: make(map[int32]int64),
-		remote_connected: false}
+		connected: false}
 
 	return fm
 }
@@ -76,18 +76,12 @@ func (fm *FrameMgr) Update() {
 
 	fm.combineWindowToRecvBuffer()
 
-	fm.tryConnect()
-
 	fm.calSendList()
 
 	fm.ping()
 }
 
 func (fm *FrameMgr) cutSendBufferToWindow() {
-
-	if !fm.remote_connected {
-		return
-	}
 
 	sendall := false
 
@@ -96,10 +90,13 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 	}
 
 	for fm.sendb.Size() >= FRAME_MAX_SIZE && fm.sendwin.Len() < fm.windowsize {
-		f := &Frame{Type: (int32)(Frame_DATA), Resend: false, Sendtime: 0,
-			Id:   (int32)(fm.sendid),
+		fd := &FrameData{Type: (int32)(FrameData_USER_DATA),
 			Data: make([]byte, FRAME_MAX_SIZE)}
-		fm.sendb.Read(f.Data)
+		fm.sendb.Read(fd.Data)
+
+		f := &Frame{Type: (int32)(Frame_DATA),
+			Id:   (int32)(fm.sendid),
+			Data: fd}
 
 		fm.sendid++
 		if fm.sendid >= FRAME_MAX_ID {
@@ -111,10 +108,13 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 	}
 
 	if sendall && fm.sendb.Size() > 0 && fm.sendwin.Len() < fm.windowsize {
-		f := &Frame{Type: (int32)(Frame_DATA), Resend: false, Sendtime: 0,
-			Id:   (int32)(fm.sendid),
+		fd := &FrameData{Type: (int32)(FrameData_USER_DATA),
 			Data: make([]byte, fm.sendb.Size())}
-		fm.sendb.Read(f.Data)
+		fm.sendb.Read(fd.Data)
+
+		f := &Frame{Type: (int32)(Frame_DATA),
+			Id:   (int32)(fm.sendid),
+			Data: fd}
 
 		fm.sendid++
 		if fm.sendid >= FRAME_MAX_ID {
@@ -122,30 +122,28 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		}
 
 		fm.sendwin.PushBack(f)
-		loggo.Debug("cut small frame push to send win %d %d %d", f.Id, len(f.Data), fm.sendwin.Len())
+		loggo.Debug("cut small frame push to send win %d %d %d", f.Id, len(f.Data.Data), fm.sendwin.Len())
 	}
 
 	if fm.sendb.Empty() && fm.close && !fm.closesend && fm.sendwin.Len() < fm.windowsize {
-		f := &Frame{Type: (int32)(Frame_DATA), Resend: false, Sendtime: 0,
+		fd := &FrameData{Type: (int32)(FrameData_CLOSE)}
+
+		f := &Frame{Type: (int32)(Frame_DATA),
 			Id:   (int32)(fm.sendid),
-			Data: make([]byte, 0)}
-		fm.sendwin.PushBack(f)
+			Data: fd}
 
 		fm.sendid++
 		if fm.sendid >= FRAME_MAX_ID {
 			fm.sendid = 0
 		}
 
+		fm.sendwin.PushBack(f)
 		fm.closesend = true
 		loggo.Debug("close frame push to send win %d %d", f.Id, fm.sendwin.Len())
 	}
 }
 
 func (fm *FrameMgr) calSendList() {
-
-	if !fm.remote_connected {
-		return
-	}
 
 	cur := time.Now().UnixNano()
 	for e := fm.sendwin.Front(); e != nil; e = e.Next() {
@@ -157,7 +155,7 @@ func (fm *FrameMgr) calSendList() {
 				fm.sendlist.PushBack(f)
 				f.Resend = false
 				fm.sendmap[f.Id] = cur
-				loggo.Debug("push frame to sendlist %d %d", f.Id, len(f.Data))
+				loggo.Debug("push frame to sendlist %d %d", f.Id, len(f.Data.Data))
 			}
 		}
 	}
@@ -194,17 +192,13 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 			}
 		} else if f.Type == (int32)(Frame_DATA) {
 			tmpackto[f.Id] = f
-			loggo.Debug("recv data %d %d", f.Id, len(f.Data))
+			loggo.Debug("recv data %d %d", f.Id, len(f.Data.Data))
 		} else if f.Type == (int32)(Frame_PING) {
 			fm.processPing(f)
 		} else if f.Type == (int32)(Frame_PONG) {
 			fm.processPong(f)
-		} else if f.Type == (int32)(Frame_REG) {
-			fm.processReg(f)
-		} else if f.Type == (int32)(Frame_REGACK) {
-			fm.processRegAck(f)
-		} else if f.Type == (int32)(Frame_REGAGAIN) {
-			fm.processRegAgain(f)
+		} else {
+			loggo.Error("error frame type %s", f.Type)
 		}
 	}
 	fm.recvlist.Init()
@@ -213,16 +207,12 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 
 func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, tmpackto map[int32]*Frame) {
 
-	if !fm.remote_connected {
-		return
-	}
-
 	for id, _ := range tmpreq {
 		for e := fm.sendwin.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*Frame)
 			if f.Id == id {
 				f.Resend = true
-				loggo.Debug("choose resend win %d %d", f.Id, len(f.Data))
+				loggo.Debug("choose resend win %d %d", f.Id, len(f.Data.Data))
 				break
 			}
 		}
@@ -234,7 +224,7 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			if f.Id == id {
 				fm.sendwin.Remove(e)
 				delete(fm.sendmap, f.Id)
-				loggo.Debug("remove send win %d %d", f.Id, len(f.Data))
+				loggo.Debug("remove send win %d %d", f.Id, len(f.Data.Data))
 				break
 			}
 		}
@@ -247,7 +237,7 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			if fm.addToRecvWin(rf) {
 				tmp[index] = id
 				index++
-				loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data))
+				loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data.Data))
 			}
 		}
 		if index > 0 {
@@ -273,7 +263,7 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 	for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
 		if f.Id == rf.Id {
-			loggo.Debug("recv frame ignore %d %d", f.Id, len(f.Data))
+			loggo.Debug("recv frame ignore %d %d", f.Id, len(f.Data.Data))
 			return true
 		}
 	}
@@ -283,38 +273,58 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 		loggo.Debug("start insert recv win %d %d %d", fm.recvid, rf.Id, f.Id)
 		if fm.compareId((int)(rf.Id), (int)(f.Id)) < 0 {
 			fm.recvwin.InsertBefore(rf, e)
-			loggo.Debug("insert recv win %d %d before %d", rf.Id, len(rf.Data), f.Id)
+			loggo.Debug("insert recv win %d %d before %d", rf.Id, len(rf.Data.Data), f.Id)
 			return true
 		}
 	}
 
 	fm.recvwin.PushBack(rf)
-	loggo.Debug("insert recv win last %d %d", rf.Id, len(rf.Data))
+	loggo.Debug("insert recv win last %d %d", rf.Id, len(rf.Data.Data))
 	return true
 }
 
-func (fm *FrameMgr) combineWindowToRecvBuffer() {
-
-	if !fm.remote_connected {
-		return
+func (fm *FrameMgr) processRecvFrame(f *Frame) bool {
+	if f.Data.Type == (int32)(FrameData_USER_DATA) {
+		left := fm.recvb.Capacity() - fm.recvb.Size()
+		if left >= len(f.Data.Data) {
+			fm.recvb.Write(f.Data.Data)
+			loggo.Debug("combined recv frame to recv buffer %d %d",
+				f.Id, len(f.Data.Data))
+			return true
+		}
+	} else if f.Data.Type == (int32)(FrameData_CLOSE) {
+		fm.remoteclosed = true
+		loggo.Debug("recv remote close frame %d", f.Id)
+		return true
+	} else if f.Data.Type == (int32)(FrameData_CONN) {
+		fm.sendConnectRsp()
+		fm.connected = true
+		loggo.Debug("recv remote conn frame %d", f.Id)
+		return true
+	} else if f.Data.Type == (int32)(FrameData_CONNRSP) {
+		fm.connected = true
+		loggo.Debug("recv remote conn rsp frame %d", f.Id)
+		return true
+	} else {
+		loggo.Error("recv frame type error %d", f.Data.Type)
+		return false
 	}
+	return false
+}
+
+func (fm *FrameMgr) combineWindowToRecvBuffer() {
 
 	for {
 		done := false
 		for e := fm.recvwin.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*Frame)
 			if f.Id == (int32)(fm.recvid) {
-				left := fm.recvb.Capacity() - fm.recvb.Size()
-				if left >= len(f.Data) {
-					if len(f.Data) == 0 {
-						fm.remoteclosed = true
-						loggo.Debug("recv remote close frame %d", f.Id)
-					}
-					fm.recvb.Write(f.Data)
+				delete(fm.reqmap, f.Id)
+				if fm.processRecvFrame(f) {
 					fm.recvwin.Remove(e)
-					delete(fm.reqmap, f.Id)
 					done = true
-					loggo.Debug("combined recv frame to recv buffer %d %d", f.Id, len(f.Data))
+					loggo.Debug("process recv frame ok %d %d",
+						f.Id, len(f.Data.Data))
 					break
 				}
 			}
@@ -395,10 +405,6 @@ func (fm *FrameMgr) IsRemoteClosed() bool {
 }
 
 func (fm *FrameMgr) ping() {
-	if !fm.remote_connected {
-		return
-	}
-
 	cur := time.Now().UnixNano()
 	if cur-fm.lastPingTime > (int64)(time.Second) {
 		f := &Frame{Type: (int32)(Frame_PING), Resend: false, Sendtime: cur,
@@ -471,32 +477,38 @@ func (fm *FrameMgr) isIdOld(id int, maxid int) bool {
 	return false
 }
 
-func (fm *FrameMgr) IsRemoteConnected() bool {
-	return fm.remote_connected
+func (fm *FrameMgr) IsConnected() bool {
+	return fm.connected
 }
 
-func (fm *FrameMgr) tryConnect() {
-	if !fm.remote_connected {
-		f := &Frame{Type: (int32)(Frame_REG)}
-		fm.sendlist.PushBack(f)
-		loggo.Debug("try connect")
+func (fm *FrameMgr) Connect() {
+	fd := &FrameData{Type: (int32)(FrameData_CONN)}
+
+	f := &Frame{Type: (int32)(Frame_DATA),
+		Id:   (int32)(fm.sendid),
+		Data: fd}
+
+	fm.sendid++
+	if fm.sendid >= FRAME_MAX_ID {
+		fm.sendid = 0
 	}
+
+	fm.sendwin.PushBack(f)
+	loggo.Debug("start connect")
 }
 
-func (fm *FrameMgr) processReg(f *Frame) {
-	rf := &Frame{Type: (int32)(Frame_REGACK)}
-	fm.sendlist.PushBack(rf)
-	loggo.Debug("recv reg ")
-}
+func (fm *FrameMgr) sendConnectRsp() {
+	fd := &FrameData{Type: (int32)(FrameData_CONNRSP)}
 
-func (fm *FrameMgr) processRegAck(f *Frame) {
-	rf := &Frame{Type: (int32)(Frame_REGAGAIN)}
-	fm.sendlist.PushBack(rf)
-	fm.remote_connected = true
-	loggo.Debug("recv reg ack ")
-}
+	f := &Frame{Type: (int32)(Frame_DATA),
+		Id:   (int32)(fm.sendid),
+		Data: fd}
 
-func (fm *FrameMgr) processRegAgain(f *Frame) {
-	fm.remote_connected = true
-	loggo.Debug("recv reg ack again ")
+	fm.sendid++
+	if fm.sendid >= FRAME_MAX_ID {
+		fm.sendid = 0
+	}
+
+	fm.sendwin.PushBack(f)
+	loggo.Debug("send connect rsp")
 }

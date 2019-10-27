@@ -22,6 +22,17 @@ message MyMsg {
   int32 timeout = 12;
 }
 
+message FrameData {
+  enum TYPE {
+    USER_DATA = 0;
+    CONN = 1;
+    CONNRSP = 2;
+    CLOSE = 3;
+  }
+  int32 type = 1;
+  bytes data = 2;
+}
+
 message Frame {
   enum TYPE {
     DATA = 0;
@@ -29,15 +40,12 @@ message Frame {
     ACK = 2;
     PING = 3;
     PONG = 4;
-    REG = 5;
-    REGACK = 6;
-    REGAGAIN = 7;
   }
   
   int32 type = 1;
   bool resend = 2;
   int64 sendtime = 3;
   int32 id = 4;
-  bytes data = 5;
+  FrameData data = 5;
   repeated int32 dataid = 6;
 }
