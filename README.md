@@ -23,10 +23,10 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 ```
 # Usage
 
-	通过伪造ping，把tcp/udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
-	By forging ping, the tcp/udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
+    通过伪造ping，把tcp/udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
+    By forging ping, the tcp/udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
-Usage:
+    Usage:
 
     pingtunnel -type server
 
