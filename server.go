@@ -89,7 +89,7 @@ func (p *Server) processPacket(packet *Packet) {
 		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
-			0, 0, 0, 0,
+			0, 0, 0, 0, 0,
 			0)
 		return
 	}
@@ -117,7 +117,7 @@ func (p *Server) processPacket(packet *Packet) {
 				return
 			}
 
-			fm := NewFrameMgr((int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems))
+			fm := NewFrameMgr((int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress))
 
 			localConn = &ServerConn{timeout: (int)(packet.my.Timeout), tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
@@ -195,7 +195,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			mb, _ := proto.Marshal(f)
 			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key,
-				0, 0, 0, 0,
+				0, 0, 0, 0, 0,
 				0)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
@@ -255,7 +255,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				}
 				sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 					conn.rproto, -1, p.key,
-					0, 0, 0, 0,
+					0, 0, 0, 0, 0,
 					0)
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
@@ -315,7 +315,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			mb, _ := proto.Marshal(f)
 			sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key,
-				0, 0, 0, 0,
+				0, 0, 0, 0, 0,
 				0)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
@@ -378,7 +378,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 		sendICMP(p.echoId, p.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
 			conn.rproto, -1, p.key,
-			0, 0, 0, 0,
+			0, 0, 0, 0, 0,
 			0)
 
 		p.sendPacket++
