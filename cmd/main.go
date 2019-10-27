@@ -50,6 +50,10 @@ Usage:
 
 	-tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
               Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
+
+    -nolog    不写日志文件，只打印标准输出，默认0
+              Do not write log files, only print standard output, default 0 is off
+
 `
 
 func main() {
@@ -65,6 +69,7 @@ func main() {
 	tcpmode_maxwin := flag.Int("tcp_mw", 10000, "tcp mode max win")
 	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
 	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
+	nolog := flag.Int("nolog", 0, "write log file")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -80,7 +85,12 @@ func main() {
 		return
 	}
 
-	loggo.Ini(loggo.Config{Level: loggo.LEVEL_INFO, Prefix: "pingtunnel", MaxDay: 3})
+	loggo.Ini(loggo.Config{
+		Level:     loggo.LEVEL_INFO,
+		Prefix:    "pingtunnel",
+		MaxDay:    3,
+		NoLogFile: *nolog > 0,
+	})
 	loggo.Info("start...")
 	loggo.Info("key %d", *key)
 
