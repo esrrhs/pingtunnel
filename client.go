@@ -216,6 +216,36 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 	p.localIdToConnMap[uuid] = clientConn
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
 
+	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
+	startConnectTime := time.Now()
+	for {
+		if clientConn.fm.IsRemoteConnected() {
+			break
+		}
+		clientConn.fm.Update()
+		sendlist := clientConn.fm.getSendList()
+		for e := sendlist.Front(); e != nil; e = e.Next() {
+			f := e.Value.(*Frame)
+			mb, _ := proto.Marshal(f)
+			p.sequence++
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+				SEND_PROTO, RECV_PROTO, p.key,
+				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems,
+				p.timeout)
+			p.sendPacket++
+			p.sendPacketSize += (uint64)(len(mb))
+		}
+		time.Sleep(time.Millisecond * 10)
+		now := time.Now()
+		diffclose := now.Sub(startConnectTime)
+		if diffclose > time.Second*(time.Duration(p.timeout)) {
+			loggo.Info("can not connect remote tcp %s %s", uuid, tcpsrcaddr.String())
+			p.Close(clientConn)
+			return
+		}
+	}
+
+	loggo.Info("connected remote tcp %s %s", uuid, tcpsrcaddr.String())
 	bytes := make([]byte, 10240)
 
 	tcpActiveRecvTime := time.Now()

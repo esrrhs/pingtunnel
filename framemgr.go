@@ -34,6 +34,8 @@ type FrameMgr struct {
 
 	reqmap  map[int32]int64
 	sendmap map[int32]int64
+
+	remote_connected bool
 }
 
 func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
@@ -48,7 +50,8 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
 		recvwin: list.New(), recvlist: list.New(), recvid: 0,
 		close: false, remoteclosed: false, closesend: false,
 		lastPingTime: time.Now().UnixNano(), rttns: (int64)(resend_timems * 1000),
-		reqmap: make(map[int32]int64), sendmap: make(map[int32]int64)}
+		reqmap: make(map[int32]int64), sendmap: make(map[int32]int64),
+		remote_connected: false}
 
 	return fm
 }
@@ -73,12 +76,18 @@ func (fm *FrameMgr) Update() {
 
 	fm.combineWindowToRecvBuffer()
 
+	fm.tryConnect()
+
 	fm.calSendList()
 
 	fm.ping()
 }
 
 func (fm *FrameMgr) cutSendBufferToWindow() {
+
+	if !fm.remote_connected {
+		return
+	}
 
 	sendall := false
 
@@ -133,6 +142,11 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 }
 
 func (fm *FrameMgr) calSendList() {
+
+	if !fm.remote_connected {
+		return
+	}
+
 	cur := time.Now().UnixNano()
 	for e := fm.sendwin.Front(); e != nil; e = e.Next() {
 		f := e.Value.(*Frame)
@@ -185,6 +199,14 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 			fm.processPing(f)
 		} else if f.Type == (int32)(Frame_PONG) {
 			fm.processPong(f)
+		} else if f.Type == (int32)(Frame_REG) {
+			fm.processReg(f)
+		} else if f.Type == (int32)(Frame_REGACK) {
+			fm.processRegAck(f)
+		} else if f.Type == (int32)(Frame_REG) {
+			fm.processRegAgain(f)
+			fm.remote_connected = true
+			loggo.Debug("recv reg again %d %d", f.Id, len(f.Data))
 		}
 	}
 	fm.recvlist.Init()
@@ -192,6 +214,10 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 }
 
 func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, tmpackto map[int32]*Frame) {
+
+	if !fm.remote_connected {
+		return
+	}
 
 	for id, _ := range tmpreq {
 		for e := fm.sendwin.Front(); e != nil; e = e.Next() {
@@ -270,6 +296,10 @@ func (fm *FrameMgr) addToRecvWin(rf *Frame) bool {
 }
 
 func (fm *FrameMgr) combineWindowToRecvBuffer() {
+
+	if !fm.remote_connected {
+		return
+	}
 
 	for {
 		done := false
@@ -367,6 +397,10 @@ func (fm *FrameMgr) IsRemoteClosed() bool {
 }
 
 func (fm *FrameMgr) ping() {
+	if !fm.remote_connected {
+		return
+	}
+
 	cur := time.Now().UnixNano()
 	if cur-fm.lastPingTime > (int64)(time.Second) {
 		f := &Frame{Type: (int32)(Frame_PING), Resend: false, Sendtime: cur,
@@ -437,4 +471,34 @@ func (fm *FrameMgr) isIdOld(id int, maxid int) bool {
 	}
 
 	return false
+}
+
+func (fm *FrameMgr) IsRemoteConnected() bool {
+	return fm.remote_connected
+}
+
+func (fm *FrameMgr) tryConnect() {
+	if !fm.remote_connected {
+		f := &Frame{Type: (int32)(Frame_REG)}
+		fm.sendlist.PushBack(f)
+		loggo.Debug("try connect")
+	}
+}
+
+func (fm *FrameMgr) processReg(f *Frame) {
+	rf := &Frame{Type: (int32)(Frame_REGACK)}
+	fm.sendlist.PushBack(rf)
+	loggo.Debug("recv reg ")
+}
+
+func (fm *FrameMgr) processRegAck(f *Frame) {
+	rf := &Frame{Type: (int32)(Frame_REGAGAIN)}
+	fm.sendlist.PushBack(rf)
+	fm.remote_connected = true
+	loggo.Debug("recv reg ack ")
+}
+
+func (fm *FrameMgr) processRegAgain(f *Frame) {
+	fm.remote_connected = true
+	loggo.Debug("recv reg ack again ")
 }
