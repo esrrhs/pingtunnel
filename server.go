@@ -189,7 +189,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	for {
 		now := time.Now()
-		sleep := true
 
 		left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
 		if left > 0 {
@@ -204,9 +203,10 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				}
 			}
 			if n > 0 {
-				sleep = false
 				conn.fm.WriteSendBuffer(bytes[:n])
 				tcpActiveRecvTime = now
+			} else {
+				time.Sleep(time.Millisecond * 10)
 			}
 		}
 
@@ -214,7 +214,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 		sendlist := conn.fm.getSendList()
 		if sendlist.Len() > 0 {
-			sleep = false
 			conn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*Frame)
@@ -233,7 +232,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 
 		if conn.fm.GetRecvBufferSize() > 0 {
-			sleep = false
 			rr := conn.fm.GetRecvReadLineBuffer()
 			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 1))
 			n, err := conn.tcpconn.Write(rr)
@@ -249,10 +247,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				conn.fm.SkipRecvBuffer(n)
 				tcpActiveSendTime = now
 			}
-		}
-
-		if sleep {
-			time.Sleep(time.Millisecond * 1)
 		}
 
 		diffrecv := now.Sub(conn.activeRecvTime)
