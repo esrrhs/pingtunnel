@@ -1,10 +1,13 @@
 package pingtunnel
 
 import (
+	"bytes"
+	"compress/zlib"
 	"container/list"
 	"github.com/esrrhs/go-engine/src/common"
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/rbuffergo"
+	"io"
 	"sync"
 	"time"
 )
@@ -16,6 +19,7 @@ type FrameMgr struct {
 	recvlock      sync.Locker
 	windowsize    int
 	resend_timems int
+	compress      int
 
 	sendwin  *list.List
 	sendlist *list.List
@@ -38,14 +42,14 @@ type FrameMgr struct {
 	connected bool
 }
 
-func NewFrameMgr(buffersize int, windowsize int, resend_timems int) *FrameMgr {
+func NewFrameMgr(buffersize int, windowsize int, resend_timems int, compress int) *FrameMgr {
 
 	sendb := rbuffergo.New(buffersize, false)
 	recvb := rbuffergo.New(buffersize, false)
 
 	fm := &FrameMgr{sendb: sendb, recvb: recvb,
 		recvlock:   &sync.Mutex{},
-		windowsize: windowsize, resend_timems: resend_timems,
+		windowsize: windowsize, resend_timems: resend_timems, compress: compress,
 		sendwin: list.New(), sendlist: list.New(), sendid: 0,
 		recvwin: list.New(), recvlist: list.New(), recvid: 0,
 		close: false, remoteclosed: false, closesend: false,
@@ -94,6 +98,14 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 			Data: make([]byte, FRAME_MAX_SIZE)}
 		fm.sendb.Read(fd.Data)
 
+		if fm.compress > 0 {
+			newb := fm.compressData(fd.Data)
+			if len(newb) < len(fd.Data) {
+				fd.Data = newb
+				fd.Compress = true
+			}
+		}
+
 		f := &Frame{Type: (int32)(Frame_DATA),
 			Id:   (int32)(fm.sendid),
 			Data: fd}
@@ -111,6 +123,14 @@ func (fm *FrameMgr) cutSendBufferToWindow() {
 		fd := &FrameData{Type: (int32)(FrameData_USER_DATA),
 			Data: make([]byte, fm.sendb.Size())}
 		fm.sendb.Read(fd.Data)
+
+		if fm.compress > 0 {
+			newb := fm.compressData(fd.Data)
+			if len(newb) < len(fd.Data) {
+				fd.Data = newb
+				fd.Compress = true
+			}
+		}
 
 		f := &Frame{Type: (int32)(Frame_DATA),
 			Id:   (int32)(fm.sendid),
@@ -287,11 +307,27 @@ func (fm *FrameMgr) processRecvFrame(f *Frame) bool {
 	if f.Data.Type == (int32)(FrameData_USER_DATA) {
 		left := fm.recvb.Capacity() - fm.recvb.Size()
 		if left >= len(f.Data.Data) {
-			fm.recvb.Write(f.Data.Data)
+			src := f.Data.Data
+			if f.Data.Compress {
+				err, old := fm.deCompressData(src)
+				if err != nil {
+					loggo.Error("recv frame deCompressData error %d", f.Id)
+					return false
+				}
+				if left < len(old) {
+					return false
+				}
+				loggo.Debug("deCompressData recv frame %d %d %d",
+					f.Id, len(src), len(old))
+				src = old
+			}
+
+			fm.recvb.Write(src)
 			loggo.Debug("combined recv frame to recv buffer %d %d",
-				f.Id, len(f.Data.Data))
+				f.Id, len(src))
 			return true
 		}
+		return false
 	} else if f.Data.Type == (int32)(FrameData_CLOSE) {
 		fm.remoteclosed = true
 		loggo.Debug("recv remote close frame %d", f.Id)
@@ -309,7 +345,6 @@ func (fm *FrameMgr) processRecvFrame(f *Frame) bool {
 		loggo.Error("recv frame type error %d", f.Data.Type)
 		return false
 	}
-	return false
 }
 
 func (fm *FrameMgr) combineWindowToRecvBuffer() {
@@ -511,4 +546,23 @@ func (fm *FrameMgr) sendConnectRsp() {
 
 	fm.sendwin.PushBack(f)
 	loggo.Debug("send connect rsp")
+}
+
+func (fm *FrameMgr) compressData(src []byte) []byte {
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	w.Write(src)
+	return b.Bytes()
+}
+
+func (fm *FrameMgr) deCompressData(src []byte) (error, []byte) {
+	b := bytes.NewReader(src)
+	r, err := zlib.NewReader(b)
+	if err != nil {
+		return err, nil
+	}
+	var out bytes.Buffer
+	io.Copy(&out, r)
+	r.Close()
+	return nil, out.Bytes()
 }

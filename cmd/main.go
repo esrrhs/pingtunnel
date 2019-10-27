@@ -36,8 +36,8 @@ Usage:
     -key      设置的密码，默认0
               Set password, default 0
 
-    -tcp      设置是否转发tcp，默认false
-              Set the switch to forward tcp, the default is false
+    -tcp      设置是否转发tcp，默认0
+              Set the switch to forward tcp, the default is 0
 
     -tcp_bs   tcp的发送接收缓冲区大小，默认10MB
               Tcp send and receive buffer size, default 10MB
@@ -47,6 +47,9 @@ Usage:
 
     -tcp_rst  tcp的超时发送时间，默认400ms
               Tcp timeout resend time, default 400ms
+
+	-tcp_gz   tcp数据开启压缩，默认0
+              Whether the tcp data is compressed or not, the default is 0.
 `
 
 func main() {
@@ -61,6 +64,7 @@ func main() {
 	tcpmode_buffersize := flag.Int("tcp_bs", 10*1024*1024, "tcp mode buffer size")
 	tcpmode_maxwin := flag.Int("tcp_mw", 10000, "tcp mode max win")
 	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
+	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -103,7 +107,7 @@ func main() {
 		}
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
-			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems)
+			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
