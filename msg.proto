@@ -29,6 +29,9 @@ message Frame {
     ACK = 2;
     PING = 3;
     PONG = 4;
+    REG = 5;
+    REGACK = 6;
+    REGAGAIN = 7;
   }
   
   int32 type = 1;
