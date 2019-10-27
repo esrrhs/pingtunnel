@@ -226,7 +226,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 
 		left := common.MinOfInt(clientConn.fm.GetSendBufferLeft(), len(bytes))
 		if left > 0 {
-			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 10))
 			n, err := conn.Read(bytes[0:left])
 			if err != nil {
 				nerr, ok := err.(net.Error)
@@ -262,13 +262,11 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
-		} else {
-			time.Sleep(time.Millisecond * 10)
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
 			rr := clientConn.fm.GetRecvReadLineBuffer()
-			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
+			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 10))
 			n, err := conn.Write(rr)
 			if err != nil {
 				nerr, ok := err.(net.Error)
@@ -282,8 +280,6 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 				clientConn.fm.SkipRecvBuffer(n)
 				tcpActiveSendTime = now
 			}
-		} else {
-			time.Sleep(time.Millisecond * 10)
 		}
 
 		diffrecv := now.Sub(clientConn.activeRecvTime)
