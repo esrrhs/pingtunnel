@@ -15,11 +15,12 @@ message MyMsg {
   sint32 rproto = 5;
   sint32 magic = 6;
   sint32 key = 7;
-  int32 tcpmode = 8;
-  int32 tcpmode_buffersize = 9;
-  int32 tcpmode_maxwin = 10;
-  int32 tcpmode_resend_timems = 11;
-  int32 timeout = 12;
+  int32 timeout = 8;
+  int32 tcpmode = 9;
+  int32 tcpmode_buffersize = 10;
+  int32 tcpmode_maxwin = 11;
+  int32 tcpmode_resend_timems = 12;
+  int32 tcpmode_compress = 13;
 }
 
 message FrameData {
@@ -31,6 +32,7 @@ message FrameData {
   }
   int32 type = 1;
   bytes data = 2;
+  bool compress = 3;
 }
 
 message Frame {
