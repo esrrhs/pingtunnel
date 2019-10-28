@@ -14,9 +14,17 @@ var usage = `
 
 Usage:
 
+    // server
     pingtunnel -type server
 
+    // client, Forward udp
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455
+
+    // client, Forward tcp
     pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -tcp 1
+
+    // client, Forward sock5, implicitly open tcp, so no target server is needed
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -sock5 1
 
     -type     服务器或者客户端
               client or server
@@ -59,6 +67,9 @@ Usage:
 
     -loglevel 日志文件等级，默认info
               log level, default is info
+
+    -sock5    开启sock5转发，默认0
+              Turn on sock5 forwarding, default 0 is off
 `
 
 func main() {
@@ -77,15 +88,29 @@ func main() {
 	nolog := flag.Int("nolog", 0, "write log file")
 	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
 	loglevel := flag.String("loglevel", "info", "log level")
+	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
 
 	flag.Parse()
 
-	if (*t != "client" && *t != "server") || (*t == "client" && (len(*listen) == 0 || len(*target) == 0 || len(*server) == 0)) {
+	if *t != "client" && *t != "server" {
 		flag.Usage()
 		return
+	}
+	if *t == "client" {
+		if len(*listen) == 0 || len(*server) == 0 {
+			flag.Usage()
+			return
+		}
+		if *open_sock5 == 0 && len(*target) == 0 {
+			flag.Usage()
+			return
+		}
+		if *open_sock5 != 0 {
+			*tcpmode = 1
+		}
 	}
 	if *tcpmode_maxwin*10 > pingtunnel.FRAME_MAX_ID {
 		fmt.Println("set tcp win to big, max = " + strconv.Itoa(pingtunnel.FRAME_MAX_ID/10))
@@ -129,7 +154,7 @@ func main() {
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat)
+			*tcpmode_stat, *open_sock5)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
