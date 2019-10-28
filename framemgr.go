@@ -8,9 +8,29 @@ import (
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/rbuffergo"
 	"io"
+	"strconv"
 	"sync"
 	"time"
 )
+
+type FrameStat struct {
+	sendDataNum     int
+	recvDataNum     int
+	sendReqNum      int
+	recvReqNum      int
+	sendAckNum      int
+	recvAckNum      int
+	sendDataNumsMap map[int32]int
+	recvDataNumsMap map[int32]int
+	sendReqNumsMap  map[int32]int
+	recvReqNumsMap  map[int32]int
+	sendAckNumsMap  map[int32]int
+	recvAckNumsMap  map[int32]int
+	sendping        int
+	sendpong        int
+	recvping        int
+	recvpong        int
+}
 
 type FrameMgr struct {
 	sendb *rbuffergo.RBuffergo
@@ -40,9 +60,13 @@ type FrameMgr struct {
 	sendmap map[int32]int64
 
 	connected bool
+
+	fs            *FrameStat
+	openstat      int
+	lastPrintStat int64
 }
 
-func NewFrameMgr(buffersize int, windowsize int, resend_timems int, compress int) *FrameMgr {
+func NewFrameMgr(buffersize int, windowsize int, resend_timems int, compress int, openstat int) *FrameMgr {
 
 	sendb := rbuffergo.New(buffersize, false)
 	recvb := rbuffergo.New(buffersize, false)
@@ -55,8 +79,10 @@ func NewFrameMgr(buffersize int, windowsize int, resend_timems int, compress int
 		close: false, remoteclosed: false, closesend: false,
 		lastPingTime: time.Now().UnixNano(), rttns: (int64)(resend_timems * 1000),
 		reqmap: make(map[int32]int64), sendmap: make(map[int32]int64),
-		connected: false}
-
+		connected: false, openstat: openstat, lastPrintStat: time.Now().UnixNano()}
+	if openstat > 0 {
+		fm.resetStat()
+	}
 	return fm
 }
 
@@ -83,6 +109,8 @@ func (fm *FrameMgr) Update() {
 	fm.calSendList()
 
 	fm.ping()
+
+	fm.printStat()
 }
 
 func (fm *FrameMgr) cutSendBufferToWindow() {
@@ -175,6 +203,10 @@ func (fm *FrameMgr) calSendList() {
 				fm.sendlist.PushBack(f)
 				f.Resend = false
 				fm.sendmap[f.Id] = cur
+				if fm.openstat > 0 {
+					fm.fs.sendDataNum++
+					fm.fs.sendDataNumsMap[f.Id]++
+				}
 				loggo.Debug("push frame to sendlist %d %d", f.Id, len(f.Data.Data))
 			}
 		}
@@ -212,6 +244,10 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 			}
 		} else if f.Type == (int32)(Frame_DATA) {
 			tmpackto[f.Id] = f
+			if fm.openstat > 0 {
+				fm.fs.recvDataNum++
+				fm.fs.recvDataNumsMap[f.Id]++
+			}
 			loggo.Debug("recv data %d %d", f.Id, len(f.Data.Data))
 		} else if f.Type == (int32)(Frame_PING) {
 			fm.processPing(f)
@@ -227,7 +263,7 @@ func (fm *FrameMgr) preProcessRecvList() (map[int32]int, map[int32]int, map[int3
 
 func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, tmpackto map[int32]*Frame) {
 
-	for id, _ := range tmpreq {
+	for id, num := range tmpreq {
 		for e := fm.sendwin.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*Frame)
 			if f.Id == id {
@@ -236,9 +272,13 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 				break
 			}
 		}
+		if fm.openstat > 0 {
+			fm.fs.recvReqNum += num
+			fm.fs.recvReqNumsMap[id] += num
+		}
 	}
 
-	for id, _ := range tmpack {
+	for id, num := range tmpack {
 		for e := fm.sendwin.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*Frame)
 			if f.Id == id {
@@ -247,6 +287,10 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 				loggo.Debug("remove send win %d %d", f.Id, len(f.Data.Data))
 				break
 			}
+		}
+		if fm.openstat > 0 {
+			fm.fs.recvAckNum += num
+			fm.fs.recvAckNumsMap[id] += num
 		}
 	}
 
@@ -257,6 +301,10 @@ func (fm *FrameMgr) processRecvList(tmpreq map[int32]int, tmpack map[int32]int, 
 			if fm.addToRecvWin(rf) {
 				tmp[index] = id
 				index++
+				if fm.openstat > 0 {
+					fm.fs.sendAckNum++
+					fm.fs.sendAckNumsMap[id]++
+				}
 				loggo.Debug("add data to win %d %d", rf.Id, len(rf.Data.Data))
 			}
 		}
@@ -407,6 +455,10 @@ func (fm *FrameMgr) combineWindowToRecvBuffer() {
 		for id, _ := range reqtmp {
 			f.Dataid[index] = (int32)(id)
 			index++
+			if fm.openstat > 0 {
+				fm.fs.sendReqNum++
+				fm.fs.sendReqNumsMap[(int32)(id)]++
+			}
 		}
 		fm.sendlist.PushBack(f)
 		loggo.Debug("send req %d %s", f.Id, common.Int32ArrayToString(f.Dataid, ","))
@@ -442,11 +494,14 @@ func (fm *FrameMgr) IsRemoteClosed() bool {
 func (fm *FrameMgr) ping() {
 	cur := time.Now().UnixNano()
 	if cur-fm.lastPingTime > (int64)(time.Second) {
+		fm.lastPingTime = cur
 		f := &Frame{Type: (int32)(Frame_PING), Resend: false, Sendtime: cur,
 			Id: 0}
 		fm.sendlist.PushBack(f)
 		loggo.Debug("send ping %d", cur)
-		fm.lastPingTime = cur
+		if fm.openstat > 0 {
+			fm.fs.sendping++
+		}
 	}
 }
 
@@ -454,6 +509,10 @@ func (fm *FrameMgr) processPing(f *Frame) {
 	rf := &Frame{Type: (int32)(Frame_PONG), Resend: false, Sendtime: f.Sendtime,
 		Id: 0}
 	fm.sendlist.PushBack(rf)
+	if fm.openstat > 0 {
+		fm.fs.recvping++
+		fm.fs.sendpong++
+	}
 	loggo.Debug("recv ping %d", f.Sendtime)
 }
 
@@ -462,6 +521,9 @@ func (fm *FrameMgr) processPong(f *Frame) {
 	if cur > f.Sendtime {
 		rtt := cur - f.Sendtime
 		fm.rttns = (fm.rttns + rtt) / 2
+		if fm.openstat > 0 {
+			fm.fs.recvpong++
+		}
 		loggo.Debug("recv pong %d %dms", rtt, fm.rttns/1000/1000)
 	}
 }
@@ -566,4 +628,57 @@ func (fm *FrameMgr) deCompressData(src []byte) (error, []byte) {
 	io.Copy(&out, r)
 	r.Close()
 	return nil, out.Bytes()
+}
+
+func (fm *FrameMgr) resetStat() {
+	fm.fs = &FrameStat{}
+	fm.fs.sendDataNumsMap = make(map[int32]int)
+	fm.fs.recvDataNumsMap = make(map[int32]int)
+	fm.fs.sendReqNumsMap = make(map[int32]int)
+	fm.fs.recvReqNumsMap = make(map[int32]int)
+	fm.fs.sendAckNumsMap = make(map[int32]int)
+	fm.fs.recvAckNumsMap = make(map[int32]int)
+}
+
+func (fm *FrameMgr) printStat() {
+	if fm.openstat > 0 {
+		cur := time.Now().UnixNano()
+		if cur-fm.lastPrintStat > (int64)(time.Second) {
+			fm.lastPrintStat = cur
+			fs := fm.fs
+			loggo.Info("\nsendDataNum %d\nrecvDataNum %d\nsendReqNum %d\nrecvReqNum %d\nsendAckNum %d\nrecvAckNum %d\n"+
+				"sendDataNumsMap %s\nrecvDataNumsMap %s\nsendReqNumsMap %s\nrecvReqNumsMap %s\nsendAckNumsMap %s\nrecvAckNumsMap %s\n"+
+				"sendping %d\nrecvping %d\nsendpong %d\nrecvpong %d\n",
+				fs.sendDataNum, fs.recvDataNum,
+				fs.sendReqNum, fs.recvReqNum,
+				fs.sendAckNum, fs.recvAckNum,
+				fm.printStatMap(&fs.sendDataNumsMap), fm.printStatMap(&fs.recvDataNumsMap),
+				fm.printStatMap(&fs.sendReqNumsMap), fm.printStatMap(&fs.recvReqNumsMap),
+				fm.printStatMap(&fs.sendAckNumsMap), fm.printStatMap(&fs.recvAckNumsMap),
+				fs.sendping, fs.recvping,
+				fs.sendpong, fs.recvpong)
+			fm.resetStat()
+		}
+	}
+}
+
+func (fm *FrameMgr) printStatMap(m *map[int32]int) string {
+	tmp := make(map[int]int)
+	for _, v := range *m {
+		tmp[v]++
+	}
+	max := 0
+	for k, _ := range tmp {
+		if k > max {
+			max = k
+		}
+	}
+	var ret string
+	for i := 1; i <= max; i++ {
+		ret += strconv.Itoa(i) + "->" + strconv.Itoa(tmp[i]) + ","
+	}
+	if len(ret) <= 0 {
+		ret = "none"
+	}
+	return ret
 }
