@@ -18,7 +18,7 @@ const (
 
 func NewClient(addr string, server string, target string, timeout int, key int,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int) (*Client, error) {
+	tcpmode_stat int, open_sock5 int) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -58,6 +58,7 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 		tcpmode_resend_timems: tcpmode_resend_timems,
 		tcpmode_compress:      tcpmode_compress,
 		tcpmode_stat:          tcpmode_stat,
+		open_sock5:            open_sock5,
 	}, nil
 }
 
@@ -75,6 +76,7 @@ type Client struct {
 	tcpmode_resend_timems int
 	tcpmode_compress      int
 	tcpmode_stat          int
+	open_sock5            int
 
 	ipaddr  *net.UDPAddr
 	tcpaddr *net.TCPAddr
@@ -201,13 +203,17 @@ func (p *Client) AcceptTcp() error {
 		}
 
 		if conn != nil {
-			go p.AcceptTcpConn(conn)
+			if p.open_sock5 > 0 {
+				go p.AcceptSock5Conn(conn)
+			} else {
+				go p.AcceptTcpConn(conn, p.targetAddr)
+			}
 		}
 	}
 
 }
 
-func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
+func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	uuid := UniqueId()
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
@@ -234,7 +240,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			f := e.Value.(*Frame)
 			mb, _ := proto.Marshal(f)
 			p.sequence++
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat,
 				p.timeout)
@@ -294,7 +300,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 					continue
 				}
 				p.sequence++
-				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 					SEND_PROTO, RECV_PROTO, p.key,
 					p.tcpmode, 0, 0, 0, 0, 0,
 					0)
@@ -355,7 +361,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn) {
 			f := e.Value.(*Frame)
 			mb, _ := proto.Marshal(f)
 			p.sequence++
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, 0, 0, 0, 0, 0,
 				0)
@@ -530,7 +536,7 @@ func (p *Client) ping() {
 	if p.sendPacket == 0 {
 		now := time.Now()
 		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, "", (uint32)(MyMsg_PING), b,
+		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
 			SEND_PROTO, RECV_PROTO, p.key,
 			0, 0, 0, 0, 0, 0,
 			0)
@@ -546,4 +552,33 @@ func (p *Client) showNet() {
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+}
+
+func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
+
+	var err error = nil
+	if err = sock5Handshake(conn); err != nil {
+		loggo.Error("socks handshake: %s", err)
+		conn.Close()
+		return
+	}
+	_, addr, err := sock5GetRequest(conn)
+	if err != nil {
+		loggo.Error("error getting request: %s", err)
+		conn.Close()
+		return
+	}
+	// Sending connection established message immediately to client.
+	// This some round trip time for creating socks connection with the client.
+	// But if connection failed, the client will get connection reset error.
+	_, err = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x08, 0x43})
+	if err != nil {
+		loggo.Error("send connection confirmation:", err)
+		conn.Close()
+		return
+	}
+
+	loggo.Info("accept new sock5 conn: %s", addr)
+
+	p.AcceptTcpConn(conn, addr)
 }
