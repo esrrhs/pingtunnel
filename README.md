@@ -1,7 +1,14 @@
 # Pingtunnel
-pingtunnel是把udp流量伪装成icmp流量进行转发的工具，类似于kcptun。用于突破网络封锁，或是绕过WIFI网络的登陆验证。可以与kcptun很方便的结合使用。
-<br />Pingtunnel is a tool that advertises udp traffic as icmp traffic for forwarding, similar to kcptun. Used to break through the network blockade, or to bypass the WIFI network login verification. Can be combined with kcptun very convenient.
+pingtunnel是把tcp/udp流量伪装成icmp流量进行转发的工具。用于突破网络封锁，或是绕过WIFI网络的登陆验证，或是在某些网络加快网络传输速度。
+<br />Pingtunnel is a tool that advertises tcp/udp traffic as icmp traffic for forwarding. Used to break through the network blockade, or to bypass the WIFI network login verification, or speed up network transmission speed on some networks. 
+
 ![image](network.png)
+
+# Why use this
+* 因为网络审查，ip会直接被ban，但是却可以ping通，这时候就可以用这个工具继续连接服务器。If the server's ip is blocked, all tcp udp packets are forbidden, but it can be pinged. At this point, you can continue to connect to the server with this tool.
+* 在咖啡厅或是机场，可以连接free wifi，但是需要登录跳转验证，这时候就可以用这个工具绕过登录上网，因为wifi虽然不可以上网，但是却可以ping通你的服务器。In the coffee shop or airport, you can connect to free wifi, but you need to log in to verify. At this time, you can use this tool to bypass the login, because wifi can not surf the Internet, but you can ping your server.
+* 在某些网络，tcp的传输很慢，但是如果用icmp协议，可能因为运营商的设置或是网络拓扑，速度会变快，实际测试在中国大陆连aws的服务器会有加速效果。In some networks, the transmission of tcp is very slow, but if the icmp protocol is used, the speed may be faster because of the operator's settings or the network topology. After testing, connecting the server of aws from mainland China has an accelerated effect.
+
 # Sample
 如把本机的:4455的UDP流量转发到www.yourserver.com:4455：For example, the UDP traffic of the machine: 4545 is forwarded to www.yourserver.com:4455:
 * 在www.yourserver.com的服务器上用root权限运行。Run with root privileges on the server at www.yourserver.com
@@ -21,12 +28,14 @@ pong from xx.xx.xx.xx 210.8078ms
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
 ```
+* 大功告成，然后你就可以开始和本机的:4455端口通信，数据都被自动转发到远端，如同连接到www.yourserver.com:4455一样。 Then you can start communicating with the local: 4455 port, the data is automatically forwarded to the remote, as you connect to www.yourserver.com:4455.
+
 # Usage
 
-	通过伪造ping，把tcp/udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
-	By forging ping, the tcp/udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
+    通过伪造ping，把tcp/udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
+    By forging ping, the tcp/udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
-Usage:
+    Usage:
 
     pingtunnel -type server
 
