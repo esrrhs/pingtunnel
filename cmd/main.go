@@ -9,8 +9,8 @@ import (
 )
 
 var usage = `
-	通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
-	By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
+    通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
+    By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
 Usage:
 
@@ -56,10 +56,10 @@ Usage:
     -tcp_rst  tcp的超时发送时间，默认400ms
               Tcp timeout resend time, default 400ms
 
-	-tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
+    -tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
               Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
 
-	-tcp_stat 打印tcp的监控，默认0
+    -tcp_stat 打印tcp的监控，默认0
               Print tcp connection statistic, default 0 is off
 
     -nolog    不写日志文件，只打印标准输出，默认0
