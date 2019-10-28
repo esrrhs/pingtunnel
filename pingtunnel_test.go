@@ -101,4 +101,16 @@ func Test0001(t *testing.T) {
 
 	_, ddd := fm.deCompressData(dd)
 	fmt.Println("fm.deCompressData  = ", (string)(ddd))
+
+	mm := make(map[int32]int)
+	mm[1] = 1
+	mm[2] = 1
+	mm[3] = 1
+	mm[4] = 2
+	mm[6] = 7
+	mms := fm.printStatMap(&mm)
+	fmt.Println("fm.printStatMap  = ", mms)
+	fm.openstat = 1
+	fm.resetStat()
+	fm.printStat()
 }

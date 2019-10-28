@@ -51,6 +51,9 @@ Usage:
 	-tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
               Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
 
+	-tcp_stat 打印tcp的监控，默认0
+              Print tcp connection statistic, default 0 is off
+
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
 
@@ -70,6 +73,7 @@ func main() {
 	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
 	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
 	nolog := flag.Int("nolog", 0, "write log file")
+	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -117,7 +121,8 @@ func main() {
 		}
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
-			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress)
+			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
+			*tcpmode_stat)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
