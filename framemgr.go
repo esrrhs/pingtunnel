@@ -648,7 +648,8 @@ func (fm *FrameMgr) printStat() {
 			fs := fm.fs
 			loggo.Info("\nsendDataNum %d\nrecvDataNum %d\nsendReqNum %d\nrecvReqNum %d\nsendAckNum %d\nrecvAckNum %d\n"+
 				"sendDataNumsMap %s\nrecvDataNumsMap %s\nsendReqNumsMap %s\nrecvReqNumsMap %s\nsendAckNumsMap %s\nrecvAckNumsMap %s\n"+
-				"sendping %d\nrecvping %d\nsendpong %d\nrecvpong %d\n",
+				"sendping %d\nrecvping %d\nsendpong %d\nrecvpong %d\n"+
+				"sendwin %d\nrecvwin %d\n",
 				fs.sendDataNum, fs.recvDataNum,
 				fs.sendReqNum, fs.recvReqNum,
 				fs.sendAckNum, fs.recvAckNum,
@@ -656,7 +657,8 @@ func (fm *FrameMgr) printStat() {
 				fm.printStatMap(&fs.sendReqNumsMap), fm.printStatMap(&fs.recvReqNumsMap),
 				fm.printStatMap(&fs.sendAckNumsMap), fm.printStatMap(&fs.recvAckNumsMap),
 				fs.sendping, fs.recvping,
-				fs.sendpong, fs.recvpong)
+				fs.sendpong, fs.recvpong,
+				fm.sendwin.Len(), fm.recvwin.Len())
 			fm.resetStat()
 		}
 	}
