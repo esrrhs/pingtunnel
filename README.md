@@ -28,18 +28,29 @@ pong from xx.xx.xx.xx 210.8078ms
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
 ```
+* 如果想转发sock5流量，只需要在客户端加上-sock5的参数。If you want to forward sock5 traffic, you only need to add the -sock5 parameter to the client.
+```
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
+```
 * 大功告成，然后你就可以开始和本机的:4455端口通信，数据都被自动转发到远端，如同连接到www.yourserver.com:4455一样。 Then you can start communicating with the local: 4455 port, the data is automatically forwarded to the remote, as you connect to www.yourserver.com:4455.
 
 # Usage
-
-    通过伪造ping，把tcp/udp流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
-    By forging ping, the tcp/udp traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
+    通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
+    By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
     Usage:
 
+    // server
     pingtunnel -type server
 
+    // client, Forward udp
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455
+
+    // client, Forward tcp
     pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -tcp 1
+
+    // client, Forward sock5, implicitly open tcp, so no target server is needed
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -sock5 1
 
     -type     服务器或者客户端
               client or server
@@ -71,8 +82,17 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
     -tcp_rst  tcp的超时发送时间，默认400ms
               Tcp timeout resend time, default 400ms
 
-	-tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
+    -tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
               Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
+
+    -tcp_stat 打印tcp的监控，默认0
+              Print tcp connection statistic, default 0 is off
 
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
+
+    -loglevel 日志文件等级，默认info
+              log level, default is info
+
+    -sock5    开启sock5转发，默认0
+              Turn on sock5 forwarding, default 0 is off
