@@ -57,6 +57,8 @@ Usage:
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
 
+    -loglevel 日志文件等级，默认info
+              log level, default is info
 `
 
 func main() {
@@ -74,6 +76,7 @@ func main() {
 	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
 	nolog := flag.Int("nolog", 0, "write log file")
 	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
+	loglevel := flag.String("loglevel", "info", "log level")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -89,8 +92,12 @@ func main() {
 		return
 	}
 
+	level := loggo.LEVEL_INFO
+	if loggo.NameToLevel(*loglevel) >= 0 {
+		level = loggo.NameToLevel(*loglevel)
+	}
 	loggo.Ini(loggo.Config{
-		Level:     loggo.LEVEL_INFO,
+		Level:     level,
 		Prefix:    "pingtunnel",
 		MaxDay:    3,
 		NoLogFile: *nolog > 0,
