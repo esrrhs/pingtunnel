@@ -43,6 +43,8 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	return &Client{
+		exit:                  false,
+		rtt:                   0,
 		id:                    r.Intn(math.MaxInt16),
 		ipaddr:                ipaddr,
 		tcpaddr:               tcpaddr,
@@ -63,6 +65,9 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 }
 
 type Client struct {
+	exit bool
+	rtt  time.Duration
+
 	id       int
 	sequence int
 
@@ -131,6 +136,10 @@ func (p *Client) ServerAddr() string {
 	return p.addrServer
 }
 
+func (p *Client) RTT() time.Duration {
+	return p.rtt
+}
+
 func (p *Client) Run() {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
@@ -174,7 +183,7 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	for {
+	for !p.exit {
 		select {
 		case <-interval.C:
 			p.checkTimeoutConn()
@@ -186,11 +195,15 @@ func (p *Client) Run() {
 	}
 }
 
+func (p *Client) Stop() {
+	p.exit = true
+}
+
 func (p *Client) AcceptTcp() error {
 
 	loggo.Info("client waiting local accept tcp")
 
-	for {
+	for !p.exit {
 		p.tcplistenConn.SetDeadline(time.Now().Add(time.Millisecond * 1000))
 
 		conn, err := p.tcplistenConn.AcceptTCP()
@@ -210,7 +223,7 @@ func (p *Client) AcceptTcp() error {
 			}
 		}
 	}
-
+	return nil
 }
 
 func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
@@ -230,7 +243,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
 	clientConn.fm.Connect()
 	startConnectTime := time.Now()
-	for {
+	for !p.exit {
 		if clientConn.fm.IsConnected() {
 			break
 		}
@@ -263,7 +276,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	tcpActiveRecvTime := time.Now()
 	tcpActiveSendTime := time.Now()
 
-	for {
+	for !p.exit {
 		now := time.Now()
 		sleep := true
 
@@ -351,7 +364,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	}
 
 	startCloseTime := time.Now()
-	for {
+	for !p.exit {
 		now := time.Now()
 
 		clientConn.fm.Update()
@@ -408,7 +421,7 @@ func (p *Client) Accept() error {
 
 	bytes := make([]byte, 10240)
 
-	for {
+	for !p.exit {
 		p.listenConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, srcaddr, err := p.listenConn.ReadFromUDP(bytes)
 		if err != nil {
@@ -443,6 +456,7 @@ func (p *Client) Accept() error {
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
 	}
+	return nil
 }
 
 func (p *Client) processPacket(packet *Packet) {
@@ -464,6 +478,7 @@ func (p *Client) processPacket(packet *Packet) {
 		t.UnmarshalBinary(packet.my.Data)
 		d := time.Now().Sub(t)
 		loggo.Info("pong from %s %s", packet.src.String(), d.String())
+		p.rtt = d
 		return
 	}
 
