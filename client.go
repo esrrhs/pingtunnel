@@ -140,12 +140,12 @@ func (p *Client) RTT() time.Duration {
 	return p.rtt
 }
 
-func (p *Client) Run() {
+func (p *Client) Run() error {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
-		return
+		return err
 	}
 	defer conn.Close()
 	p.conn = conn
@@ -154,7 +154,7 @@ func (p *Client) Run() {
 		tcplistenConn, err := net.ListenTCP("tcp", p.tcpaddr)
 		if err != nil {
 			loggo.Error("Error listening for tcp packets: %s", err.Error())
-			return
+			return err
 		}
 		defer tcplistenConn.Close()
 		p.tcplistenConn = tcplistenConn
@@ -162,7 +162,7 @@ func (p *Client) Run() {
 		listener, err := net.ListenUDP("udp", p.ipaddr)
 		if err != nil {
 			loggo.Error("Error listening for udp packets: %s", err.Error())
-			return
+			return err
 		}
 		defer listener.Close()
 		p.listenConn = listener
@@ -183,16 +183,20 @@ func (p *Client) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	for !p.exit {
-		select {
-		case <-interval.C:
-			p.checkTimeoutConn()
-			p.ping()
-			p.showNet()
-		case r := <-recv:
-			p.processPacket(r)
+	go func() {
+		for !p.exit {
+			select {
+			case <-interval.C:
+				p.checkTimeoutConn()
+				p.ping()
+				p.showNet()
+			case r := <-recv:
+				p.processPacket(r)
+			}
 		}
-	}
+	}()
+
+	return nil
 }
 
 func (p *Client) Stop() {
