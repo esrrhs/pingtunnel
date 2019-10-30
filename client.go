@@ -65,8 +65,9 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 }
 
 type Client struct {
-	exit bool
-	rtt  time.Duration
+	exit     bool
+	rtt      time.Duration
+	interval *time.Ticker
 
 	id       int
 	sequence int
@@ -147,7 +148,6 @@ func (p *Client) Run() error {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
 	}
-	defer conn.Close()
 	p.conn = conn
 
 	if p.tcpmode > 0 {
@@ -156,7 +156,6 @@ func (p *Client) Run() error {
 			loggo.Error("Error listening for tcp packets: %s", err.Error())
 			return err
 		}
-		defer tcplistenConn.Close()
 		p.tcplistenConn = tcplistenConn
 	} else {
 		listener, err := net.ListenUDP("udp", p.ipaddr)
@@ -164,7 +163,6 @@ func (p *Client) Run() error {
 			loggo.Error("Error listening for udp packets: %s", err.Error())
 			return err
 		}
-		defer listener.Close()
 		p.listenConn = listener
 	}
 
@@ -180,13 +178,12 @@ func (p *Client) Run() error {
 	recv := make(chan *Packet, 10000)
 	go recvICMP(*p.conn, recv)
 
-	interval := time.NewTicker(time.Second)
-	defer interval.Stop()
+	p.interval = time.NewTicker(time.Second)
 
 	go func() {
 		for !p.exit {
 			select {
-			case <-interval.C:
+			case <-p.interval.C:
 				p.checkTimeoutConn()
 				p.ping()
 				p.showNet()
@@ -201,6 +198,14 @@ func (p *Client) Run() error {
 
 func (p *Client) Stop() {
 	p.exit = true
+	p.conn.Close()
+	if p.tcplistenConn != nil {
+		p.tcplistenConn.Close()
+	}
+	if p.listenConn != nil {
+		p.listenConn.Close()
+	}
+	p.interval.Stop()
 }
 
 func (p *Client) AcceptTcp() error {
@@ -269,7 +274,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*(time.Duration(p.timeout)) {
 			loggo.Info("can not connect remote tcp %s %s", uuid, tcpsrcaddr.String())
-			p.Close(clientConn)
+			p.close(clientConn)
 			return
 		}
 	}
@@ -416,7 +421,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	loggo.Info("close tcp conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 	conn.Close()
-	p.Close(clientConn)
+	p.close(clientConn)
 }
 
 func (p *Client) Accept() error {
@@ -521,7 +526,7 @@ func (p *Client) processPacket(packet *Packet) {
 	p.recvPacketSize += (uint64)(len(packet.my.Data))
 }
 
-func (p *Client) Close(clientConn *ClientConn) {
+func (p *Client) close(clientConn *ClientConn) {
 	if p.localIdToConnMap[clientConn.id] != nil {
 		delete(p.localIdToConnMap, clientConn.id)
 		delete(p.localAddrToConnMap, clientConn.ipaddr.String())
@@ -546,7 +551,7 @@ func (p *Client) checkTimeoutConn() {
 	for id, conn := range p.localIdToConnMap {
 		if conn.close {
 			loggo.Info("close inactive conn %s %s", id, conn.ipaddr.String())
-			p.Close(conn)
+			p.close(conn)
 		}
 	}
 }
