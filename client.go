@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -65,9 +66,10 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 }
 
 type Client struct {
-	exit     bool
-	rtt      time.Duration
-	interval *time.Ticker
+	exit           bool
+	rtt            time.Duration
+	interval       *time.Ticker
+	workResultLock sync.WaitGroup
 
 	id       int
 	sequence int
@@ -176,11 +178,14 @@ func (p *Client) Run() error {
 	}
 
 	recv := make(chan *Packet, 10000)
-	go recvICMP(*p.conn, recv)
+	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv)
 
 	p.interval = time.NewTicker(time.Second)
 
 	go func() {
+		p.workResultLock.Add(1)
+		defer p.workResultLock.Done()
+
 		for !p.exit {
 			select {
 			case <-p.interval.C:
@@ -198,6 +203,7 @@ func (p *Client) Run() error {
 
 func (p *Client) Stop() {
 	p.exit = true
+	p.workResultLock.Wait()
 	p.conn.Close()
 	if p.tcplistenConn != nil {
 		p.tcplistenConn.Close()
@@ -209,6 +215,9 @@ func (p *Client) Stop() {
 }
 
 func (p *Client) AcceptTcp() error {
+
+	p.workResultLock.Add(1)
+	defer p.workResultLock.Done()
 
 	loggo.Info("client waiting local accept tcp")
 
@@ -236,6 +245,9 @@ func (p *Client) AcceptTcp() error {
 }
 
 func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
+
+	p.workResultLock.Add(1)
+	defer p.workResultLock.Done()
 
 	uuid := UniqueId()
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
@@ -426,6 +438,9 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 func (p *Client) Accept() error {
 
+	p.workResultLock.Add(1)
+	defer p.workResultLock.Done()
+
 	loggo.Info("client waiting local accept udp")
 
 	bytes := make([]byte, 10240)
@@ -579,6 +594,9 @@ func (p *Client) showNet() {
 }
 
 func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
+
+	p.workResultLock.Add(1)
+	defer p.workResultLock.Done()
 
 	var err error = nil
 	if err = sock5Handshake(conn); err != nil {
