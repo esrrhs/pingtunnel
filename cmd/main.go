@@ -150,6 +150,8 @@ func main() {
 			*tcpmode_buffersize = 0
 			*tcpmode_maxwin = 0
 			*tcpmode_resend_timems = 0
+			*tcpmode_compress = 0
+			*tcpmode_stat = 0
 		}
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
