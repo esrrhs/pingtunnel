@@ -143,6 +143,22 @@ func (p *Client) RTT() time.Duration {
 	return p.rtt
 }
 
+func (p *Client) RecvPacketSize() uint64 {
+	return p.recvPacketSize
+}
+
+func (p *Client) SendPacketSize() uint64 {
+	return p.sendPacketSize
+}
+
+func (p *Client) RecvPacket() uint64 {
+	return p.recvPacket
+}
+
+func (p *Client) SendPacket() uint64 {
+	return p.sendPacket
+}
+
 func (p *Client) Run() error {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
