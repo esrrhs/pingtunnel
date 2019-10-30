@@ -12,6 +12,7 @@ import (
 	"golang.org/x/net/ipv4"
 	"io"
 	"net"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -77,10 +78,13 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 	return
 }
 
-func recvICMP(conn icmp.PacketConn, recv chan<- *Packet) {
+func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, recv chan<- *Packet) {
+
+	(*workResultLock).Add(1)
+	defer (*workResultLock).Done()
 
 	bytes := make([]byte, 10240)
-	for {
+	for !*exit {
 		conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, srcaddr, err := conn.ReadFrom(bytes)
 

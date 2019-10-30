@@ -6,6 +6,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -17,9 +18,10 @@ func NewServer(key int) (*Server, error) {
 }
 
 type Server struct {
-	exit     bool
-	key      int
-	interval *time.Ticker
+	exit           bool
+	key            int
+	interval       *time.Ticker
+	workResultLock sync.WaitGroup
 
 	conn *icmp.PacketConn
 
@@ -61,11 +63,14 @@ func (p *Server) Run() error {
 	p.localConnMap = make(map[string]*ServerConn)
 
 	recv := make(chan *Packet, 10000)
-	go recvICMP(*p.conn, recv)
+	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv)
 
 	p.interval = time.NewTicker(time.Second)
 
 	go func() {
+		p.workResultLock.Add(1)
+		defer p.workResultLock.Done()
+
 		for !p.exit {
 			select {
 			case <-p.interval.C:
@@ -82,6 +87,7 @@ func (p *Server) Run() error {
 
 func (p *Server) Stop() {
 	p.exit = true
+	p.workResultLock.Wait()
 	p.conn.Close()
 	p.interval.Stop()
 }
@@ -192,6 +198,9 @@ func (p *Server) processPacket(packet *Packet) {
 }
 
 func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
+
+	p.workResultLock.Add(1)
+	defer p.workResultLock.Done()
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
 
@@ -369,6 +378,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 }
 
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
+
+	p.workResultLock.Add(1)
+	defer p.workResultLock.Done()
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
 
