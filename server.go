@@ -17,8 +17,9 @@ func NewServer(key int) (*Server, error) {
 }
 
 type Server struct {
-	exit bool
-	key  int
+	exit     bool
+	key      int
+	interval *time.Ticker
 
 	conn *icmp.PacketConn
 
@@ -62,13 +63,12 @@ func (p *Server) Run() error {
 	recv := make(chan *Packet, 10000)
 	go recvICMP(*p.conn, recv)
 
-	interval := time.NewTicker(time.Second)
-	defer interval.Stop()
+	p.interval = time.NewTicker(time.Second)
 
 	go func() {
 		for !p.exit {
 			select {
-			case <-interval.C:
+			case <-p.interval.C:
 				p.checkTimeoutConn()
 				p.showNet()
 			case r := <-recv:
@@ -78,6 +78,12 @@ func (p *Server) Run() error {
 	}()
 
 	return nil
+}
+
+func (p *Server) Stop() {
+	p.exit = true
+	p.conn.Close()
+	p.interval.Stop()
 }
 
 func (p *Server) processPacket(packet *Packet) {
@@ -212,7 +218,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*(time.Duration(conn.timeout)) {
 			loggo.Info("can not connect remote tcp %s %s", conn.id, conn.tcpaddrTarget.String())
-			p.Close(conn)
+			p.close(conn)
 			return
 		}
 	}
@@ -359,7 +365,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	time.Sleep(time.Second)
 
 	loggo.Info("close tcp conn %s %s", conn.id, conn.tcpaddrTarget.String())
-	p.Close(conn)
+	p.close(conn)
 }
 
 func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
@@ -393,7 +399,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 	}
 }
 
-func (p *Server) Close(conn *ServerConn) {
+func (p *Server) close(conn *ServerConn) {
 	if p.localConnMap[conn.id] != nil {
 		if conn.conn != nil {
 			conn.conn.Close()
@@ -425,7 +431,7 @@ func (p *Server) checkTimeoutConn() {
 		}
 		if conn.close {
 			loggo.Info("close inactive conn %s %s", id, conn.ipaddrTarget.String())
-			p.Close(conn)
+			p.close(conn)
 		}
 	}
 }
