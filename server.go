@@ -11,12 +11,14 @@ import (
 
 func NewServer(key int) (*Server, error) {
 	return &Server{
-		key: key,
+		exit: false,
+		key:  key,
 	}, nil
 }
 
 type Server struct {
-	key int
+	exit bool
+	key  int
 
 	conn *icmp.PacketConn
 
@@ -46,12 +48,12 @@ type ServerConn struct {
 	tcpmode        int
 }
 
-func (p *Server) Run() {
+func (p *Server) Run() error {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
-		return
+		return err
 	}
 	p.conn = conn
 
@@ -63,15 +65,19 @@ func (p *Server) Run() {
 	interval := time.NewTicker(time.Second)
 	defer interval.Stop()
 
-	for {
-		select {
-		case <-interval.C:
-			p.checkTimeoutConn()
-			p.showNet()
-		case r := <-recv:
-			p.processPacket(r)
+	go func() {
+		for !p.exit {
+			select {
+			case <-interval.C:
+				p.checkTimeoutConn()
+				p.showNet()
+			case r := <-recv:
+				p.processPacket(r)
+			}
 		}
-	}
+	}()
+
+	return nil
 }
 
 func (p *Server) processPacket(packet *Packet) {
@@ -185,7 +191,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := time.Now()
-	for {
+	for !p.exit {
 		if conn.fm.IsConnected() {
 			break
 		}
@@ -218,7 +224,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	tcpActiveRecvTime := time.Now()
 	tcpActiveSendTime := time.Now()
 
-	for {
+	for !p.exit {
 		now := time.Now()
 		sleep := true
 
@@ -305,7 +311,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	}
 
 	startCloseTime := time.Now()
-	for {
+	for !p.exit {
 		now := time.Now()
 
 		conn.fm.Update()
@@ -360,7 +366,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
 
-	for {
+	for !p.exit {
 		bytes := make([]byte, 2000)
 
 		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))

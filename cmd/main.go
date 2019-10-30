@@ -6,6 +6,7 @@ import (
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/pingtunnel"
 	"strconv"
+	"time"
 )
 
 var usage = `
@@ -137,7 +138,11 @@ func main() {
 			return
 		}
 		loggo.Info("Server start")
-		s.Run()
+		err = s.Run()
+		if err != nil {
+			loggo.Error("Run ERROR: %s", err.Error())
+			return
+		}
 	}
 	if *t == "client" {
 
@@ -163,6 +168,13 @@ func main() {
 		}
 		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s:", c.Addr(), c.IPAddr(),
 			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr())
-		c.Run()
+		err = c.Run()
+		if err != nil {
+			loggo.Error("Run ERROR: %s", err.Error())
+			return
+		}
+	}
+	for {
+		time.Sleep(time.Hour)
 	}
 }
