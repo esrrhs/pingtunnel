@@ -71,6 +71,9 @@ Usage:
 
     -sock5    开启sock5转发，默认0
               Turn on sock5 forwarding, default 0 is off
+
+    -maxconn  最大连接数，默认1000
+              the max num of connections, default 1000
 `
 
 func main() {
@@ -90,6 +93,7 @@ func main() {
 	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
 	loglevel := flag.String("loglevel", "info", "log level")
 	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
+	maxconn := flag.Int("maxconn", 0, "max num of connections")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -132,7 +136,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*key)
+		s, err := pingtunnel.NewServer(*key, *maxconn)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -143,8 +147,7 @@ func main() {
 			loggo.Error("Run ERROR: %s", err.Error())
 			return
 		}
-	}
-	if *t == "client" {
+	} else if *t == "client" {
 
 		loggo.Info("type %s", *t)
 		loggo.Info("listen %s", *listen)
@@ -161,7 +164,7 @@ func main() {
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5)
+			*tcpmode_stat, *open_sock5, *maxconn)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -173,6 +176,8 @@ func main() {
 			loggo.Error("Run ERROR: %s", err.Error())
 			return
 		}
+	} else {
+		return
 	}
 	for {
 		time.Sleep(time.Hour)

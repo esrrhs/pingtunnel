@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-func NewServer(key int) (*Server, error) {
+func NewServer(key int, maxconn int) (*Server, error) {
 	return &Server{
-		exit: false,
-		key:  key,
+		exit:    false,
+		key:     key,
+		maxconn: maxconn,
 	}, nil
 }
 
@@ -22,15 +23,17 @@ type Server struct {
 	key            int
 	interval       *time.Ticker
 	workResultLock sync.WaitGroup
+	maxconn        int
 
 	conn *icmp.PacketConn
 
 	localConnMap sync.Map
 
-	sendPacket     uint64
-	recvPacket     uint64
-	sendPacketSize uint64
-	recvPacketSize uint64
+	sendPacket       uint64
+	recvPacket       uint64
+	sendPacketSize   uint64
+	recvPacketSize   uint64
+	localConnMapSize int
 
 	echoId  int
 	echoSeq int
@@ -117,6 +120,11 @@ func (p *Server) processPacket(packet *Packet) {
 	id := packet.my.Id
 	localConn := p.getServerConnById(id)
 	if localConn == nil {
+
+		if p.localConnMapSize >= p.maxconn {
+			loggo.Info("too many connections %d, server connected target fail %s", p.localConnMapSize, packet.my.Target)
+			return
+		}
 
 		if packet.my.Tcpmode > 0 {
 
@@ -449,8 +457,13 @@ func (p *Server) checkTimeoutConn() {
 }
 
 func (p *Server) showNet() {
-	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	p.localConnMapSize = 0
+	p.localConnMap.Range(func(key, value interface{}) bool {
+		p.localConnMapSize++
+		return true
+	})
+	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %dConnections",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localConnMapSize)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
