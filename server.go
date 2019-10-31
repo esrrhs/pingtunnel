@@ -123,17 +123,14 @@ func (p *Server) processPacket(packet *Packet) {
 		if packet.my.Tcpmode > 0 {
 
 			addr := packet.my.Target
-			ipaddrTarget, err := net.ResolveTCPAddr("tcp", addr)
-			if err != nil {
-				loggo.Error("Error ResolveUDPAddr for tcp addr: %s %s", addr, err.Error())
-				return
-			}
 
-			targetConn, err := net.DialTCP("tcp", nil, ipaddrTarget)
+			c, err := net.DialTimeout("tcp", addr, time.Second)
 			if err != nil {
 				loggo.Error("Error listening for tcp packets: %s", err.Error())
 				return
 			}
+			targetConn := c.(*net.TCPConn)
+			ipaddrTarget := targetConn.RemoteAddr().(*net.TCPAddr)
 
 			fm := NewFrameMgr((int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress),
 				(int)(packet.my.TcpmodeStat))
@@ -148,17 +145,14 @@ func (p *Server) processPacket(packet *Packet) {
 		} else {
 
 			addr := packet.my.Target
-			ipaddrTarget, err := net.ResolveUDPAddr("udp", addr)
-			if err != nil {
-				loggo.Error("Error ResolveUDPAddr for udp addr: %s %s", addr, err.Error())
-				return
-			}
 
-			targetConn, err := net.DialUDP("udp", nil, ipaddrTarget)
+			c, err := net.DialTimeout("udp", addr, time.Second)
 			if err != nil {
-				loggo.Error("Error listening for udp packets: %s", err.Error())
+				loggo.Error("Error listening for tcp packets: %s", err.Error())
 				return
 			}
+			targetConn := c.(*net.UDPConn)
+			ipaddrTarget := targetConn.RemoteAddr().(*net.UDPAddr)
 
 			localConn = &ServerConn{timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode)}
