@@ -99,13 +99,15 @@ type Client struct {
 	listenConn    *net.UDPConn
 	tcplistenConn *net.TCPListener
 
-	localAddrToConnMap map[string]*ClientConn
-	localIdToConnMap   map[string]*ClientConn
+	localAddrToConnMap sync.Map
+	localIdToConnMap   sync.Map
 
-	sendPacket     uint64
-	recvPacket     uint64
-	sendPacketSize uint64
-	recvPacketSize uint64
+	sendPacket             uint64
+	recvPacket             uint64
+	sendPacketSize         uint64
+	recvPacketSize         uint64
+	localAddrToConnMapSize int
+	localIdToConnMapSize   int
 }
 
 type ClientConn struct {
@@ -159,6 +161,14 @@ func (p *Client) SendPacket() uint64 {
 	return p.sendPacket
 }
 
+func (p *Client) LocalIdToConnMapSize() int {
+	return p.localIdToConnMapSize
+}
+
+func (p *Client) LocalAddrToConnMapSize() int {
+	return p.localAddrToConnMapSize
+}
+
 func (p *Client) Run() error {
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
@@ -183,9 +193,6 @@ func (p *Client) Run() error {
 		}
 		p.listenConn = listener
 	}
-
-	p.localAddrToConnMap = make(map[string]*ClientConn)
-	p.localIdToConnMap = make(map[string]*ClientConn)
 
 	if p.tcpmode > 0 {
 		go p.AcceptTcp()
@@ -273,8 +280,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	now := time.Now()
 	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false,
 		fm: fm}
-	p.localAddrToConnMap[tcpsrcaddr.String()] = clientConn
-	p.localIdToConnMap[uuid] = clientConn
+	p.addClientConn(uuid, tcpsrcaddr.String(), clientConn)
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
 
 	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
@@ -476,12 +482,11 @@ func (p *Client) Accept() error {
 		}
 
 		now := time.Now()
-		clientConn := p.localAddrToConnMap[srcaddr.String()]
+		clientConn := p.getClientConnByAddr(srcaddr.String())
 		if clientConn == nil {
 			uuid := UniqueId()
 			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false}
-			p.localAddrToConnMap[srcaddr.String()] = clientConn
-			p.localIdToConnMap[uuid] = clientConn
+			p.addClientConn(uuid, srcaddr.String(), clientConn)
 			loggo.Info("client accept new local udp %s %s", uuid, srcaddr.String())
 		}
 
@@ -524,13 +529,11 @@ func (p *Client) processPacket(packet *Packet) {
 
 	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
 
-	clientConn := p.localIdToConnMap[packet.my.Id]
+	clientConn := p.getClientConnById(packet.my.Id)
 	if clientConn == nil {
 		loggo.Debug("processPacket no conn %s ", packet.my.Id)
 		return
 	}
-
-	addr := clientConn.ipaddr
 
 	now := time.Now()
 	clientConn.activeRecvTime = now
@@ -545,6 +548,7 @@ func (p *Client) processPacket(packet *Packet) {
 
 		clientConn.fm.OnRecvFrame(f)
 	} else {
+		addr := clientConn.ipaddr
 		_, err := p.listenConn.WriteToUDP(packet.my.Data, addr)
 		if err != nil {
 			loggo.Info("WriteToUDP Error read udp %s", err)
@@ -558,10 +562,8 @@ func (p *Client) processPacket(packet *Packet) {
 }
 
 func (p *Client) close(clientConn *ClientConn) {
-	if p.localIdToConnMap[clientConn.id] != nil {
-		delete(p.localIdToConnMap, clientConn.id)
-		delete(p.localAddrToConnMap, clientConn.ipaddr.String())
-	}
+	p.deleteClientConn(clientConn.id, clientConn.ipaddr.String())
+	p.deleteClientConn(clientConn.id, clientConn.tcpaddr.String())
 }
 
 func (p *Client) checkTimeoutConn() {
@@ -570,8 +572,16 @@ func (p *Client) checkTimeoutConn() {
 		return
 	}
 
+	tmp := make(map[string]*ClientConn)
+	p.localIdToConnMap.Range(func(key, value interface{}) bool {
+		id := key.(string)
+		clientConn := value.(*ClientConn)
+		tmp[id] = clientConn
+		return true
+	})
+
 	now := time.Now()
-	for _, conn := range p.localIdToConnMap {
+	for _, conn := range tmp {
 		diffrecv := now.Sub(conn.activeRecvTime)
 		diffsend := now.Sub(conn.activeSendTime)
 		if diffrecv > time.Second*(time.Duration(p.timeout)) || diffsend > time.Second*(time.Duration(p.timeout)) {
@@ -579,7 +589,7 @@ func (p *Client) checkTimeoutConn() {
 		}
 	}
 
-	for id, conn := range p.localIdToConnMap {
+	for id, conn := range tmp {
 		if conn.close {
 			loggo.Info("close inactive conn %s %s", id, conn.ipaddr.String())
 			p.close(conn)
@@ -588,21 +598,29 @@ func (p *Client) checkTimeoutConn() {
 }
 
 func (p *Client) ping() {
-	if p.sendPacket == 0 {
-		now := time.Now()
-		b, _ := now.MarshalBinary()
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
-			SEND_PROTO, RECV_PROTO, p.key,
-			0, 0, 0, 0, 0, 0,
-			0)
-		loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
-		p.sequence++
-	}
+	now := time.Now()
+	b, _ := now.MarshalBinary()
+	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
+		SEND_PROTO, RECV_PROTO, p.key,
+		0, 0, 0, 0, 0, 0,
+		0)
+	loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+	p.sequence++
 }
 
 func (p *Client) showNet() {
-	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024)
+	p.localAddrToConnMapSize = 0
+	p.localIdToConnMap.Range(func(key, value interface{}) bool {
+		p.localAddrToConnMapSize++
+		return true
+	})
+	p.localIdToConnMapSize = 0
+	p.localIdToConnMap.Range(func(key, value interface{}) bool {
+		p.localIdToConnMapSize++
+		return true
+	})
+	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %d/%dConnections",
+		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localAddrToConnMapSize, p.localIdToConnMapSize)
 	p.sendPacket = 0
 	p.recvPacket = 0
 	p.sendPacketSize = 0
@@ -639,4 +657,31 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 	loggo.Info("accept new sock5 conn: %s", addr)
 
 	p.AcceptTcpConn(conn, addr)
+}
+
+func (p *Client) addClientConn(uuid string, addr string, clientConn *ClientConn) {
+
+	p.localAddrToConnMap.Store(addr, clientConn)
+	p.localIdToConnMap.Store(uuid, clientConn)
+}
+
+func (p *Client) getClientConnByAddr(addr string) *ClientConn {
+	ret, ok := p.localAddrToConnMap.Load(addr)
+	if !ok {
+		return nil
+	}
+	return ret.(*ClientConn)
+}
+
+func (p *Client) getClientConnById(uuid string) *ClientConn {
+	ret, ok := p.localIdToConnMap.Load(uuid)
+	if !ok {
+		return nil
+	}
+	return ret.(*ClientConn)
+}
+
+func (p *Client) deleteClientConn(uuid string, addr string) {
+	p.localIdToConnMap.Delete(uuid)
+	p.localAddrToConnMap.Delete(addr)
 }
