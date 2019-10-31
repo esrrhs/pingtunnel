@@ -322,7 +322,10 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		}
 	}
 
-	loggo.Info("connected remote tcp %s %s", uuid, tcpsrcaddr.String())
+	if !clientConn.exit {
+		loggo.Info("connected remote tcp %s %s", uuid, tcpsrcaddr.String())
+	}
+
 	bytes := make([]byte, 10240)
 
 	tcpActiveRecvTime := time.Now()
