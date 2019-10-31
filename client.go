@@ -113,6 +113,7 @@ type Client struct {
 }
 
 type ClientConn struct {
+	exit           bool
 	ipaddr         *net.UDPAddr
 	tcpaddr        *net.TCPAddr
 	id             string
@@ -286,7 +287,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	fm := NewFrameMgr(p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat)
 
 	now := time.Now()
-	clientConn := &ClientConn{tcpaddr: tcpsrcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false,
+	clientConn := &ClientConn{exit: false, tcpaddr: tcpsrcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false,
 		fm: fm}
 	p.addClientConn(uuid, tcpsrcaddr.String(), clientConn)
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
@@ -294,7 +295,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
 	clientConn.fm.Connect()
 	startConnectTime := time.Now()
-	for !p.exit {
+	for !p.exit && !clientConn.exit {
 		if clientConn.fm.IsConnected() {
 			break
 		}
@@ -327,7 +328,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	tcpActiveRecvTime := time.Now()
 	tcpActiveSendTime := time.Now()
 
-	for !p.exit {
+	for !p.exit && !clientConn.exit {
 		now := time.Now()
 		sleep := true
 
@@ -415,7 +416,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	}
 
 	startCloseTime := time.Now()
-	for !p.exit {
+	for !p.exit && !clientConn.exit {
 		now := time.Now()
 
 		clientConn.fm.Update()
@@ -497,7 +498,7 @@ func (p *Client) Accept() error {
 				continue
 			}
 			uuid := UniqueId()
-			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false}
+			clientConn = &ClientConn{exit: false, ipaddr: srcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false}
 			p.addClientConn(uuid, srcaddr.String(), clientConn)
 			loggo.Info("client accept new local udp %s %s", uuid, srcaddr.String())
 		}
@@ -539,6 +540,15 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
+	if packet.my.Type == (int32)(MyMsg_KICK) {
+		clientConn := p.getClientConnById(packet.my.Id)
+		if clientConn != nil {
+			p.close(clientConn)
+			loggo.Info("remote kick local %s", packet.my.Id)
+		}
+		return
+	}
+
 	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
 
 	clientConn := p.getClientConnById(packet.my.Id)
@@ -574,6 +584,7 @@ func (p *Client) processPacket(packet *Packet) {
 }
 
 func (p *Client) close(clientConn *ClientConn) {
+	clientConn.exit = true
 	p.deleteClientConn(clientConn.id, clientConn.ipaddr.String())
 	p.deleteClientConn(clientConn.id, clientConn.tcpaddr.String())
 }

@@ -27,7 +27,8 @@ type Server struct {
 
 	conn *icmp.PacketConn
 
-	localConnMap sync.Map
+	localConnMap       sync.Map
+	remoteConnErrorMap sync.Map
 
 	sendPacket       uint64
 	recvPacket       uint64
@@ -123,6 +124,7 @@ func (p *Server) processPacket(packet *Packet) {
 
 		if p.maxconn > 0 && p.localConnMapSize >= p.maxconn {
 			loggo.Info("too many connections %d, server connected target fail %s", p.localConnMapSize, packet.my.Target)
+			p.remoteError(id, packet)
 			return
 		}
 
@@ -133,6 +135,7 @@ func (p *Server) processPacket(packet *Packet) {
 			c, err := net.DialTimeout("tcp", addr, time.Second)
 			if err != nil {
 				loggo.Error("Error listening for tcp packets: %s", err.Error())
+				p.remoteError(id, packet)
 				return
 			}
 			targetConn := c.(*net.TCPConn)
@@ -155,6 +158,7 @@ func (p *Server) processPacket(packet *Packet) {
 			c, err := net.DialTimeout("udp", addr, time.Second)
 			if err != nil {
 				loggo.Error("Error listening for tcp packets: %s", err.Error())
+				p.remoteError(id, packet)
 				return
 			}
 			targetConn := c.(*net.UDPConn)
@@ -471,7 +475,6 @@ func (p *Server) showNet() {
 }
 
 func (p *Server) addServerConn(uuid string, serverConn *ServerConn) {
-
 	p.localConnMap.Store(uuid, serverConn)
 }
 
@@ -485,4 +488,11 @@ func (p *Server) getServerConnById(uuid string) *ServerConn {
 
 func (p *Server) deleteServerConn(uuid string) {
 	p.localConnMap.Delete(uuid)
+}
+
+func (p *Server) remoteError(uuid string, packet *Packet) {
+	sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", uuid, (uint32)(MyMsg_KICK), packet.my.Data,
+		(int)(packet.my.Rproto), -1, p.key,
+		0, 0, 0, 0, 0, 0,
+		0)
 }
