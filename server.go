@@ -25,7 +25,7 @@ type Server struct {
 
 	conn *icmp.PacketConn
 
-	localConnMap map[string]*ServerConn
+	localConnMap sync.Map
 
 	sendPacket     uint64
 	recvPacket     uint64
@@ -59,8 +59,6 @@ func (p *Server) Run() error {
 		return err
 	}
 	p.conn = conn
-
-	p.localConnMap = make(map[string]*ServerConn)
 
 	recv := make(chan *Packet, 10000)
 	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv)
@@ -117,7 +115,7 @@ func (p *Server) processPacket(packet *Packet) {
 	now := time.Now()
 
 	id := packet.my.Id
-	localConn := p.localConnMap[id]
+	localConn := p.getServerConnById(id)
 	if localConn == nil {
 
 		if packet.my.Tcpmode > 0 {
@@ -138,7 +136,7 @@ func (p *Server) processPacket(packet *Packet) {
 			localConn = &ServerConn{timeout: (int)(packet.my.Timeout), tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
 
-			p.localConnMap[id] = localConn
+			p.addServerConn(id, localConn)
 
 			go p.RecvTCP(localConn, id, packet.src)
 
@@ -157,7 +155,7 @@ func (p *Server) processPacket(packet *Packet) {
 			localConn = &ServerConn{timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode)}
 
-			p.localConnMap[id] = localConn
+			p.addServerConn(id, localConn)
 
 			go p.Recv(localConn, id, packet.src)
 		}
@@ -406,21 +404,29 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 }
 
 func (p *Server) close(conn *ServerConn) {
-	if p.localConnMap[conn.id] != nil {
+	if p.getServerConnById(conn.id) != nil {
 		if conn.conn != nil {
 			conn.conn.Close()
 		}
 		if conn.tcpconn != nil {
 			conn.tcpconn.Close()
 		}
-		delete(p.localConnMap, conn.id)
+		p.deleteServerConn(conn.id)
 	}
 }
 
 func (p *Server) checkTimeoutConn() {
 
+	tmp := make(map[string]*ServerConn)
+	p.localConnMap.Range(func(key, value interface{}) bool {
+		id := key.(string)
+		serverConn := value.(*ServerConn)
+		tmp[id] = serverConn
+		return true
+	})
+
 	now := time.Now()
-	for _, conn := range p.localConnMap {
+	for _, conn := range tmp {
 		if conn.tcpmode > 0 {
 			continue
 		}
@@ -431,7 +437,7 @@ func (p *Server) checkTimeoutConn() {
 		}
 	}
 
-	for id, conn := range p.localConnMap {
+	for id, conn := range tmp {
 		if conn.tcpmode > 0 {
 			continue
 		}
@@ -449,4 +455,21 @@ func (p *Server) showNet() {
 	p.recvPacket = 0
 	p.sendPacketSize = 0
 	p.recvPacketSize = 0
+}
+
+func (p *Server) addServerConn(uuid string, serverConn *ServerConn) {
+
+	p.localConnMap.Store(uuid, serverConn)
+}
+
+func (p *Server) getServerConnById(uuid string) *ServerConn {
+	ret, ok := p.localConnMap.Load(uuid)
+	if !ok {
+		return nil
+	}
+	return ret.(*ServerConn)
+}
+
+func (p *Server) deleteServerConn(uuid string) {
+	p.localConnMap.Delete(uuid)
 }
