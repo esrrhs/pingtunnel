@@ -19,7 +19,7 @@ const (
 
 func NewClient(addr string, server string, target string, timeout int, key int,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int, open_sock5 int) (*Client, error) {
+	tcpmode_stat int, open_sock5 int, maxconn int) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -62,6 +62,7 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 		tcpmode_compress:      tcpmode_compress,
 		tcpmode_stat:          tcpmode_stat,
 		open_sock5:            open_sock5,
+		maxconn:               maxconn,
 	}, nil
 }
 
@@ -70,6 +71,7 @@ type Client struct {
 	rtt            time.Duration
 	interval       *time.Ticker
 	workResultLock sync.WaitGroup
+	maxconn        int
 
 	id       int
 	sequence int
@@ -272,8 +274,14 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
-	uuid := UniqueId()
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
+
+	if p.localIdToConnMapSize >= p.maxconn {
+		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.localIdToConnMapSize, tcpsrcaddr.String())
+		return
+	}
+
+	uuid := UniqueId()
 
 	fm := NewFrameMgr(p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat)
 
@@ -484,6 +492,10 @@ func (p *Client) Accept() error {
 		now := time.Now()
 		clientConn := p.getClientConnByAddr(srcaddr.String())
 		if clientConn == nil {
+			if p.localIdToConnMapSize >= p.maxconn {
+				loggo.Info("too many connections %d, client accept new local udp fail %s", p.localIdToConnMapSize, srcaddr.String())
+				continue
+			}
 			uuid := UniqueId()
 			clientConn = &ClientConn{ipaddr: srcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false}
 			p.addClientConn(uuid, srcaddr.String(), clientConn)
