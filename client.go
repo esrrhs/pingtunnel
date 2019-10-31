@@ -276,7 +276,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
 
-	if p.localIdToConnMapSize >= p.maxconn {
+	if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
 		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.localIdToConnMapSize, tcpsrcaddr.String())
 		return
 	}
@@ -492,7 +492,7 @@ func (p *Client) Accept() error {
 		now := time.Now()
 		clientConn := p.getClientConnByAddr(srcaddr.String())
 		if clientConn == nil {
-			if p.localIdToConnMapSize >= p.maxconn {
+			if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
 				loggo.Info("too many connections %d, client accept new local udp fail %s", p.localIdToConnMapSize, srcaddr.String())
 				continue
 			}

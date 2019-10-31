@@ -121,7 +121,7 @@ func (p *Server) processPacket(packet *Packet) {
 	localConn := p.getServerConnById(id)
 	if localConn == nil {
 
-		if p.localConnMapSize >= p.maxconn {
+		if p.maxconn > 0 && p.localConnMapSize >= p.maxconn {
 			loggo.Info("too many connections %d, server connected target fail %s", p.localConnMapSize, packet.my.Target)
 			return
 		}
