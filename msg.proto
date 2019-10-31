@@ -5,6 +5,7 @@ message MyMsg {
   enum TYPE {
     DATA = 0;
     PING = 1;
+    KICK = 2;
     MAGIC = 0xdead;
   }
 
