@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/pingtunnel"
+	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 	"time"
 )
@@ -80,6 +82,9 @@ Usage:
 
     -maxprb   server最大处理线程buffer数，默认1000
               max process thread's buffer in server, default 1000
+
+    -profile  在端口开启性能检测，默认0不开启
+              open profile on the port, default 0 is off
 `
 
 func main() {
@@ -102,6 +107,7 @@ func main() {
 	maxconn := flag.Int("maxconn", 0, "max num of connections")
 	max_process_thread := flag.Int("maxprt", 100, "max process thread in server")
 	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
+	profile := flag.Int("profile", 0, "open profile")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -187,6 +193,11 @@ func main() {
 	} else {
 		return
 	}
+
+	if *profile > 0 {
+		go http.ListenAndServe("0.0.0.0:"+strconv.Itoa(8080), nil)
+	}
+
 	for {
 		time.Sleep(time.Hour)
 	}
