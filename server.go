@@ -114,6 +114,15 @@ func (p *Server) processPacket(packet *Packet) {
 		return
 	}
 
+	if packet.my.Type == (int32)(MyMsg_KICK) {
+		localConn := p.getServerConnById(packet.my.Id)
+		if localConn != nil {
+			p.close(localConn)
+			loggo.Info("remote kick local %s", packet.my.Id)
+		}
+		return
+	}
+
 	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
 
 	now := time.Now()
@@ -491,7 +500,7 @@ func (p *Server) deleteServerConn(uuid string) {
 }
 
 func (p *Server) remoteError(uuid string, packet *Packet) {
-	sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", uuid, (uint32)(MyMsg_KICK), packet.my.Data,
+	sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		(int)(packet.my.Rproto), -1, p.key,
 		0, 0, 0, 0, 0, 0,
 		0)

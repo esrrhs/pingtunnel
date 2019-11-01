@@ -557,6 +557,7 @@ func (p *Client) processPacket(packet *Packet) {
 	clientConn := p.getClientConnById(packet.my.Id)
 	if clientConn == nil {
 		loggo.Debug("processPacket no conn %s ", packet.my.Id)
+		p.remoteError(packet.my.Id)
 		return
 	}
 
@@ -710,4 +711,11 @@ func (p *Client) getClientConnById(uuid string) *ClientConn {
 func (p *Client) deleteClientConn(uuid string, addr string) {
 	p.localIdToConnMap.Delete(uuid)
 	p.localAddrToConnMap.Delete(addr)
+}
+
+func (p *Client) remoteError(uuid string) {
+	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
+		SEND_PROTO, RECV_PROTO, p.key,
+		0, 0, 0, 0, 0, 0,
+		0)
 }
