@@ -100,8 +100,8 @@ func main() {
 	loglevel := flag.String("loglevel", "info", "log level")
 	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
 	maxconn := flag.Int("maxconn", 0, "max num of connections")
-	max_process_thread := flag.Int("maxprt", 0, "max process thread in server")
-	max_process_buffer := flag.Int("maxprb", 0, "max process thread's buffer in server")
+	max_process_thread := flag.Int("maxprt", 100, "max process thread in server")
+	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
