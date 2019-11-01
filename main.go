@@ -50,8 +50,8 @@ Usage:
     -tcp      设置是否转发tcp，默认0
               Set the switch to forward tcp, the default is 0
 
-    -tcp_bs   tcp的发送接收缓冲区大小，默认10MB
-              Tcp send and receive buffer size, default 10MB
+    -tcp_bs   tcp的发送接收缓冲区大小，默认1MB
+              Tcp send and receive buffer size, default 1MB
 
     -tcp_mw   tcp的最大窗口，默认10000
               The maximum window of tcp, the default is 10000
@@ -96,7 +96,7 @@ func main() {
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	key := flag.Int("key", 0, "key")
 	tcpmode := flag.Int("tcp", 0, "tcp mode")
-	tcpmode_buffersize := flag.Int("tcp_bs", 10*1024*1024, "tcp mode buffer size")
+	tcpmode_buffersize := flag.Int("tcp_bs", 1*1024*1024, "tcp mode buffer size")
 	tcpmode_maxwin := flag.Int("tcp_mw", 10000, "tcp mode max win")
 	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
 	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
