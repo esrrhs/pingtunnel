@@ -2,7 +2,7 @@
 pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具。用于突破网络封锁，或是绕过WIFI网络的登陆验证，或是在某些网络加快网络传输速度。
 <br />Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for forwarding. Used to break through the network blockade, or to bypass the WIFI network login verification, or speed up network transmission speed on some networks. 
 
-![image](network.png)
+![image](network.jpg)
 
 # Why use this
 * 因为网络审查，ip会直接被ban，但是却可以ping通，这时候就可以用这个工具继续连接服务器。If the server's ip is blocked, all tcp udp packets are forbidden, but it can be pinged. At this point, you can continue to connect to the server with this tool.
