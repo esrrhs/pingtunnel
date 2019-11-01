@@ -195,7 +195,7 @@ func main() {
 	}
 
 	if *profile > 0 {
-		go http.ListenAndServe("0.0.0.0:"+strconv.Itoa(8080), nil)
+		go http.ListenAndServe("0.0.0.0:"+strconv.Itoa(*profile), nil)
 	}
 
 	for {
