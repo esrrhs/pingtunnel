@@ -34,7 +34,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 ```
 * 大功告成，然后你就可以开始和本机的:4455端口通信，数据都被自动转发到远端，如同连接到www.yourserver.com:4455一样。 Then you can start communicating with the local: 4455 port, the data is automatically forwarded to the remote, as you connect to www.yourserver.com:4455.
 
-## Download
+# Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
 
 qt: https://github.com/esrrhs/pingtunnel-qt
