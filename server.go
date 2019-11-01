@@ -41,6 +41,7 @@ type Server struct {
 }
 
 type ServerConn struct {
+	exit           bool
 	timeout        int
 	ipaddrTarget   *net.UDPAddr
 	conn           *net.UDPConn
@@ -153,7 +154,7 @@ func (p *Server) processPacket(packet *Packet) {
 			fm := NewFrameMgr((int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress),
 				(int)(packet.my.TcpmodeStat))
 
-			localConn = &ServerConn{timeout: (int)(packet.my.Timeout), tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
+			localConn = &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
 
 			p.addServerConn(id, localConn)
@@ -173,7 +174,7 @@ func (p *Server) processPacket(packet *Packet) {
 			targetConn := c.(*net.UDPConn)
 			ipaddrTarget := targetConn.RemoteAddr().(*net.UDPAddr)
 
-			localConn = &ServerConn{timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
+			localConn = &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 				rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode)}
 
 			p.addServerConn(id, localConn)
@@ -219,7 +220,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := time.Now()
-	for !p.exit {
+	for !p.exit && !conn.exit {
 		if conn.fm.IsConnected() {
 			break
 		}
@@ -245,14 +246,16 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 	}
 
-	loggo.Info("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+	if !conn.exit {
+		loggo.Info("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+	}
 
 	bytes := make([]byte, 10240)
 
 	tcpActiveRecvTime := time.Now()
 	tcpActiveSendTime := time.Now()
 
-	for !p.exit {
+	for !p.exit && !conn.exit {
 		now := time.Now()
 		sleep := true
 
@@ -339,7 +342,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	}
 
 	startCloseTime := time.Now()
-	for !p.exit {
+	for !p.exit && !conn.exit {
 		now := time.Now()
 
 		conn.fm.Update()
@@ -426,6 +429,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 func (p *Server) close(conn *ServerConn) {
 	if p.getServerConnById(conn.id) != nil {
+		conn.exit = true
 		if conn.conn != nil {
 			conn.conn.Close()
 		}
