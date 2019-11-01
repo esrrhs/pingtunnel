@@ -1,4 +1,4 @@
-package pingtunnel
+package main
 
 import (
 	"flag"
