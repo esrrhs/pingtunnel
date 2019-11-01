@@ -34,7 +34,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 ```
 * 大功告成，然后你就可以开始和本机的:4455端口通信，数据都被自动转发到远端，如同连接到www.yourserver.com:4455一样。 Then you can start communicating with the local: 4455 port, the data is automatically forwarded to the remote, as you connect to www.yourserver.com:4455.
 
-## Download
+# Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
 
 qt: https://github.com/esrrhs/pingtunnel-qt
@@ -78,8 +78,8 @@ qt: https://github.com/esrrhs/pingtunnel-qt
     -tcp      设置是否转发tcp，默认0
               Set the switch to forward tcp, the default is 0
 
-    -tcp_bs   tcp的发送接收缓冲区大小，默认10MB
-              Tcp send and receive buffer size, default 10MB
+    -tcp_bs   tcp的发送接收缓冲区大小，默认1MB
+              Tcp send and receive buffer size, default 1MB
 
     -tcp_mw   tcp的最大窗口，默认10000
               The maximum window of tcp, the default is 10000
@@ -101,3 +101,12 @@ qt: https://github.com/esrrhs/pingtunnel-qt
 
     -sock5    开启sock5转发，默认0
               Turn on sock5 forwarding, default 0 is off
+
+    -maxconn  最大连接数，默认1000
+              the max num of connections, default 1000
+
+    -maxprt   server最大处理线程数，默认100
+              max process thread in server, default 100
+
+    -maxprb   server最大处理线程buffer数，默认1000
+              max process thread's buffer in server, default 1000
