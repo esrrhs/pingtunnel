@@ -74,6 +74,12 @@ Usage:
 
     -maxconn  最大连接数，默认1000
               the max num of connections, default 1000
+
+    -maxprt   server最大处理线程数，默认100
+              max process thread in server, default 100
+
+    -maxprb   server最大处理线程buffer数，默认1000
+              max process thread's buffer in server, default 1000
 `
 
 func main() {
@@ -94,6 +100,8 @@ func main() {
 	loglevel := flag.String("loglevel", "info", "log level")
 	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
 	maxconn := flag.Int("maxconn", 0, "max num of connections")
+	max_process_thread := flag.Int("maxprt", 0, "max process thread in server")
+	max_process_buffer := flag.Int("maxprb", 0, "max process thread's buffer in server")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -136,7 +144,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*key, *maxconn)
+		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return

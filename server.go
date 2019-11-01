@@ -3,6 +3,7 @@ package pingtunnel
 import (
 	"github.com/esrrhs/go-engine/src/common"
 	"github.com/esrrhs/go-engine/src/loggo"
+	"github.com/esrrhs/go-engine/src/threadpool"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"net"
@@ -10,12 +11,19 @@ import (
 	"time"
 )
 
-func NewServer(key int, maxconn int) (*Server, error) {
-	return &Server{
+func NewServer(key int, maxconn int, maxprocessthread int, maxprocessbuffer int) (*Server, error) {
+	s := &Server{
 		exit:    false,
 		key:     key,
 		maxconn: maxconn,
-	}, nil
+	}
+
+	s.processtp = threadpool.NewThreadPool(maxprocessthread, maxprocessbuffer, func(v interface{}) {
+		packet := v.(*Packet)
+		s.processDataPacket(packet)
+	})
+
+	return s, nil
 }
 
 type Server struct {
@@ -38,6 +46,8 @@ type Server struct {
 
 	echoId  int
 	echoSeq int
+
+	processtp *threadpool.ThreadPool
 }
 
 type ServerConn struct {
@@ -123,6 +133,11 @@ func (p *Server) processPacket(packet *Packet) {
 		}
 		return
 	}
+
+	p.processtp.AddJob((int)(common.HashString(packet.my.Id)), packet)
+}
+
+func (p *Server) processDataPacket(packet *Packet) {
 
 	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
 
