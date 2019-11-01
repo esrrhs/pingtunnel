@@ -1,10 +1,10 @@
-package main
+package pingtunnel
 
 import (
 	"flag"
 	"fmt"
 	"github.com/esrrhs/go-engine/src/loggo"
-	"github.com/esrrhs/pingtunnel"
+	"github.com/esrrhs/go-engine/src/pingtunnel"
 	"strconv"
 	"time"
 )
