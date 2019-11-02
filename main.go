@@ -85,6 +85,10 @@ Usage:
 
     -profile  在端口开启性能检测，默认0不开启
               open profile on the port, default 0 is off
+
+    -conntt   发起连接动作的超时时间，默认1000ms
+              the connect call's timeout, default 1000ms
+
 `
 
 func main() {
@@ -108,6 +112,7 @@ func main() {
 	max_process_thread := flag.Int("maxprt", 100, "max process thread in server")
 	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
 	profile := flag.Int("profile", 0, "open profile")
+	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -150,7 +155,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer)
+		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer, *conntt)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
