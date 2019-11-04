@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/esrrhs/go-engine/src/geoip"
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/pingtunnel"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"strconv"
@@ -83,12 +85,17 @@ Usage:
     -maxprb   server最大处理线程buffer数，默认1000
               max process thread's buffer in server, default 1000
 
-    -profile  在端口开启性能检测，默认0不开启
-              open profile on the port, default 0 is off
+    -profile  在指定端口开启性能检测，默认0不开启
+              Enable performance detection on the specified port. The default 0 is not enabled.
 
-    -conntt   发起连接动作的超时时间，默认1000ms
-              the connect call's timeout, default 1000ms
+    -conntt   server发起连接到目标地址的超时时间，默认1000ms
+              The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
 
+    -s5filter sock5模式设置转发过滤，默认全转发，设置CN代表CN地区的直连不转发
+              Set the forwarding filter in the sock5 mode. The default is full forwarding. For example, setting the CN indicates that the Chinese address is not forwarded.
+
+    -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-City.mmdb
+              The data file in sock5 filter mode, the default reading of the current directory GeoLite2-City.mmdb
 `
 
 func main() {
@@ -113,6 +120,8 @@ func main() {
 	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
 	profile := flag.Int("profile", 0, "open profile")
 	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
+	s5filter := flag.String("s5filter", "", "sock5 filter")
+	s5ftfile := flag.String("s5ftfile", "GeoLite2-City.mmdb", "sock5 filter file")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
@@ -181,9 +190,32 @@ func main() {
 			*tcpmode_stat = 0
 		}
 
+		if len(*s5filter) > 0 {
+			geoip.Load(*s5ftfile)
+		}
+		filter := func(addr string) bool {
+			if len(*s5filter) <= 0 {
+				return true
+			}
+
+			taddr, err := net.ResolveTCPAddr("tcp", addr)
+			if err != nil {
+				return false
+			}
+
+			ret, err := geoip.GetCountryIsoCode(taddr.IP.String())
+			if err != nil {
+				return false
+			}
+			if len(ret) <= 0 {
+				return false
+			}
+			return ret != *s5filter
+		}
+
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn)
+			*tcpmode_stat, *open_sock5, *maxconn, &filter)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
