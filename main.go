@@ -191,7 +191,11 @@ func main() {
 		}
 
 		if len(*s5filter) > 0 {
-			geoip.Load(*s5ftfile)
+			err := geoip.Load(*s5ftfile)
+			if err != nil {
+				loggo.Error("Load Sock5 ip file ERROR: %s", err.Error())
+				return
+			}
 		}
 		filter := func(addr string) bool {
 			if len(*s5filter) <= 0 {
