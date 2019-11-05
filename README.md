@@ -110,3 +110,15 @@ qt: https://github.com/esrrhs/pingtunnel-qt
 
     -maxprb   server最大处理线程buffer数，默认1000
               max process thread's buffer in server, default 1000
+
+    -profile  在指定端口开启性能检测，默认0不开启
+              Enable performance detection on the specified port. The default 0 is not enabled.
+
+    -conntt   server发起连接到目标地址的超时时间，默认1000ms
+              The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
+
+    -s5filter sock5模式设置转发过滤，默认全转发，设置CN代表CN地区的直连不转发
+              Set the forwarding filter in the sock5 mode. The default is full forwarding. For example, setting the CN indicates that the Chinese address is not forwarded.
+
+    -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
+              The data file in sock5 filter mode, the default reading of the current directory GeoLite2-Country.mmdb
