@@ -94,8 +94,8 @@ Usage:
     -s5filter sock5模式设置转发过滤，默认全转发，设置CN代表CN地区的直连不转发
               Set the forwarding filter in the sock5 mode. The default is full forwarding. For example, setting the CN indicates that the Chinese address is not forwarded.
 
-    -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-City.mmdb
-              The data file in sock5 filter mode, the default reading of the current directory GeoLite2-City.mmdb
+    -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
+              The data file in sock5 filter mode, the default reading of the current directory GeoLite2-Country.mmdb
 `
 
 func main() {
@@ -121,7 +121,7 @@ func main() {
 	profile := flag.Int("profile", 0, "open profile")
 	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
 	s5filter := flag.String("s5filter", "", "sock5 filter")
-	s5ftfile := flag.String("s5ftfile", "GeoLite2-City.mmdb", "sock5 filter file")
+	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
 	flag.Usage = func() {
 		fmt.Printf(usage)
 	}
