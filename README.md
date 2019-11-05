@@ -37,7 +37,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 # Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
 
-qt: https://github.com/esrrhs/pingtunnel-qt
+QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
 # Usage
     通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
