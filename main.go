@@ -1,9 +1,9 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
+	"github.com/esrrhs/go-engine/src/common"
 	"github.com/esrrhs/go-engine/src/geoip"
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/pingtunnel"
@@ -101,22 +101,7 @@ Usage:
 
 func main() {
 
-	defer func() {
-		if r := recover(); r != nil {
-			var err error
-			switch x := r.(type) {
-			case string:
-				err = errors.New(x)
-			case error:
-				err = x
-			default:
-				err = errors.New("Unknown panic")
-			}
-			if err != nil {
-				loggo.Error("crash %s", err)
-			}
-		}
-	}()
+	defer common.CrashLog()
 
 	t := flag.String("type", "", "client or server")
 	listen := flag.String("l", "", "listen addr")
