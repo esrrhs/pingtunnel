@@ -41,6 +41,17 @@ cmd: https://github.com/esrrhs/pingtunnel/releases
 
 QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
+# Docker
+server:
+```
+docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+```
+client:
+```
+docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
+```
+
+
 # Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/esrrhs/pingtunnel.svg)](https://starchart.cc/esrrhs/pingtunnel)
