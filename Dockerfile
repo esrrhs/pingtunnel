@@ -1,2 +1,9 @@
-FROM golang:onbuild
-EXPOSE 8080
+FROM golang AS build-env
+
+RUN go get -u github.com/esrrhs/pingtunnel
+RUN go get -u github.com/esrrhs/pingtunnel/...
+RUN go install github.com/esrrhs/pingtunnel
+
+FROM debian
+COPY --from=build-env /go/bin/pingtunnel .
+WORKDIR ./
