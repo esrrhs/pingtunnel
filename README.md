@@ -96,6 +96,9 @@ qt: https://github.com/esrrhs/pingtunnel-qt
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
 
+    -noprint  不打印屏幕输出，默认0
+              Do not print standard output, default 0 is off
+
     -loglevel 日志文件等级，默认info
               log level, default is info
 
