@@ -1,5 +1,7 @@
 # Pingtunnel
 pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具。用于突破网络封锁，或是绕过WIFI网络的登陆验证，或是在某些网络加快网络传输速度。
+
+**注意：本工具只是用作学习研究，请勿用于非法用途！**
 <br />Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for forwarding. Used to break through the network blockade, or to bypass the WIFI network login verification, or speed up network transmission speed on some networks. 
 
 ![image](network.jpg)
@@ -37,8 +39,23 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 # Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
 
-qt: https://github.com/esrrhs/pingtunnel-qt
+QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
+# Docker
+server:
+```
+docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+```
+client:
+```
+docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
+```
+
+
+# Stargazers over time
+
+[![Stargazers over time](https://starchart.cc/esrrhs/pingtunnel.svg)](https://starchart.cc/esrrhs/pingtunnel)
+      
 # Usage
     通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
     By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
