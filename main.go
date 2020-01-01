@@ -70,6 +70,9 @@ Usage:
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
 
+    -noprint  不打印屏幕输出，默认0
+              Do not print standard output, default 0 is off
+
     -loglevel 日志文件等级，默认info
               log level, default is info
 
@@ -112,6 +115,7 @@ func main() {
 	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
 	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
 	nolog := flag.Int("nolog", 0, "write log file")
+	noprint := flag.Int("noprint", 0, "print stdout")
 	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
 	loglevel := flag.String("loglevel", "info", "log level")
 	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
@@ -159,6 +163,7 @@ func main() {
 		Prefix:    "pingtunnel",
 		MaxDay:    3,
 		NoLogFile: *nolog > 0,
+		NoPrint:   *noprint > 0,
 	})
 	loggo.Info("start...")
 	loggo.Info("key %d", *key)
