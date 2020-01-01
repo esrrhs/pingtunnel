@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/esrrhs/go-engine/src/common"
 	"github.com/esrrhs/go-engine/src/geoip"
 	"github.com/esrrhs/go-engine/src/loggo"
 	"github.com/esrrhs/go-engine/src/pingtunnel"
@@ -102,6 +103,8 @@ Usage:
 `
 
 func main() {
+
+	defer common.CrashLog()
 
 	t := flag.String("type", "", "client or server")
 	listen := flag.String("l", "", "listen addr")
