@@ -1,6 +1,9 @@
 # Pingtunnel
 
-[<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel?style=for-the-badge">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
+[<img src="https://img.shields.io/github/license/esrrhs/pingtunnel">]()
+[<img src="https://img.shields.io/github/v/release/esrrhs/pingtunnel">](https://github.com/esrrhs/pingtunnel/releases)
+[<img src="https://img.shields.io/github/downloads/esrrhs/pingtunnel/total">](https://github.com/esrrhs/pingtunnel/releases)
+[<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 
 pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具。用于突破网络封锁，或是绕过WIFI网络的登陆验证，或是在某些网络加快网络传输速度。
 
