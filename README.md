@@ -45,15 +45,21 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 * 大功告成，然后你就可以开始和本机的:4455端口通信，数据都被自动转发到远端，如同连接到www.yourserver.com:4455一样。 Then you can start communicating with the local: 4455 port, the data is automatically forwarded to the remote, as you connect to www.yourserver.com:4455.
 
 # Test
-测试加速效果，服务器位于aws Korea，下载centos镜像[centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso)，直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。
-Test the acceleration effect, the server is located in aws Korea, download the centos image[centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso), The results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
+测试pingtunnel的加速效果，服务器位于aws Korea，客户端位于中国大陆。Test the acceleration effect of pingtunnel. The server is located in aws Korea and the client is located in mainland China.
+
+下载centos镜像[centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso)
+直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。download the centos image[centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso), the results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
 
 |              | wget     | shaowsocks | pingtunnel |
 |--------------|----------|------------|------------|
 | AlibabaCloud | 26.6KB/s | 31.8KB/s   | 897KB/s    |
 | 移动宽带     | 23.1KB/s | 28.4KB/s   | 408KB/s    |
 
-可以看到加速效果基本上**20倍**。the acceleration effect is basically 20 times.
+可以看到加速效果基本上**20倍**。the acceleration effect is basically **20 times**.
+
+同样的，克隆github仓库[go-engine](https://github.com/esrrhs/go-engine.git)，加速效果也很明显。Similarly, clone the github repository[go-engine](https://github.com/esrrhs/go-engine.git), the acceleration effect is also obvious
+
+![image](test.jpg)
 
 # Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
