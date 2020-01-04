@@ -59,7 +59,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 
 同样的，克隆github仓库[go-engine](https://github.com/esrrhs/go-engine.git)，加速效果也很明显。Similarly, clone the github repository[go-engine](https://github.com/esrrhs/go-engine.git), the acceleration effect is also obvious
 
-![image](test.jpg)
+![image](test.png)
 
 # Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
