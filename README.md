@@ -47,8 +47,8 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 # Test
 测试pingtunnel的加速效果，服务器位于aws Korea，客户端位于中国大陆。Test the acceleration effect of pingtunnel. The server is located in aws Korea and the client is located in mainland China.
 
-下载centos镜像[centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso)
-直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。download the centos image[centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso), the results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
+下载centos镜像 [centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) 
+直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。download the centos image [centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) , the results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
 
 |              | wget     | shaowsocks | pingtunnel |
 |--------------|----------|------------|------------|
@@ -57,7 +57,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 
 可以看到加速效果基本上**20倍**。the acceleration effect is basically **20 times**.
 
-同样的，克隆github仓库[go-engine](https://github.com/esrrhs/go-engine.git)，加速效果也很明显。Similarly, clone the github repository[go-engine](https://github.com/esrrhs/go-engine.git), the acceleration effect is also obvious
+同样的，克隆github仓库 [go-engine](https://github.com/esrrhs/go-engine.git) ，加速效果也很明显。Similarly, clone the github repository [go-engine](https://github.com/esrrhs/go-engine.git) , the acceleration effect is also obvious
 
 ![image](test.png)
 
