@@ -56,8 +56,8 @@ Usage:
     -tcp_bs   tcp的发送接收缓冲区大小，默认1MB
               Tcp send and receive buffer size, default 1MB
 
-    -tcp_mw   tcp的最大窗口，默认10000
-              The maximum window of tcp, the default is 10000
+    -tcp_mw   tcp的最大窗口，默认100000
+              The maximum window of tcp, the default is 100000
 
     -tcp_rst  tcp的超时发送时间，默认400ms
               Tcp timeout resend time, default 400ms
@@ -77,8 +77,8 @@ Usage:
     -sock5    开启sock5转发，默认0
               Turn on sock5 forwarding, default 0 is off
 
-    -maxconn  最大连接数，默认1000
-              the max num of connections, default 1000
+    -maxconn  最大连接数，默认0，不受限制
+              the max num of connections, default 0 is no limit
 
     -maxprt   server最大处理线程数，默认100
               max process thread in server, default 100
@@ -111,7 +111,7 @@ func main() {
 	key := flag.Int("key", 0, "key")
 	tcpmode := flag.Int("tcp", 0, "tcp mode")
 	tcpmode_buffersize := flag.Int("tcp_bs", 1*1024*1024, "tcp mode buffer size")
-	tcpmode_maxwin := flag.Int("tcp_mw", 10000, "tcp mode max win")
+	tcpmode_maxwin := flag.Int("tcp_mw", 100000, "tcp mode max win")
 	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
 	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
 	nolog := flag.Int("nolog", 0, "write log file")
