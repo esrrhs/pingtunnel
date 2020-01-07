@@ -51,7 +51,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 # Test
 测试pingtunnel的加速效果，服务器位于aws Korea，客户端位于中国大陆。
 
-下载centos镜像 [centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) 
+下载centos镜像 [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) 
 直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。
 
 |              | wget     | shaowsocks | pingtunnel |
