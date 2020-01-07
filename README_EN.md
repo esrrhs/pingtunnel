@@ -45,7 +45,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 # Test
 Test the acceleration effect of pingtunnel. The server is located in aws Korea and the client is located in mainland China.
 
-download the centos image [centos jp mirror](http://ftp.riken.jp/Linux/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) , the results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
+download the centos image [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) , the results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
 
 |              | wget     | shaowsocks | pingtunnel |
 |--------------|----------|------------|------------|
