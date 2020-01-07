@@ -18,37 +18,55 @@ pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具。�
 
 ![image](network.jpg)
 
-# Why use this
-* 因为网络审查，ip会直接被ban，但是却可以ping通，这时候就可以用这个工具继续连接服务器。
-* 在咖啡厅或是机场，可以连接free wifi，但是需要登录跳转验证，这时候就可以用这个工具绕过登录上网，因为wifi虽然不可以上网，但是却可以ping通你的服务器。
-* 在某些网络，tcp的传输很慢，但是如果用icmp协议，可能因为运营商的设置或是网络拓扑，速度会变快，实际测试在中国大陆连aws的服务器会有加速效果。
+# 功能
+* 某些服务器的tcp、udp流量被禁止，可以通过pingtunnel绕过。
+* 某些场合如学校、咖啡厅、机场，需要登录跳转验证，可以通过pingtunnel绕过。
+* 某些网络，tcp传输很慢，可以通过pingtunnel加速网络。
 
-# Sample
-如把本机的:4455的UDP流量转发到www.yourserver.com:4455：
-* 在www.yourserver.com的服务器上用root权限运行。
+# 使用
+### 安装服务端
+* 首先准备好一个具有公网ip的服务器，如AWS上的EC2，假定域名或者公网ip是www.yourserver.com
+* 从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如pingtunnel_linux64.zip，然后解压，执行
 ```
+sudo wget https://github.com/esrrhs/pingtunnel/releases/download/1.5/pingtunnel_linux64.zip
+sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
-* 在你本地电脑上用管理员权限运行。
-```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
-```
-* 如果看到客户端不停的ping、pong日志输出，说明工作正常。
-```
-ping www.xx.com 2018-12-23 13:05:50.5724495 +0800 CST m=+3.023909301 8 0 1997 2
-pong from xx.xx.xx.xx 210.8078ms
-```
-* 如果想转发tcp流量，只需要在客户端加上-tcp的参数。
-```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
-```
-* 如果想转发sock5流量，只需要在客户端加上-sock5的参数。
+### 安装GUI客户端(新手推荐)
+* 从[pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)下载qt的gui版本
+* 双击exe运行，修改server（如www.yourserver.com）、listen port（如1080），勾上sock5，其他设置默认即可，然后点击*GO*
+* 一切正常，界面上会有ping值显示，然后可点击X隐藏到状态栏
+* 设置浏览器的sock5代理到127.0.0.1:1080
+
+![image](qtrun.jpg)
+
+### 安装客户端
+* 从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如pingtunnel_windows64.zip，解压
+* 然后用管理员权限运行，不同的转发功能所对应的命令如下。
+##### 转发sock5
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 ```
-* 大功告成，然后你就可以开始和本机的:4455端口通信，数据都被自动转发到远端，如同连接到www.yourserver.com:4455一样。 
+##### 转发tcp
+```
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
+```
+##### 转发udp
+```
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
+```
 
-# Test
+# 使用Docker
+server:
+```
+docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+```
+client:
+```
+docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
+```
+
+# 效果
 测试pingtunnel的加速效果，服务器位于aws Korea，客户端位于中国大陆。
 
 下载centos镜像 [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) 
@@ -65,20 +83,10 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 
 ![image](test.png)
 
-# Download
+# 下载
 cmd: https://github.com/esrrhs/pingtunnel/releases
 
 QT GUI: https://github.com/esrrhs/pingtunnel-qt
-
-# Docker
-server:
-```
-docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
-```
-client:
-```
-docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
-```
 
 # Stargazers over time
 
