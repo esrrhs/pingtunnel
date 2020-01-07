@@ -13,34 +13,51 @@ Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for f
 ![image](network.jpg)
 
 # Why use this
-* If the server's ip is blocked, all tcp udp packets are forbidden, but it can be pinged. At this point, you can continue to connect to the server with this tool.
-* In the coffee shop or airport, you can connect to free wifi, but you need to log in to verify. At this time, you can use this tool to bypass the login, because wifi can not surf the Internet, but you can ping your server.
-* In some networks, the transmission of tcp is very slow, but if the icmp protocol is used, the speed may be faster because of the operator's settings or the network topology. After testing, connecting the server of aws from mainland China has an accelerated effect.
-
-# Sample
-For example, the UDP traffic of the machine: 4545 is forwarded to www.yourserver.com:4455:
-* Run with root privileges on the server at www.yourserver.com
+* TCP and UDP traffic of some servers are banned and can be bypassed by pingtunnel.
+* In some occasions, such as schools, cafes, and airports, login jump authentication is required, which can be bypassed by pingtunnel.
+* In some networks, TCP transmission is very slow. You can speed up the network through pingtunnel.
+# Use
+### Install server
+* First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
+* Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute
 ```
+sudo wget https://github.com/esrrhs/pingtunnel/releases/download/1.5/pingtunnel_linux64.zip
+sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
-* Run with administrator privileges on your local computer
+### Install GUI client (recommended by novices)
+* Download the gui version of qt from [pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)
+* Double-click the exe to run, modify the server (such as www.yourserver.com), listen port (such as 1080), tick sock5, other settings can be default, and then click *GO*
+* Everything is normal, there will be a ping value on the interface, and then you can click X to hide it in the status bar
+* Set the browser's sock5 proxy to 127.0.0.1:1080
+
+![image](qtrun.jpg)
+
+### Install the client
+* Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
+* Then run with administrator privileges. The commands corresponding to different forwarding functions are as follows.
+##### Forward sock5
 ```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
+pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -sock5 1
 ```
-* If you see the client ping, pong log output, it means normal work
+##### Forward tcp
 ```
-ping www.xx.com 2018-12-23 13:05:50.5724495 +0800 CST m=+3.023909301 8 0 1997 2
-pong from xx.xx.xx.xx 210.8078ms
+pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
 ```
-* If you want to forward tcp traffic, you only need to add the -tcp parameter to the client.
+##### Forward udp
 ```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
+pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
-* If you want to forward sock5 traffic, you only need to add the -sock5 parameter to the client.
+
+# Use Docker
+server:
 ```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
+docker run --name pingtunnel-server -d --privileged --network host --restart = always esrrhs / pingtunnel ./pingtunnel -type server -key 123456
 ```
-* Then you can start communicating with the local: 4455 port, the data is automatically forwarded to the remote, as you connect to www.yourserver.com:4455.
+client:
+```
+docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs / pingtunnel ./pingtunnel -type client -l: 1080 -s www.yourserver.com -sock5 1 -key 123456
+```
 
 # Test
 Test the acceleration effect of pingtunnel. The server is located in aws Korea and the client is located in mainland China.
@@ -62,16 +79,6 @@ Similarly, clone the github repository [go-engine](https://github.com/esrrhs/go-
 cmd: https://github.com/esrrhs/pingtunnel/releases
 
 QT GUI: https://github.com/esrrhs/pingtunnel-qt
-
-# Docker
-server:
-```
-docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
-```
-client:
-```
-docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
-```
 
 # Stargazers over time
 
