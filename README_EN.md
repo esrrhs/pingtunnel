@@ -19,7 +19,7 @@ Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for f
 # Use
 ### Install server
 * First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
-* Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute
+* Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute with **root** privileges
 ```
 sudo wget (link of latest release)
 sudo unzip pingtunnel_linux64.zip
@@ -39,7 +39,7 @@ echo 1> / proc / sys / net / ipv4 / icmp_echo_ignore_all
 
 ### Install the client (recommended for high play)
 * Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
-* Then run with administrator privileges. The commands corresponding to different forwarding functions are as follows.
+* Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
 * If you see a log of ping pong, the connection is normal
 ##### Forward sock5
 ```
