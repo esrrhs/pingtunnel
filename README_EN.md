@@ -21,7 +21,7 @@ Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for f
 * First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
 * Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute
 ```
-sudo wget https://github.com/esrrhs/pingtunnel/releases/download/1.5/pingtunnel_linux64.zip
+sudo wget (link of latest release)
 sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
