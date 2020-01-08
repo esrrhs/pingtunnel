@@ -42,7 +42,8 @@ sudo ./pingtunnel -type server
 
 ### 安装客户端
 * 从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如pingtunnel_windows64.zip，解压
-* 然后用管理员权限运行，不同的转发功能所对应的命令如下。
+* 然后用管理员权限运行，不同的转发功能所对应的命令如下
+* 如果看到有ping pong的log，说明连接正常
 ##### 转发sock5
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
