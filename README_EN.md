@@ -36,6 +36,7 @@ sudo ./pingtunnel -type server
 ### Install the client
 * Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
 * Then run with administrator privileges. The commands corresponding to different forwarding functions are as follows.
+* If you see a log of ping pong, the connection is normal
 ##### Forward sock5
 ```
 pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -sock5 1
