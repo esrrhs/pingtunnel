@@ -26,7 +26,7 @@ pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具。�
 # 使用
 ### 安装服务端
 * 首先准备好一个具有公网ip的服务器，如AWS上的EC2，假定域名或者公网ip是www.yourserver.com
-* 从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如pingtunnel_linux64.zip，然后解压，执行
+* 从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如pingtunnel_linux64.zip，然后解压，以**root**权限执行
 ```
 sudo wget (最新release的下载链接)
 sudo unzip pingtunnel_linux64.zip
@@ -46,7 +46,7 @@ echo 1 >/proc/sys/net/ipv4/icmp_echo_ignore_all
 
 ### 安装客户端(高玩推荐)
 * 从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如pingtunnel_windows64.zip，解压
-* 然后用管理员权限运行，不同的转发功能所对应的命令如下
+* 然后用**管理员权限**运行，不同的转发功能所对应的命令如下
 * 如果看到有ping pong的log，说明连接正常
 ##### 转发sock5
 ```
