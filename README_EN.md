@@ -33,7 +33,7 @@ sudo ./pingtunnel -type server
 
 ![image](qtrun.jpg)
 
-### Install the client
+### Install the client (recommended for high play)
 * Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
 * Then run with administrator privileges. The commands corresponding to different forwarding functions are as follows.
 * If you see a log of ping pong, the connection is normal
@@ -50,7 +50,7 @@ pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com
 pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
 
-# Use Docker
+### Use Docker
 server:
 ```
 docker run --name pingtunnel-server -d --privileged --network host --restart = always esrrhs / pingtunnel ./pingtunnel -type server -key 123456
