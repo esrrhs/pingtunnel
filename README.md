@@ -32,6 +32,10 @@ sudo wget https://github.com/esrrhs/pingtunnel/releases/download/1.5/pingtunnel_
 sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
+* (可选)关闭系统默认的ping
+```
+echo 1 >/proc/sys/net/ipv4/icmp_echo_ignore_all
+```
 ### 安装GUI客户端(新手推荐)
 * 从[pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)下载qt的gui版本
 * 双击exe运行，修改server（如www.yourserver.com）、listen port（如1080），勾上sock5，其他设置默认即可，然后点击*GO*
