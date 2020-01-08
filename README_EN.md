@@ -25,6 +25,10 @@ sudo wget https://github.com/esrrhs/pingtunnel/releases/download/1.5/pingtunnel_
 sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
+* (Optional) Disable system default ping
+```
+echo 1> / proc / sys / net / ipv4 / icmp_echo_ignore_all
+```
 ### Install GUI client (recommended by novices)
 * Download the gui version of qt from [pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)
 * Double-click the exe to run, modify the server (such as www.yourserver.com), listen port (such as 1080), tick sock5, other settings can be default, and then click *GO*
