@@ -75,7 +75,7 @@ docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/ping
 # 效果
 测试pingtunnel的加速效果，服务器位于aws Korea，客户端位于中国大陆。
 
-下载centos镜像 [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8-x86_64-1905-dvd1.iso) 
+下载centos镜像 [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8.1.1911-x86_64-dvd1.iso) 
 直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。
 
 |              | wget     | shaowsocks | pingtunnel |
