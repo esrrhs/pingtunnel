@@ -161,5 +161,3 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
               
     -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
               
-
-
