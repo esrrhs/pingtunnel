@@ -35,6 +35,34 @@ Usage:
     -type     服务器或者客户端
               client or server
 
+server端参数server param:
+
+    -key      设置的密码，默认0
+              Set password, default 0
+
+    -nolog    不写日志文件，只打印标准输出，默认0
+              Do not write log files, only print standard output, default 0 is off
+
+    -noprint  不打印屏幕输出，默认0
+              Do not print standard output, default 0 is off
+
+    -loglevel 日志文件等级，默认info
+              log level, default is info
+
+    -maxconn  最大连接数，默认0，不受限制
+              the max num of connections, default 0 is no limit
+
+    -maxprt   server最大处理线程数，默认100
+              max process thread in server, default 100
+
+    -maxprb   server最大处理线程buffer数，默认1000
+              max process thread's buffer in server, default 1000
+
+    -conntt   server发起连接到目标地址的超时时间，默认1000ms
+              The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
+
+客户端参数client param:
+
     -l        本地的地址，发到这个端口的流量将转发到服务器
               Local address, traffic sent to this port will be forwarded to the server
 
@@ -80,20 +108,8 @@ Usage:
     -sock5    开启sock5转发，默认0
               Turn on sock5 forwarding, default 0 is off
 
-    -maxconn  最大连接数，默认0，不受限制
-              the max num of connections, default 0 is no limit
-
-    -maxprt   server最大处理线程数，默认100
-              max process thread in server, default 100
-
-    -maxprb   server最大处理线程buffer数，默认1000
-              max process thread's buffer in server, default 1000
-
     -profile  在指定端口开启性能检测，默认0不开启
               Enable performance detection on the specified port. The default 0 is not enabled.
-
-    -conntt   server发起连接到目标地址的超时时间，默认1000ms
-              The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
 
     -s5filter sock5模式设置转发过滤，默认全转发，设置CN代表CN地区的直连不转发
               Set the forwarding filter in the sock5 mode. The default is full forwarding. For example, setting the CN indicates that the Chinese address is not forwarded.
