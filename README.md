@@ -117,7 +117,7 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
     -type     服务器或者客户端
 
-    server端参数:
+    服务器参数:
 
     -key      设置的密码，默认0
 
