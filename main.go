@@ -35,7 +35,7 @@ Usage:
     -type     服务器或者客户端
               client or server
 
-server端参数server param:
+服务器参数server param:
 
     -key      设置的密码，默认0
               Set password, default 0
