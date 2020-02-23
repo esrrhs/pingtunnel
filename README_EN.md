@@ -109,6 +109,26 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
     -type     client or server
 
+    server param:
+
+    -key      Set password, default 0
+
+    -nolog    Do not write log files, only print standard output, default 0 is off
+
+    -noprint  Do not print standard output, default 0 is off
+
+    -loglevel log level, default is info
+
+    -maxconn  the max num of connections, default 0 is no limit
+
+    -maxprt   max process thread in server, default 100
+
+    -maxprb   max process thread's buffer in server, default 1000
+
+    -conntt   The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
+
+    client param:
+
     -l        Local address, traffic sent to this port will be forwarded to the server
 
     -s        The address of the server, the traffic will be forwarded to this server through the tunnel
@@ -139,15 +159,7 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
     -sock5    Turn on sock5 forwarding, default 0 is off
 
-    -maxconn  the max num of connections, default 1000
-
-    -maxprt   max process thread in server, default 100
-
-    -maxprb   max process thread's buffer in server, default 1000
-
     -profile  Enable performance detection on the specified port. The default 0 is not enabled.
-
-    -conntt   The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
 
     -s5filter Set the forwarding filter in the sock5 mode. The default is full forwarding. For example, setting the CN indicates that the Chinese address is not forwarded.
 
