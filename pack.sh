@@ -8,3 +8,6 @@ zip pingtunnel_mac.zip pingtunnel
 GOOS=windows GOARCH=amd64 go build
 zip pingtunnel_windows64.zip pingtunnel.exe
 
+GOOS=linux GOARCH=mipsle go build
+zip pingtunnel_mipsle.zip pingtunnel
+
