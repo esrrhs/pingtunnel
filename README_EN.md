@@ -90,7 +90,7 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 
 [![Stargazers over time](https://starchart.cc/esrrhs/pingtunnel.svg)](https://starchart.cc/esrrhs/pingtunnel)
 
-# other
+# Other
 Can be used on routers, refer to the use of [yellowsocks](https://github.com/esrrhs/yellowsocks)
 
 # Usage
