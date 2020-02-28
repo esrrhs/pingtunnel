@@ -89,7 +89,10 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 # Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/esrrhs/pingtunnel.svg)](https://starchart.cc/esrrhs/pingtunnel)
-      
+
+# other
+Can be used on routers, refer to the use of [yellowsocks](https://github.com/esrrhs/yellowsocks)
+
 # Usage
     By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
