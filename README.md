@@ -97,7 +97,10 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 # Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/esrrhs/pingtunnel.svg)](https://starchart.cc/esrrhs/pingtunnel)
-      
+     
+# 其他
+可用于路由器上，参考[yellowsocks](https://github.com/esrrhs/yellowsocks)的使用
+     
 # Usage
     通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
     
