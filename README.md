@@ -175,4 +175,4 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
     -s5filter sock5模式设置转发过滤，默认全转发，设置CN代表CN地区的直连不转发
 
     -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
-              
+
