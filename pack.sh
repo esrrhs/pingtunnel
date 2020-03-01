@@ -1,4 +1,6 @@
 #! /bin/bash
+set -x
+
 go build
 zip pingtunnel_linux64.zip pingtunnel
 
