@@ -13,3 +13,6 @@ zip pingtunnel_windows64.zip pingtunnel.exe
 GOOS=linux GOARCH=mipsle go build
 zip pingtunnel_mipsle.zip pingtunnel
 
+GOOS=linux GOARCH=arm go build
+zip pingtunnel_arm.zip pingtunnel
+
