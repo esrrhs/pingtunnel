@@ -16,3 +16,6 @@ zip pingtunnel_mipsle.zip pingtunnel
 GOOS=linux GOARCH=arm go build
 zip pingtunnel_arm.zip pingtunnel
 
+GOOS=linux GOARCH=mips go build
+zip pingtunnel_mips.zip pingtunnel
+
