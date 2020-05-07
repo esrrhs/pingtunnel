@@ -66,20 +66,15 @@ docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs /
 ```
 
 # Test
-Test the acceleration effect of pingtunnel. The server is located in aws Korea and the client is located in mainland China.
+Test the acceleration effect of pingtunnel. The server is located in bandwagon North America and the client is located in  AlibabaCloud mainland China.
 
-download the centos image [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8.1.1911-x86_64-dvd1.iso) , the results of direct wget, shadowsocks wget, and pingtunnel wget are as follows.
+download the centos image [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8.1.1911-x86_64-dvd1.iso) , the results of direct wget, shadowsocks wget, kcptun wget, and pingtunnel wget are as follows.
 
-|              | wget     | shaowsocks | pingtunnel |
-|--------------|----------|------------|------------|
-| AlibabaCloud | 26.6KB/s | 31.8KB/s   | 897KB/s    |
-| Home Broadband     | 23.1KB/s | 28.4KB/s   | 408KB/s    |
+|              | wget     | shaowsocks | kcptun | pingtunnel |
+|--------------|----------|------------|------------|------------|
+| AlibabaCloud | 26.6KB/s | 31.8KB/s   | 606KB/s    |5.64MB/s|
 
-the acceleration effect is basically **20 times**.
-
-Similarly, clone the github repository [go-engine](https://github.com/esrrhs/go-engine.git) , the acceleration effect is also obvious
-
-![image](test.png)
+the acceleration effect is basically **200 times**.
 
 # Download
 cmd: https://github.com/esrrhs/pingtunnel/releases
