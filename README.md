@@ -22,7 +22,7 @@ pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具。�
 # 功能
 * 某些服务器的tcp、udp流量被禁止，可以通过pingtunnel绕过。
 * 某些场合如学校、咖啡厅、机场，需要登录跳转验证，可以通过pingtunnel绕过。
-* 某些网络，tcp传输很慢，可以通过pingtunnel加速网络。
+* 某些网络，tcp、udp传输很慢，可以通过pingtunnel加速网络。
 
 # 使用
 ### 安装服务端
