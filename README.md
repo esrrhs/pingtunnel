@@ -73,21 +73,16 @@ docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/ping
 ```
 
 # 效果
-测试pingtunnel的加速效果，服务器位于aws Korea，客户端位于中国大陆。
+测试pingtunnel的加速效果，服务器位于bandwagon北美，客户端位于中国大陆的阿里云。
 
 下载centos镜像 [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8.1.1911-x86_64-dvd1.iso) 
-直接wget、通过shadowsocks wget、通过pingtunnel wget的结果如下。
+直接wget、通过shadowsocks wget、通过kcptun wget、通过pingtunnel wget的结果如下。
 
-|              | wget     | shaowsocks | pingtunnel |
-|--------------|----------|------------|------------|
-| 阿里云 | 26.6KB/s | 31.8KB/s   | 897KB/s    |
-| 移动宽带     | 23.1KB/s | 28.4KB/s   | 408KB/s    |
+|              | wget     | shaowsocks | kcptun | pingtunnel |
+|--------------|----------|------------|------------|------------|
+| 阿里云 | 26.6KB/s | 31.8KB/s   | 606KB/s    |5.64MB/s|
 
-可以看到加速效果基本上**20倍**。
-
-同样的，克隆github仓库 [go-engine](https://github.com/esrrhs/go-engine.git) ，加速效果也很明显。
-
-![image](test.png)
+可以看到加速效果基本上**200倍**。
 
 # 下载
 cmd: https://github.com/esrrhs/pingtunnel/releases
