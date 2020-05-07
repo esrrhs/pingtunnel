@@ -16,7 +16,7 @@ Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for f
 # Why use this
 * TCP and UDP traffic of some servers are banned and can be bypassed by pingtunnel.
 * In some occasions, such as schools, cafes, and airports, login jump authentication is required, which can be bypassed by pingtunnel.
-* In some networks, TCP transmission is very slow. You can speed up the network through pingtunnel.
+* In some networks, TCP/UDP transmission is very slow. You can speed up the network through pingtunnel.
 # Use
 ### Install server
 * First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
