@@ -21,3 +21,7 @@ zip pingtunnel_mips.zip pingtunnel
 
 GOOS=windows GOARCH=386 go build
 zip pingtunnel_windows32.zip pingtunnel.exe
+
+GOOS=linux GOARCH=arm64 go build
+zip pingtunnel_arm64.zip pingtunnel
+
