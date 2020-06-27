@@ -66,7 +66,7 @@ docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs /
 ```
 
 # Test
-download the centos image [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8.1.1911-x86_64-dvd1.iso) 
+download the centos image [centos mirror](http://mirrors.ocf.berkeley.edu/centos/8.2.2004/isos/x86_64/CentOS-8.2.2004-x86_64-dvd1.iso) 
 
 the results of direct wget, shadowsocks wget, kcptun wget, and pingtunnel wget are as follows.
 
