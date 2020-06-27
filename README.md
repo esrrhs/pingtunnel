@@ -71,7 +71,7 @@ docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/ping
 ```
 
 # 效果
-下载centos镜像 [centos mirror](http://mirror.calgah.com/centos/8/isos/x86_64/CentOS-8.1.1911-x86_64-dvd1.iso) 
+下载centos镜像 [centos mirror](http://mirrors.ocf.berkeley.edu/centos/8.2.2004/isos/x86_64/CentOS-8.2.2004-x86_64-dvd1.iso) 
 
 直接wget、通过shadowsocks wget、通过kcptun wget、通过pingtunnel wget的结果如下
 
