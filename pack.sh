@@ -1,7 +1,7 @@
 #! /bin/bash
 set -x
 
-go build
+CGO_ENABLED=0 go build
 zip pingtunnel_linux64.zip pingtunnel
 
 GOOS=darwin GOARCH=amd64 go build
@@ -24,4 +24,3 @@ zip pingtunnel_windows32.zip pingtunnel.exe
 
 GOOS=linux GOARCH=arm64 go build
 zip pingtunnel_arm64.zip pingtunnel
-
