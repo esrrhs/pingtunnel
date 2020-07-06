@@ -94,7 +94,7 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 #### 路由器使用
 参考[yellowsocks](https://github.com/esrrhs/yellowsocks)的使用
 #### 手机端使用
-建议套用其他协议使用，如ss client->pingtunnel client->pingtunnel server->ss server    
+建议套用其他协议使用，如phone client->pingtunnel client->pingtunnel server->phone server    
      
 # Usage
     通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
