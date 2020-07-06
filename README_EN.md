@@ -89,7 +89,7 @@ QT GUI: https://github.com/esrrhs/pingtunnel-qt
 #### Router use
 refer to the use of [yellowsocks](https://github.com/esrrhs/yellowsocks)
 #### Mobile phone use
-It is recommended to use other protocols, such as ss client-> pingtunnel client-> pingtunnel server-> ss server
+It is recommended to use other protocols, such as phone client-> pingtunnel client-> pingtunnel server-> phone server
 
 # Usage
     By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
