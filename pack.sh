@@ -31,8 +31,3 @@ zip pingtunnel_mips64.zip pingtunnel
 GOOS=linux GOARCH=mips64le go build
 zip pingtunnel_mips64le.zip pingtunnel
 
-GOOS=linux GOARCH=mips64p32 go build
-zip pingtunnel_mips64p32.zip pingtunnel
-
-GOOS=linux GOARCH=mips64p32le go build
-zip pingtunnel_mips64p32le.zip pingtunnel
