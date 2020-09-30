@@ -28,7 +28,7 @@ sudo ./pingtunnel -type server
 ```
 * (Optional) Disable system default ping
 ```
-echo 1> / proc / sys / net / ipv4 / icmp_echo_ignore_all
+echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 ### Install GUI client (recommended by novices)
 * Download the gui version of qt from [pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)
