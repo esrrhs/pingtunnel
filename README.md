@@ -14,6 +14,7 @@ pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具
 [Readme EN](./README_EN.md)
 
 **注意：本工具只是用作学习研究，请勿用于非法用途！！！**
+
 ![image](network.jpg)
 
 # 使用
@@ -34,6 +35,7 @@ echo 1 >/proc/sys/net/ipv4/icmp_echo_ignore_all
 * 双击exe运行，修改server（如www.yourserver.com）、listen port（如1080），勾上sock5，其他设置默认即可，然后点击*GO*
 * 一切正常，界面上会有ping值显示，然后可点击X隐藏到状态栏
 * 设置浏览器的sock5代理到127.0.0.1:1080，如果连不上网，出现socks version not supported错误日志，说明浏览器的代理不是socks5代理。如果提示非安全连接，说明dns有问题，勾上浏览器的【使用socks5代理DNS查询】
+
 ![image](qtrun.jpg)
 
 ### 安装客户端(高玩推荐)
