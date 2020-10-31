@@ -67,6 +67,6 @@ docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/ping
 
 # 效果
 下载centos镜像 [centos mirror](http://mirrors.ocf.berkeley.edu/centos/8.2.2004/isos/x86_64/CentOS-8.2.2004-x86_64-dvd1.iso)，对比如下
-|              | wget     | shaowsocks | kcptun | pingtunnel |
+|              | wget     | ss | kcp | pingtunnel |
 |--------------|----------|------------|------------|------------|
 | 阿里云 | 26.6KB/s | 31.8KB/s   | 606KB/s    |5.64MB/s|
