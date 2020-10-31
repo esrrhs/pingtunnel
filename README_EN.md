@@ -63,11 +63,6 @@ docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs /
 
 # Test
 download the centos image [centos mirror](http://mirrors.ocf.berkeley.edu/centos/8.2.2004/isos/x86_64/CentOS-8.2.2004-x86_64-dvd1.iso) 
-|              | wget     | shaowsocks | kcptun | pingtunnel |
+|              | wget     | ss | kcp | pingtunnel |
 |--------------|----------|------------|------------|------------|
 | AlibabaCloud | 26.6KB/s | 31.8KB/s   | 606KB/s    |5.64MB/s|
-
-# Download
-cmd: https://github.com/esrrhs/pingtunnel/releases
-
-QT GUI: https://github.com/esrrhs/pingtunnel-qt
