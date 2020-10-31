@@ -13,7 +13,7 @@ pingtunnel是把tcp/udp/sock5流量伪装成icmp流量进行转发的工具
 
 [Readme EN](./README_EN.md)
 
-**注意：本工具只是用作学习研究，请勿用于非法用途！**
+**注意：本工具只是用作学习研究，请勿用于非法用途！！！**
 ![image](network.jpg)
 
 # 使用
