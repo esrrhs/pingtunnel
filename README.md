@@ -70,9 +70,3 @@ docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/ping
 |              | wget     | shaowsocks | kcptun | pingtunnel |
 |--------------|----------|------------|------------|------------|
 | 阿里云 | 26.6KB/s | 31.8KB/s   | 606KB/s    |5.64MB/s|
-
-# 下载
-cmd: https://github.com/esrrhs/pingtunnel/releases
-
-QT GUI: https://github.com/esrrhs/pingtunnel-qt
-
