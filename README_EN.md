@@ -11,7 +11,7 @@
 
 Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for forwarding.
 
-> Note: This tool is only to be used for study and research, do not use it for illegal purposes.
+## Note: This tool is only to be used for study and research, do not use it for illegal purposes.
 
 ![image](network.jpg)
 
@@ -19,8 +19,8 @@ Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for f
 
 ### Install server
 
-- First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
-- Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute with **root** privileges
+-  First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
+-  Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute with **root** privileges
 
 ```
 sudo wget (link of latest release)
@@ -28,7 +28,7 @@ sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
 
-- (Optional) Disable system default ping
+-  (Optional) Disable system default ping
 
 ```
 echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
@@ -36,18 +36,18 @@ echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 
 ### Install GUI client (recommended by novices)
 
-- Download the gui version of qt from [pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)
-- Double-click the exe to run, modify the server (such as www.yourserver.com), listen port (such as 1080), tick sock5, other settings can be default, and then click _GO_
-- Everything is normal, there will be a ping value on the interface, and then you can click X to hide it in the status bar
-- Set the browser's sock5 proxy to 127.0.0.1:1080, If you do not connect to the Internet, a socks version not supported error log appears, indicating that the browser's proxy is not a socks5 proxy.If it prompts a non-secure connection, it means there is a problem with dns. Check "Use socks5 proxy DNS query" on the browser.
+-  Download the gui version of qt from [pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)
+-  Double-click the exe to run, modify the server (such as www.yourserver.com), listen port (such as 1080), tick sock5, other settings can be default, and then click _GO_
+-  Everything is normal, there will be a ping value on the interface, and then you can click X to hide it in the status bar
+-  Set the browser's sock5 proxy to 127.0.0.1:1080, If you do not connect to the Internet, a socks version not supported error log appears, indicating that the browser's proxy is not a socks5 proxy.If it prompts a non-secure connection, it means there is a problem with dns. Check "Use socks5 proxy DNS query" on the browser.
 
 ![image](qtrun.jpg)
 
 ### Install the client (recommended for high play)
 
-- Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
-- Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
-- If you see a log of ping pong, the connection is normal
+-  Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
+-  Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
+-  If you see a log of ping pong, the connection is normal
 
 #### Forward sock5
 
