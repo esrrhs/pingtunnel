@@ -1,0 +1,8 @@
+version: "3.7"
+
+services:
+  pingtunnelServer:
+    image: esrrhs/pingtunnel:latest
+    restart: always
+    network_mode: host
+    command: "./pingtunnel -type server -key 123456"
