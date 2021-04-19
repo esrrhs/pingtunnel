@@ -12,14 +12,12 @@ freebsd/amd64
 freebsd/arm
 freebsd/arm64
 illumos/amd64
-js/wasm
 linux/386
 linux/amd64
 linux/arm
 linux/arm64
 linux/mips
 linux/mips64
-linux/mips64le
 linux/mipsle
 linux/ppc64
 linux/ppc64le
