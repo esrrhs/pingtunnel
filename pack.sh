@@ -1,33 +1,65 @@
 #! /bin/bash
-set -x
+#set -x
+NAME="pingtunnel"
+rm *.zip -f
 
-CGO_ENABLED=0 go build
-zip pingtunnel_linux64.zip pingtunnel
+build_list="aix/ppc64
+darwin/386
+darwin/amd64
+dragonfly/amd64
+freebsd/386
+freebsd/amd64
+freebsd/arm
+freebsd/arm64
+illumos/amd64
+js/wasm
+linux/386
+linux/amd64
+linux/arm
+linux/arm64
+linux/mips
+linux/mips64
+linux/mips64le
+linux/mipsle
+linux/ppc64
+linux/ppc64le
+linux/riscv64
+linux/s390x
+netbsd/386
+netbsd/amd64
+netbsd/arm
+netbsd/arm64
+openbsd/386
+openbsd/amd64
+openbsd/arm
+openbsd/arm64
+plan9/386
+plan9/amd64
+plan9/arm
+solaris/amd64
+windows/386
+windows/amd64
+windows/arm"
 
-GOOS=darwin GOARCH=amd64 go build
-zip pingtunnel_mac.zip pingtunnel
+for line in $build_list; do
+  os=$(echo "$line" | awk -F"/" '{print $1}')
+  arch=$(echo "$line" | awk -F"/" '{print $2}')
+  echo "os="$os" arch="$arch" start build"
+  if [ $os == "android" ]; then
+    continue
+  fi
+  CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build
+  if [ $? -ne 0 ]; then
+    echo "os="$os" arch="$arch" build fail"
+    exit 1
+  fi
+  zip ${NAME}_"${os}"_"${arch}"".zip" $NAME
+  if [ $? -ne 0 ]; then
+    echo "os="$os" arch="$arch" zip fail"
+    exit 1
+  fi
+  echo "os="$os" arch="$arch" done build"
+done
 
-GOOS=windows GOARCH=amd64 go build
-zip pingtunnel_windows64.zip pingtunnel.exe
-
-GOOS=linux GOARCH=mipsle go build
-zip pingtunnel_mipsle.zip pingtunnel
-
-GOOS=linux GOARCH=arm go build
-zip pingtunnel_arm.zip pingtunnel
-
-GOOS=linux GOARCH=mips go build
-zip pingtunnel_mips.zip pingtunnel
-
-GOOS=windows GOARCH=386 go build
-zip pingtunnel_windows32.zip pingtunnel.exe
-
-GOOS=linux GOARCH=arm64 go build
-zip pingtunnel_arm64.zip pingtunnel
-
-GOOS=linux GOARCH=mips64 go build
-zip pingtunnel_mips64.zip pingtunnel
-
-GOOS=linux GOARCH=mips64le go build
-zip pingtunnel_mips64le.zip pingtunnel
+echo "all done"
 
