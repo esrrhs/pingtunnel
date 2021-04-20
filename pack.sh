@@ -3,7 +3,12 @@
 NAME="pingtunnel"
 rm *.zip -f
 
+#go tool dist list
 build_list="aix/ppc64
+android/386
+android/amd64
+android/arm
+android/arm64
 darwin/386
 darwin/amd64
 dragonfly/amd64
@@ -18,6 +23,7 @@ linux/arm
 linux/arm64
 linux/mips
 linux/mips64
+linux/mips64le
 linux/mipsle
 linux/ppc64
 linux/ppc64le
@@ -39,6 +45,10 @@ windows/386
 windows/amd64
 windows/arm"
 
+rm pack -rf
+rm pack.zip -f
+mkdir pack
+
 for line in $build_list; do
   os=$(echo "$line" | awk -F"/" '{print $1}')
   arch=$(echo "$line" | awk -F"/" '{print $2}')
@@ -51,13 +61,28 @@ for line in $build_list; do
     echo "os="$os" arch="$arch" build fail"
     exit 1
   fi
-  zip ${NAME}_"${os}"_"${arch}"".zip" $NAME
-  if [ $? -ne 0 ]; then
-    echo "os="$os" arch="$arch" zip fail"
-    exit 1
+  if [ $os = "windows" ]; then
+    zip ${NAME}_"${os}"_"${arch}"".zip" $NAME".exe"
+    if [ $? -ne 0 ]; then
+      echo "os="$os" arch="$arch" zip fail"
+      exit 1
+    fi
+    mv ${NAME}_"${os}"_"${arch}"".zip" pack/
+    rm $NAME".exe" -f
+  else
+    zip ${NAME}_"${os}"_"${arch}"".zip" $NAME
+    if [ $? -ne 0 ]; then
+      echo "os="$os" arch="$arch" zip fail"
+      exit 1
+    fi
+    mv ${NAME}_"${os}"_"${arch}"".zip" pack/
+    rm $NAME -f
   fi
   echo "os="$os" arch="$arch" done build"
 done
 
+zip pack.zip pack/ -r
+
 echo "all done"
+
 
