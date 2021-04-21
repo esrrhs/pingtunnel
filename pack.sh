@@ -2,6 +2,8 @@
 #set -x
 NAME="pingtunnel"
 
+export GO111MODULE=off
+
 #go tool dist list
 build_list=$(go tool dist list)
 
