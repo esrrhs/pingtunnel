@@ -11,8 +11,6 @@ rm pack -rf
 rm pack.zip -f
 mkdir pack
 
-go get -u -v github.com/esrrhs/pingtunnel/...
-
 for line in $build_list; do
   os=$(echo "$line" | awk -F"/" '{print $1}')
   arch=$(echo "$line" | awk -F"/" '{print $2}')
@@ -21,6 +19,9 @@ for line in $build_list; do
     continue
   fi
   if [ $os == "ios" ]; then
+    continue
+  fi
+  if [ $arch == "wasm" ]; then
     continue
   fi
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
