@@ -79,7 +79,7 @@ docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs /
 
 ## Test
 
-download the centos image [centos mirror](http://mirrors.ocf.berkeley.edu/centos/8.2.2004/isos/x86_64/CentOS-8.2.2004-x86_64-dvd1.iso)
+download the centos image [centos mirror](http://centos.s.uw.edu/centos/8.4.2105/isos/x86_64/CentOS-8.4.2105-x86_64-dvd1.iso)
 
 |              | wget     | ss       | kcp     | pingtunnel |
 | ------------ | -------- | -------- | ------- | ---------- |
