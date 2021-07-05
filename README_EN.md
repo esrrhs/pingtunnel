@@ -33,16 +33,7 @@ sudo ./pingtunnel -type server
 echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 
-### Install GUI client (recommended by novices)
-
--   Download the gui version of qt from [pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)
--   Double-click the exe to run, modify the server (such as www.yourserver.com), listen port (such as 1080), tick sock5, other settings can be default, and then click _GO_
--   Everything is normal, there will be a ping value on the interface, and then you can click X to hide it in the status bar
--   Set the browser's sock5 proxy to 127.0.0.1:1080, If you do not connect to the Internet, a socks version not supported error log appears, indicating that the browser's proxy is not a socks5 proxy.If it prompts a non-secure connection, it means there is a problem with dns. Check "Use socks5 proxy DNS query" on the browser.
-
-![image](qtrun.jpg)
-
-### Install the client (recommended for high play)
+### Install the client
 
 -   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
 -   Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
@@ -66,7 +57,7 @@ pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com
 pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
 
-### Use Docker (recommended for high play)
+### Use Docker
 It can also be started directly with docker, which is more convenient. Same parameters as above
 -   server:
 ```
