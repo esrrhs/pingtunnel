@@ -35,16 +35,7 @@ sudo ./pingtunnel -type server
 echo 1 >/proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 
-### 安装 GUI 客户端(新手推荐)
-
--   从[pingtunnel-qt](https://github.com/esrrhs/pingtunnel-qt)下载 qt 的 gui 版本
--   双击 exe 运行，修改 server（如www.yourserver.com）、listen port（如 1080），勾上 sock5，其他设置默认即可，然后点击*GO*
--   一切正常，界面上会有 ping 值显示，然后可点击 X 隐藏到状态栏
--   设置浏览器的 sock5 代理到 127.0.0.1:1080，如果连不上网，出现 socks version not supported 错误日志，说明浏览器的代理不是 socks5 代理。如果提示非安全连接，说明 dns 有问题，勾上浏览器的【使用 socks5 代理 DNS 查询】
-
-![image](qtrun.jpg)
-
-### 安装客户端(高玩推荐)
+### 安装客户端
 
 -   从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如 pingtunnel_windows64.zip，解压
 -   然后用**管理员权限**运行，不同的转发功能所对应的命令如下
@@ -68,7 +59,7 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
 
-### Docker(高玩推荐)
+### Docker
 也可直接用docker启动，更方便。参数同上
 -   server:
 ```
