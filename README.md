@@ -75,3 +75,4 @@ download the centos image [centos mirror](http://centos.s.uw.edu/centos/8.4.2105
 |              | wget     | ss       | kcp     | pingtunnel |
 | ------------ | -------- | -------- | ------- | ---------- |
 | AlibabaCloud | 26.6KB/s | 31.8KB/s | 606KB/s | 5.64MB/s   |
+
