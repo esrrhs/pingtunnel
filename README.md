@@ -8,72 +8,70 @@
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/workflow/status/esrrhs/pingtunnel/Go">](https://github.com/esrrhs/pingtunnel/actions)
 
-pingtunnel 是把 tcp/udp/sock5 流量伪装成 icmp 流量进行转发的工具
+Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for forwarding.
 
-[Readme EN](./README_EN.md)
-
-## 注意：本工具只是用作学习研究，请勿用于非法用途！！！
+## Note: This tool is only to be used for study and research, do not use it for illegal purposes
 
 ![image](network.jpg)
 
-## 使用
+## Usage
 
-### 安装服务端
+### Install server
 
--   首先准备好一个具有公网 ip 的服务器，假定域名或者公网 ip 是www.yourserver.com
--   从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如 pingtunnel_linux64.zip，然后解压，以**root**权限执行
+-   First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
+-   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute with **root** privileges
 
 ```
-sudo wget (最新release的下载链接)
+sudo wget (link of latest release)
 sudo unzip pingtunnel_linux64.zip
 sudo ./pingtunnel -type server
 ```
 
--   (可选)关闭系统默认的 ping
+-   (Optional) Disable system default ping
 
 ```
-echo 1 >/proc/sys/net/ipv4/icmp_echo_ignore_all
+echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 
-### 安装客户端
+### Install the client
 
--   从[releases](https://github.com/esrrhs/pingtunnel/releases)下载对应的安装包，如 pingtunnel_windows64.zip，解压
--   然后用**管理员权限**运行，不同的转发功能所对应的命令如下
--   如果看到有 ping pong 的 log，说明连接正常
+-   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
+-   Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
+-   If you see a log of ping pong, the connection is normal
 
-#### 转发 sock5
-
-```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
-```
-
-#### 转发 tcp
+#### Forward sock5
 
 ```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
+pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -sock5 1
 ```
 
-#### 转发 udp
+#### Forward tcp
 
 ```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
+pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
 ```
 
-### Docker
-也可直接用docker启动，更方便。参数同上
+#### Forward udp
+
+```
+pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455
+```
+
+### Use Docker
+It can also be started directly with docker, which is more convenient. Same parameters as above
 -   server:
 ```
-docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+docker run --name pingtunnel-server -d --privileged --network host --restart = always esrrhs / pingtunnel ./pingtunnel -type server -key 123456
 ```
 -   client:
 ```
-docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
+docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs / pingtunnel ./pingtunnel -type client -l: 1080 -s www.yourserver.com -sock5 1 -key 123456
 ```
 
-## 效果
+## Test
 
-下载 centos 镜像 [centos mirror](http://centos.s.uw.edu/centos/8.4.2105/isos/x86_64/CentOS-8.4.2105-x86_64-dvd1.iso)，对比如下
+download the centos image [centos mirror](http://centos.s.uw.edu/centos/8.4.2105/isos/x86_64/CentOS-8.4.2105-x86_64-dvd1.iso)
 
-|        | wget     | ss       | kcp     | pingtunnel |
-| ------ | -------- | -------- | ------- | ---------- |
-| 阿里云 | 26.6KB/s | 31.8KB/s | 606KB/s | 5.64MB/s   |
+|              | wget     | ss       | kcp     | pingtunnel |
+| ------------ | -------- | -------- | ------- | ---------- |
+| AlibabaCloud | 26.6KB/s | 31.8KB/s | 606KB/s | 5.64MB/s   |
