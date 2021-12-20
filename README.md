@@ -8,7 +8,7 @@
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/workflow/status/esrrhs/pingtunnel/Go">](https://github.com/esrrhs/pingtunnel/actions)
 
-Pingtunnel is a tool that advertises tcp/udp/sock5 traffic as icmp traffic for forwarding.
+ping tunnel is a tool that send TCP/UDP traffic over ICMP.
 
 ## Note: This tool is only to be used for study and research, do not use it for illegal purposes
 
