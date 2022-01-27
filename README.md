@@ -61,11 +61,11 @@ pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com
 It can also be started directly with docker, which is more convenient. Same parameters as above
 -   server:
 ```
-docker run --name pingtunnel-server -d --privileged --network host --restart = always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
 ```
 -   client:
 ```
-docker run --name pingtunnel-client -d --restart = always -p 1080: 1080 esrrhs/pingtunnel ./pingtunnel -type client -l: 1080 -s www.yourserver.com -sock5 1 -key 123456
+docker run --name pingtunnel-client -d --restart=always -p 1080: 1080 esrrhs/pingtunnel ./pingtunnel -type client -l: 1080 -s www.yourserver.com -sock5 1 -key 123456
 ```
 
 ## Test
