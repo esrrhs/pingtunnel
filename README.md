@@ -8,7 +8,7 @@
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/workflow/status/esrrhs/pingtunnel/Go">](https://github.com/esrrhs/pingtunnel/actions)
 
-Pingtunnel is a tool that send TCP/UDP traffic over ICMP.
+Pingtunnel is a tool that sends TCP/UDP traffic over ICMP.
 
 ## Note: This tool is only to be used for study and research, do not use it for illegal purposes
 
@@ -16,7 +16,7 @@ Pingtunnel is a tool that send TCP/UDP traffic over ICMP.
 
 ## Usage
 
-### Install server
+### Install the server
 
 -   First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
 -   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute with **root** privileges
