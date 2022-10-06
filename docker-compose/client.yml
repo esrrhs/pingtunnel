@@ -1,9 +1,0 @@
-version: "3.7"
-
-services:
-  pingtunnelServer:
-    image: esrrhs/pingtunnel:latest
-    restart: always
-    ports:
-      - 1080:1080
-    command: "./pingtunnel -type client -l 0.0.0.0:1080 -s ${SERVER} -sock5 1 -key ${KEY}"
