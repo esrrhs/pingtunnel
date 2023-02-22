@@ -6,7 +6,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	Load("./GeoLite2-Country.mmdb")
+	LoadGeoDB("./GeoLite2-Country.mmdb")
 
 	fmt.Println(GetCountryIsoCode("39.106.101.133"))
 	fmt.Println(GetCountryIsoCode(""))
