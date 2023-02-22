@@ -2,7 +2,7 @@
 #set -x
 NAME="pingtunnel"
 
-export GO111MODULE=off
+export GO111MODULE=on
 
 #go tool dist list
 build_list=$(go tool dist list)
@@ -11,15 +11,7 @@ rm pack -rf
 rm pack.zip -f
 mkdir pack
 
-go get -u -v github.com/esrrhs/pingtunnel/...
-last=`pwd`
-cd $GOPATH/src/golang.org/x
-for dir in `ls`; do
-  cd $dir
-  git pull
-  cd ..
-done
-cd $last
+go mod tidy
 
 for line in $build_list; do
   os=$(echo "$line" | awk -F"/" '{print $1}')
