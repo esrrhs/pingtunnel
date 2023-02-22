@@ -1,10 +1,13 @@
 FROM golang AS build-env
 
-RUN GO111MODULE=off go get -u github.com/esrrhs/pingtunnel
-RUN GO111MODULE=off go get -u github.com/esrrhs/pingtunnel/...
-RUN GO111MODULE=off go install github.com/esrrhs/pingtunnel
+WORKDIR /app
+
+COPY go.* ./
+RUN go mod download
+COPY . ./
+RUN go build -v -o pingtunnel
 
 FROM debian
-COPY --from=build-env /go/bin/pingtunnel .
+COPY --from=build-env /app/pingtunnel .
 COPY GeoLite2-Country.mmdb .
 WORKDIR ./
