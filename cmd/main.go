@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
+	"github.com/esrrhs/pingtunnel"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -166,8 +167,8 @@ func main() {
 			*tcpmode = 1
 		}
 	}
-	if *tcpmode_maxwin*10 > FRAME_MAX_ID {
-		fmt.Println("set tcp win to big, max = " + strconv.Itoa(FRAME_MAX_ID/10))
+	if *tcpmode_maxwin*10 > pingtunnel.FRAME_MAX_ID {
+		fmt.Println("set tcp win to big, max = " + strconv.Itoa(pingtunnel.FRAME_MAX_ID/10))
 		return
 	}
 
@@ -186,7 +187,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer, *conntt)
+		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer, *conntt)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -213,7 +214,7 @@ func main() {
 		}
 
 		if len(*s5filter) > 0 {
-			err := LoadGeoDB(*s5ftfile)
+			err := pingtunnel.LoadGeoDB(*s5ftfile)
 			if err != nil {
 				loggo.Error("Load Sock5 ip file ERROR: %s", err.Error())
 				return
@@ -229,7 +230,7 @@ func main() {
 				return false
 			}
 
-			ret, err := GetCountryIsoCode(taddr.IP.String())
+			ret, err := pingtunnel.GetCountryIsoCode(taddr.IP.String())
 			if err != nil {
 				return false
 			}
@@ -239,7 +240,7 @@ func main() {
 			return ret != *s5filter
 		}
 
-		c, err := NewClient(*listen, *server, *target, *timeout, *key,
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
 			*tcpmode_stat, *open_sock5, *maxconn, &filter)
 		if err != nil {
