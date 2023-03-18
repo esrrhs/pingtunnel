@@ -1,4 +1,4 @@
-module github.com/esrrhs/pingtunnul
+module github.com/esrrhs/pingtunnel
 
 go 1.18
 

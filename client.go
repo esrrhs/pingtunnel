@@ -1,4 +1,4 @@
-package main
+package pingtunnel
 
 import (
 	"github.com/esrrhs/gohome/common"
