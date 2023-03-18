@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/esrrhs/gohome/common"
+	"github.com/esrrhs/gohome/geoip"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/pingtunnel"
 	"net"
@@ -214,7 +215,7 @@ func main() {
 		}
 
 		if len(*s5filter) > 0 {
-			err := pingtunnel.LoadGeoDB(*s5ftfile)
+			err := geoip.Load(*s5ftfile)
 			if err != nil {
 				loggo.Error("Load Sock5 ip file ERROR: %s", err.Error())
 				return
@@ -230,7 +231,7 @@ func main() {
 				return false
 			}
 
-			ret, err := pingtunnel.GetCountryIsoCode(taddr.IP.String())
+			ret, err := geoip.GetCountryIsoCode(taddr.IP.String())
 			if err != nil {
 				return false
 			}
