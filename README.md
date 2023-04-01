@@ -42,19 +42,19 @@ echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 #### Forward sock5
 
 ```
-pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -sock5 1
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
 ```
 
 #### Forward tcp
 
 ```
-pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
 ```
 
 #### Forward udp
 
 ```
-pingtunnel.exe -type client -l: 4455 -s www.yourserver.com -t www.yourserver.com:4455
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
 
 ### Use Docker
