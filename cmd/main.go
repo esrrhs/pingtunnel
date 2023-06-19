@@ -37,7 +37,7 @@ Usage:
 
 服务器参数server param:
 
-    -key      设置的密码，默认0
+    -key      设置的纯数字密码，默认0, 参数为int类型，范围从0-2147483647，不可夹杂字母特殊符号
               Set password, default 0
 
     -nolog    不写日志文件，只打印标准输出，默认0
