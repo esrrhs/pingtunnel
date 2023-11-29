@@ -7,11 +7,13 @@ export GO111MODULE=on
 #go tool dist list
 build_list=$(go tool dist list)
 
+go mod tidy
+
+cd cmd/
+
 rm pack -rf
 rm pack.zip -f
 mkdir pack
-
-go mod tidy
 
 for line in $build_list; do
   os=$(echo "$line" | awk -F"/" '{print $1}')
@@ -32,7 +34,7 @@ for line in $build_list; do
     exit 1
   fi
   if [ $os = "windows" ]; then
-    zip ${NAME}_"${os}"_"${arch}"".zip" $NAME".exe"
+    zip ${NAME}_"${os}"_"${arch}"".zip" cmd.exe
     if [ $? -ne 0 ]; then
       echo "os="$os" arch="$arch" zip fail"
       exit 1
@@ -40,7 +42,7 @@ for line in $build_list; do
     mv ${NAME}_"${os}"_"${arch}"".zip" pack/
     rm $NAME".exe" -f
   else
-    zip ${NAME}_"${os}"_"${arch}"".zip" $NAME
+    zip ${NAME}_"${os}"_"${arch}"".zip" cmd
     if [ $? -ne 0 ]; then
       echo "os="$os" arch="$arch" zip fail"
       exit 1
