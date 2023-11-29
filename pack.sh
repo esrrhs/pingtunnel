@@ -34,7 +34,8 @@ for line in $build_list; do
     exit 1
   fi
   if [ $os = "windows" ]; then
-    zip ${NAME}_"${os}"_"${arch}"".zip" cmd.exe
+    mv cmd.exe ${NAME}.exe
+    zip ${NAME}_"${os}"_"${arch}"".zip" ${NAME}.exe
     if [ $? -ne 0 ]; then
       echo "os="$os" arch="$arch" zip fail"
       exit 1
@@ -42,7 +43,8 @@ for line in $build_list; do
     mv ${NAME}_"${os}"_"${arch}"".zip" pack/
     rm $NAME".exe" -f
   else
-    zip ${NAME}_"${os}"_"${arch}"".zip" cmd
+    mv cmd ${NAME}
+    zip ${NAME}_"${os}"_"${arch}"".zip" ${NAME}
     if [ $? -ne 0 ]; then
       echo "os="$os" arch="$arch" zip fail"
       exit 1
