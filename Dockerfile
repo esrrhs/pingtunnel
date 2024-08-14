@@ -7,6 +7,8 @@ RUN go mod download
 COPY . ./
 RUN ls -a
 RUN go mod tidy
+RUN cd cmd
+RUN ls -a
 RUN go build -v -o pingtunnel
 
 FROM debian
