@@ -6,7 +6,7 @@ COPY go.* ./
 RUN go mod download
 COPY . ./
 RUN go mod tidy
-RUN go build -v -o spp
+RUN go build -v -o pingtunnel
 
 FROM debian
 COPY --from=build-env /app/pingtunnel .
