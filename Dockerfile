@@ -5,10 +5,10 @@ WORKDIR /app
 COPY go.* ./
 RUN go mod download
 COPY . ./
-RUN go build -v -o pingtunnel
+RUN go mod tidy
+RUN go build -v -o spp
 
 FROM debian
 COPY --from=build-env /app/pingtunnel .
 COPY GeoLite2-Country.mmdb .
-RUN chmod +x pingtunnel
 WORKDIR ./
