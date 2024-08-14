@@ -2,7 +2,8 @@ FROM golang AS build-env
 
 WORKDIR /app
 
-COPY go.* ./
+COPY * ./
+RUN ls -a
 RUN go mod download
 COPY . ./
 RUN go mod tidy
