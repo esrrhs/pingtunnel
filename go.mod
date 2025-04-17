@@ -1,12 +1,12 @@
 module github.com/esrrhs/pingtunnel
 
 go 1.21
-toolchain go1.23.7
+toolchain go1.24.1
 
 require (
 	github.com/esrrhs/gohome v0.0.0-20231129030235-4e6f13493d6c
 	github.com/golang/protobuf v1.5.3
-	golang.org/x/net v0.36.0
+	golang.org/x/net v0.38.0
 )
 
 require (
@@ -14,6 +14,6 @@ require (
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/oschwald/geoip2-golang v1.9.0 // indirect
 	github.com/oschwald/maxminddb-golang v1.12.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )
