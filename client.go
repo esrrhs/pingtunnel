@@ -2,7 +2,6 @@ package pingtunnel
 
 import (
 	"github.com/esrrhs/gohome/common"
-	"github.com/esrrhs/gohome/frame"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"github.com/golang/protobuf/proto"
@@ -131,7 +130,7 @@ type ClientConn struct {
 	activeSendTime time.Time
 	close          bool
 
-	fm *frame.FrameMgr
+	fm *network.FrameMgr
 }
 
 func (p *Client) Addr() string {
@@ -323,7 +322,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	uuid := common.UniqueId()
 
-	fm := frame.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat)
+	fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat)
 
 	now := time.Now()
 	clientConn := &ClientConn{exit: false, tcpaddr: tcpsrcaddr, id: uuid, activeRecvTime: now, activeSendTime: now, close: false,
@@ -341,7 +340,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		clientConn.fm.Update()
 		sendlist := clientConn.fm.GetSendList()
 		for e := sendlist.Front(); e != nil; e = e.Next() {
-			f := e.Value.(*frame.Frame)
+			f := e.Value.(*network.Frame)
 			mb, _ := clientConn.fm.MarshalFrame(f)
 			p.sequence++
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
@@ -400,7 +399,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			sleep = false
 			clientConn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
-				f := e.Value.(*frame.Frame)
+				f := e.Value.(*network.Frame)
 				mb, err := clientConn.fm.MarshalFrame(f)
 				if err != nil {
 					loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
@@ -467,7 +466,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 		sendlist := clientConn.fm.GetSendList()
 		for e := sendlist.Front(); e != nil; e = e.Next() {
-			f := e.Value.(*frame.Frame)
+			f := e.Value.(*network.Frame)
 			mb, _ := clientConn.fm.MarshalFrame(f)
 			p.sequence++
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
@@ -608,7 +607,7 @@ func (p *Client) processPacket(packet *Packet) {
 	clientConn.activeRecvTime = now
 
 	if p.tcpmode > 0 {
-		f := &frame.Frame{}
+		f := &network.Frame{}
 		err := proto.Unmarshal(packet.my.Data, f)
 		if err != nil {
 			loggo.Error("Unmarshal tcp Error %s", err)
