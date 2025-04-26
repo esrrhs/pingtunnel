@@ -146,7 +146,7 @@ func main() {
 	s5filter := flag.String("s5filter", "", "sock5 filter")
 	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
 	flag.Usage = func() {
-		fmt.Printf(usage)
+		fmt.Print(usage)
 	}
 
 	flag.Parse()
