@@ -2,20 +2,26 @@ package pingtunnel
 
 import (
 	"encoding/binary"
+	"net"
+	"sync"
+	"time"
+
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
-	"net"
-	"sync"
-	"time"
 )
 
 func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
 	connId string, msgType uint32, data []byte, sproto int, rproto int, key int,
 	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int, tcpmode_compress int, tcpmode_stat int,
-	timeout int) {
+	timeout int, is_udp_mode bool) {
+
+	var dst net.Addr = server
+	if is_udp_mode {
+		dst = &net.UDPAddr{IP: server.IP, Zone: server.Zone}
+	}
 
 	m := &MyMsg{
 		Id:                  connId,
@@ -58,7 +64,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		return
 	}
 
-	conn.WriteTo(bytes, server)
+	conn.WriteTo(bytes, dst)
 }
 
 func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, recv chan<- *Packet) {
@@ -99,9 +105,19 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, 
 			loggo.Debug("processPacket data invalid %s", my.Id)
 			continue
 		}
+		var ip net.IP
+		switch addr := srcaddr.(type) {
+		case *net.IPAddr:
+			ip = addr.IP
+		case *net.UDPAddr:
+			ip = addr.IP
+		default:
+			loggo.Warn("Unknown addr type: %T", srcaddr)
+			ip = net.IPv4zero
+		}
 
 		recv <- &Packet{my: my,
-			src:    srcaddr.(*net.IPAddr),
+			src:    &net.IPAddr{IP: ip},
 			echoId: echoId, echoSeq: echoSeq}
 	}
 }

@@ -1,15 +1,16 @@
 package pingtunnel
 
 import (
+	"net"
+	"sync"
+	"time"
+
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"github.com/esrrhs/gohome/thread"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/icmp"
-	"net"
-	"sync"
-	"time"
 )
 
 func NewServer(key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int) (*Server, error) {
@@ -141,7 +142,7 @@ func (p *Server) processPacket(packet *Packet) {
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
-			0)
+			0, false)
 		return
 	}
 
@@ -299,7 +300,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key,
 				0, 0, 0, 0, 0, 0,
-				0)
+				0, false)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -362,7 +363,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 					conn.rproto, -1, p.key,
 					0, 0, 0, 0, 0, 0,
-					0)
+					0, false)
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
@@ -424,7 +425,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key,
 				0, 0, 0, 0, 0, 0,
-				0)
+				0, false)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -491,7 +492,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
 			conn.rproto, -1, p.key,
 			0, 0, 0, 0, 0, 0,
-			0)
+			0, false)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
@@ -578,7 +579,7 @@ func (p *Server) remoteError(echoId int, echoSeq int, uuid string, rprpto int, s
 	sendICMP(echoId, echoSeq, *p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		rprpto, -1, p.key,
 		0, 0, 0, 0, 0, 0,
-		0)
+		0, false)
 }
 
 func (p *Server) addConnError(addr string) {

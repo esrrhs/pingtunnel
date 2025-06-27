@@ -1,17 +1,18 @@
 package pingtunnel
 
 import (
-	"github.com/esrrhs/gohome/common"
-	"github.com/esrrhs/gohome/loggo"
-	"github.com/esrrhs/gohome/network"
-	"github.com/golang/protobuf/proto"
-	"golang.org/x/net/icmp"
 	"io"
 	"math"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/esrrhs/gohome/common"
+	"github.com/esrrhs/gohome/loggo"
+	"github.com/esrrhs/gohome/network"
+	"github.com/golang/protobuf/proto"
+	"golang.org/x/net/icmp"
 )
 
 const (
@@ -19,9 +20,11 @@ const (
 	RECV_PROTO int = 0
 )
 
+var ipProto = map[string]string{"icmp": "ip4:icmp", "udp": "udp4"}
+
 func NewClient(addr string, server string, target string, timeout int, key int,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool) (*Client, error) {
+	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, source string, protocol string) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -67,6 +70,8 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 		maxconn:               maxconn,
 		pongTime:              time.Now(),
 		sock5_filter:          sock5_filter,
+		source:                source,
+		protocol:              protocol,
 	}, nil
 }
 
@@ -119,6 +124,9 @@ type Client struct {
 	recvcontrol chan int
 
 	pongTime time.Time
+
+	source   string
+	protocol string
 }
 
 type ClientConn struct {
@@ -180,10 +188,13 @@ func (p *Client) LocalIdToConnMapSize() int {
 func (p *Client) LocalAddrToConnMapSize() int {
 	return p.localAddrToConnMapSize
 }
+func (p *Client) IsUdpMode() bool {
+	return p.protocol == "udp"
+}
 
 func (p *Client) Run() error {
 
-	conn, err := icmp.ListenPacket("ip4:icmp", "")
+	conn, err := icmp.ListenPacket(ipProto[p.protocol], p.source)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
@@ -346,7 +357,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat,
-				p.timeout)
+				p.timeout, p.IsUdpMode())
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -409,7 +420,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 					SEND_PROTO, RECV_PROTO, p.key,
 					p.tcpmode, 0, 0, 0, 0, 0,
-					0)
+					0, p.IsUdpMode())
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
@@ -472,7 +483,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, 0, 0, 0, 0, 0,
-				0)
+				0, p.IsUdpMode())
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -550,7 +561,7 @@ func (p *Client) Accept() error {
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
 			SEND_PROTO, RECV_PROTO, p.key,
 			p.tcpmode, 0, 0, 0, 0, 0,
-			p.timeout)
+			p.timeout, p.IsUdpMode())
 
 		p.sequence++
 
@@ -675,7 +686,7 @@ func (p *Client) ping() {
 	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
-		0)
+		0, p.IsUdpMode())
 	loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 	p.sequence++
 	if now.Sub(p.pongTime) > time.Second*3 {
@@ -775,7 +786,7 @@ func (p *Client) remoteError(uuid string) {
 	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
-		0)
+		0, p.IsUdpMode())
 }
 
 func (p *Client) AcceptDirectTcpConn(conn *net.TCPConn, targetAddr string) {

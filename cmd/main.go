@@ -3,15 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/esrrhs/gohome/common"
-	"github.com/esrrhs/gohome/loggo"
-	"github.com/esrrhs/gohome/thirdparty"
-	"github.com/esrrhs/pingtunnel"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"strconv"
 	"time"
+
+	"github.com/esrrhs/gohome/common"
+	"github.com/esrrhs/gohome/loggo"
+	"github.com/esrrhs/gohome/thirdparty"
+	"github.com/esrrhs/pingtunnel"
 )
 
 var usage = `
@@ -145,6 +146,10 @@ func main() {
 	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
 	s5filter := flag.String("s5filter", "", "sock5 filter")
 	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
+
+	source := flag.String("source", "", "interface ip")
+	protocol := flag.String("protocol", "icmp", "icmp or udp (no need sudo)")
+
 	flag.Usage = func() {
 		fmt.Print(usage)
 	}
@@ -243,7 +248,7 @@ func main() {
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, &filter)
+			*tcpmode_stat, *open_sock5, *maxconn, &filter, *source, *protocol)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
