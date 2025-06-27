@@ -59,6 +59,11 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
+#### Client protocol icmp(defualt) / udp (no sudo needed) 
+
+```
+pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1 -protocol udp
+```
 
 ### Use Docker
 It can also be started directly with docker, which is more convenient. Same parameters as above
