@@ -33,6 +33,10 @@ sudo ./pingtunnel -type server
 ```
 echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
+### Mobile client
+ - [iOS (Also Apple silicon)](https://apps.apple.com/app/ping-tunnel-vpn-over-icmp/id6748279683)
+ - [Android](https://play.google.com/store/apps/details?id=dev.hexasoftware.PingTunnel)
+
 
 ### Install the client
 
@@ -40,7 +44,6 @@ echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 -   Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
 -   If you see a log of ping pong, the connection is normal
 -   “-key” parameter is **int** type, only supports numbers between 0-2147483647
-
 
 #### Forward sock5
 
