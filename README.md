@@ -6,7 +6,7 @@ The 'password' key has been retained for compatibility with the original pingtun
 
 To use encryption, the '-encrypt [aes128|aes256]' flag must be specified, and the '-encrypt-key <key>' flag must be specified with a valid AES-128 or AES-256 key. The 'encrypt-key' flag can be specified as a base64 string, or as a passphrase. If a passphrase is specified, it will be hashed using PBKDF2 to generate a key.
 
-The origninal author's README and documentation is below. I'll post a PR to merge this into the main project, but it's not been updated recently, so I'm posting this fork.
+The original author's README and documentation is below. I'll post a PR to merge this into the main project, but it's not been updated recently, so I'm posting this fork.
 
 # Pingtunnel
 
