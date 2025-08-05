@@ -78,6 +78,12 @@ Usage:
     -key      设置的密码，默认0
               Set password, default 0
 
+    -encrypt  加密模式，支持aes128, aes256
+              Encryption mode: aes128, aes256
+
+    -encrypt-key 加密密钥，支持base64编码或密码短语
+              Encryption key, supports base64 encoded key or passphrase
+
     -tcp      设置是否转发tcp，默认0
               Set the switch to forward tcp, the default is 0
 
@@ -128,6 +134,8 @@ func main() {
 	server := flag.String("s", "", "server addr")
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	key := flag.Int("key", 0, "key")
+	encryption := flag.String("encrypt", "", "encryption mode: aes128, aes256")
+	encryptionKey := flag.String("encrypt-key", "", "encryption key (base64 or passphrase)")
 	tcpmode := flag.Int("tcp", 0, "tcp mode")
 	tcpmode_buffersize := flag.Int("tcp_bs", 1*1024*1024, "tcp mode buffer size")
 	tcpmode_maxwin := flag.Int("tcp_mw", 20000, "tcp mode max win")
@@ -173,6 +181,28 @@ func main() {
 		return
 	}
 
+	// Validate encryption parameters
+	encryptionMode, err := pingtunnel.ParseEncryptionMode(*encryption)
+	if err != nil {
+		fmt.Printf("Invalid encryption mode: %v\n", err)
+		return
+	}
+
+	if encryptionMode != pingtunnel.NoEncryption && *encryptionKey == "" {
+		fmt.Println("Encryption key is required when encryption mode is specified")
+		return
+	}
+
+	// Create crypto configuration
+	var cryptoConfig *pingtunnel.CryptoConfig
+	if encryptionMode != pingtunnel.NoEncryption {
+		cryptoConfig, err = pingtunnel.NewCryptoConfig(encryptionMode, *encryptionKey)
+		if err != nil {
+			fmt.Printf("Failed to create crypto config: %v\n", err)
+			return
+		}
+	}
+
 	level := loggo.LEVEL_INFO
 	if loggo.NameToLevel(*loglevel) >= 0 {
 		level = loggo.NameToLevel(*loglevel)
@@ -188,7 +218,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer, *conntt)
+		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -243,7 +273,7 @@ func main() {
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, &filter)
+			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return

@@ -21,7 +21,7 @@ const (
 
 func NewClient(addr string, server string, target string, timeout int, key int,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool) (*Client, error) {
+	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, cryptoConfig *CryptoConfig) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -67,6 +67,7 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 		maxconn:               maxconn,
 		pongTime:              time.Now(),
 		sock5_filter:          sock5_filter,
+		cryptoConfig:          cryptoConfig,
 	}, nil
 }
 
@@ -92,6 +93,7 @@ type Client struct {
 
 	open_sock5   int
 	sock5_filter *func(addr string) bool
+	cryptoConfig *CryptoConfig
 
 	ipaddr  *net.UDPAddr
 	tcpaddr *net.TCPAddr
@@ -214,7 +216,7 @@ func (p *Client) Run() error {
 
 	recv := make(chan *Packet, 10000)
 	p.recvcontrol = make(chan int, 1)
-	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv)
+	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv, p.cryptoConfig)
 
 	go func() {
 		defer common.CrashLog()
@@ -346,7 +348,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat,
-				p.timeout)
+				p.timeout, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -409,7 +411,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 					SEND_PROTO, RECV_PROTO, p.key,
 					p.tcpmode, 0, 0, 0, 0, 0,
-					0)
+					0, p.cryptoConfig)
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
@@ -472,7 +474,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, 0, 0, 0, 0, 0,
-				0)
+				0, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -550,7 +552,7 @@ func (p *Client) Accept() error {
 		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
 			SEND_PROTO, RECV_PROTO, p.key,
 			p.tcpmode, 0, 0, 0, 0, 0,
-			p.timeout)
+			p.timeout, p.cryptoConfig)
 
 		p.sequence++
 
@@ -675,7 +677,7 @@ func (p *Client) ping() {
 	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
-		0)
+		0, p.cryptoConfig)
 	loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 	p.sequence++
 	if now.Sub(p.pongTime) > time.Second*3 {
@@ -775,7 +777,7 @@ func (p *Client) remoteError(uuid string) {
 	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
-		0)
+		0, p.cryptoConfig)
 }
 
 func (p *Client) AcceptDirectTcpConn(conn *net.TCPConn, targetAddr string) {

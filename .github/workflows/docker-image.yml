@@ -31,4 +31,4 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           push: true
-          tags: esrrhs/pingtunnel:latest
+          tags: tfriesen1/pingtunnel-encrypted:latest
