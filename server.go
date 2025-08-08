@@ -141,7 +141,9 @@ func (p *Server) processPacket(packet *Packet) {
 		t.UnmarshalBinary(packet.my.Data)
 		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
-			(int)(packet.my.Rproto), (int)(packet.my.Rproto), p.key, 0, 0, 0, 0, 0, 0, (int)(packet.my.Timeout), p.cryptoConfig)
+			(int)(packet.my.Rproto), -1, p.key, 
+			0, 0, 0, 0, 0, 0, 
+			(int)(packet.my.Timeout), p.cryptoConfig)
 		return
 	}
 
@@ -297,7 +299,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, conn.rproto, p.key, conn.tcpmode, 0, 0, 0, 0, 0, conn.timeout, p.cryptoConfig)
+				conn.rproto, -1, p.key, conn.tcpmode, 
+				0, 0, 0, 0, 0, 
+				conn.timeout, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -358,7 +362,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 					continue
 				}
 				sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-					conn.rproto, conn.rproto, p.key, conn.tcpmode, 0, 0, 0, 0, 0, conn.timeout, p.cryptoConfig)
+					conn.rproto, -1, p.key, conn.tcpmode, 
+					0, 0, 0, 0, 0, 
+					conn.timeout, p.cryptoConfig)
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
@@ -418,7 +424,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, conn.rproto, p.key, conn.tcpmode, 0, 0, 0, 0, 0, conn.timeout, p.cryptoConfig)
+				conn.rproto, -1, p.key, conn.tcpmode, 
+				0, 0, 0, 0, 0, 
+				conn.timeout, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -483,7 +491,9 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		conn.activeSendTime = now
 
 		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
-			conn.rproto, conn.rproto, p.key, conn.tcpmode, 0, 0, 0, 0, 0, conn.timeout, p.cryptoConfig)
+			conn.rproto, -1, p.key, conn.tcpmode, 
+			0, 0, 0, 0, 0, 
+			conn.timeout, p.cryptoConfig)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
@@ -568,7 +578,9 @@ func (p *Server) deleteServerConn(uuid string) {
 
 func (p *Server) remoteError(echoId int, echoSeq int, uuid string, rprpto int, src *net.IPAddr) {
 	sendICMP(echoId, echoSeq, *p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
-		rprpto, rprpto, p.key, 0, 0, 0, 0, 0, 0, 0, p.cryptoConfig)
+		rprpto, -1, p.key, 
+		0, 0, 0, 0, 0, 0, 0, 
+		p.cryptoConfig)
 }
 
 func (p *Server) addConnError(addr string) {
