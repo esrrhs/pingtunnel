@@ -65,6 +65,34 @@ func TestCryptoConfig_AES256(t *testing.T) {
 	}
 }
 
+func TestCryptoConfig_ChaCha20(t *testing.T) {
+	// Test with a passphrase (PBKDF2 to 32 bytes)
+	config, err := NewCryptoConfig(CHACHA20, "another-secret-passphrase")
+	if err != nil {
+		t.Fatalf("Failed to create crypto config: %v", err)
+	}
+
+	testData := []byte("Testing ChaCha20-Poly1305 AEAD for encryption and decryption correctness.")
+
+	encrypted, err := config.Encrypt(testData)
+	if err != nil {
+		t.Fatalf("Failed to encrypt data: %v", err)
+	}
+
+	if bytes.Equal(testData, encrypted) {
+		t.Fatal("Encrypted data should be different from original")
+	}
+
+	decrypted, err := config.Decrypt(encrypted)
+	if err != nil {
+		t.Fatalf("Failed to decrypt data: %v", err)
+	}
+
+	if !bytes.Equal(testData, decrypted) {
+		t.Fatalf("Decrypted data doesn't match original. Got: %s, Expected: %s", string(decrypted), string(testData))
+	}
+}
+
 func TestCryptoConfig_NoEncryption(t *testing.T) {
 	config, err := NewCryptoConfig(NoEncryption, "")
 	if err != nil {
@@ -104,6 +132,8 @@ func TestParseEncryptionMode(t *testing.T) {
 		{"none", NoEncryption, false},
 		{"aes128", AES128, false},
 		{"aes256", AES256, false},
+		{"chacha20", CHACHA20, false},
+		{"chacha20-poly1305", CHACHA20, false},
 		{"invalid", NoEncryption, true},
 	}
 
