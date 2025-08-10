@@ -143,7 +143,7 @@ func (p *Server) processPacket(packet *Packet) {
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key, 
 			0, 0, 0, 0, 0, 0, 
-			(int)(packet.my.Timeout), p.cryptoConfig)
+			0, p.cryptoConfig)
 		return
 	}
 
@@ -299,9 +299,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, -1, p.key, conn.tcpmode, 
+				conn.rproto, -1, p.key, 0, 
 				0, 0, 0, 0, 0, 
-				conn.timeout, p.cryptoConfig)
+				0, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -362,9 +362,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 					continue
 				}
 				sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-					conn.rproto, -1, p.key, conn.tcpmode, 
+					conn.rproto, -1, p.key, 0, 
 					0, 0, 0, 0, 0, 
-					conn.timeout, p.cryptoConfig)
+					0, p.cryptoConfig)
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
@@ -424,9 +424,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, -1, p.key, conn.tcpmode, 
+				conn.rproto, -1, p.key, 0, 
 				0, 0, 0, 0, 0, 
-				conn.timeout, p.cryptoConfig)
+				0, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
@@ -491,9 +491,9 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		conn.activeSendTime = now
 
 		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
-			conn.rproto, -1, p.key, conn.tcpmode, 
+			conn.rproto, -1, p.key, 0, 
 			0, 0, 0, 0, 0, 
-			conn.timeout, p.cryptoConfig)
+			0, p.cryptoConfig)
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
