@@ -1,15 +1,10 @@
 # Pingtunnel-encrypted
 
-This fork adds authenticated encryption functionality to the pingtunnel project. A simple symmetric AES-128, AES-256, or ChaCha20-Poly1305 pre-shared key can be specified at run time to encrypt the data being sent over ICMP. Encryption uses AEAD (AES-GCM or ChaCha20-Poly1305) providing confidentiality and integrity.
+This fork attempts to glom on basic encryption functionality to the pingtunnel project. A simple symmetric AES-123 or -256 pre-shared encryption key can be specified at run time to encrypt the data being sent over ICMP. No attempt has been made to provide to do any form of authentication or integrity checking. 
 
 The 'password' key has been retained for compatibility with the original pingtunnel project, but it is dubious value when the encryption is enabled, and as a 32bit int, was of dubious value to begin with.
 
-To use encryption, the `-encrypt [aes128|aes256|chacha20]` flag must be specified, and the `-encrypt-key <key>` flag must be provided.
-
-- For AES, the key must be AES-128 (16 bytes) or AES-256 (32 bytes).
-- For ChaCha20-Poly1305, the key is 32 bytes.
-
-The `-encrypt-key` flag can be specified as a base64 string of the exact length required by the cipher, or as a passphrase. If a passphrase is specified, it will be deterministically derived to the correct size using PBKDF2 (HMAC-SHA256).
+To use encryption, the '-encrypt [aes128|aes256]' flag must be specified, and the '-encrypt-key <key>' flag must be specified with a valid AES-128 or AES-256 key. The 'encrypt-key' flag can be specified as a base64 string, or as a passphrase. If a passphrase is specified, it will be hashed using PBKDF2 to generate a key.
 
 The original author's README and documentation is below. I'll post a PR to merge this into the main project, but it's not been updated recently, so I'm posting this fork.
 
