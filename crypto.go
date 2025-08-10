@@ -8,16 +8,18 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/pbkdf2"
 )
 
-// EncryptionMode represents the AES encryption mode
+// EncryptionMode represents the encryption mode
 type EncryptionMode int
 
 const (
 	NoEncryption EncryptionMode = iota
 	AES128
 	AES256
+	CHACHA20
 )
 
 // CryptoConfig holds encryption configuration
@@ -39,6 +41,8 @@ func NewCryptoConfig(mode EncryptionMode, keyInput string) (*CryptoConfig, error
 		keySize = 16 // 128 bits
 	case AES256:
 		keySize = 32 // 256 bits
+	case CHACHA20:
+		keySize = chacha20poly1305.KeySize // 32 bytes
 	default:
 		return nil, fmt.Errorf("unsupported encryption mode: %d", mode)
 	}
@@ -48,22 +52,35 @@ func NewCryptoConfig(mode EncryptionMode, keyInput string) (*CryptoConfig, error
 		return nil, fmt.Errorf("failed to derive key: %v", err)
 	}
 
-	// Create AES cipher
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %v", err)
-	}
-
-	// Create GCM mode for authenticated encryption
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %v", err)
+	// Create AEAD based on mode
+	var aead cipher.AEAD
+	switch mode {
+	case AES128, AES256:
+		// AES-GCM
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create AES cipher: %v", err)
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GCM: %v", err)
+		}
+		aead = gcm
+	case CHACHA20:
+		// ChaCha20-Poly1305
+		cc20, err := chacha20poly1305.New(key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create ChaCha20-Poly1305: %v", err)
+		}
+		aead = cc20
+	default:
+		return nil, fmt.Errorf("unsupported encryption mode: %d", mode)
 	}
 
 	return &CryptoConfig{
 		Mode:   mode,
 		Key:    key,
-		Cipher: gcm,
+		Cipher: aead,
 	}, nil
 }
 
@@ -150,6 +167,8 @@ func (m EncryptionMode) String() string {
 		return "aes128"
 	case AES256:
 		return "aes256"
+	case CHACHA20:
+		return "chacha20"
 	default:
 		return "unknown"
 	}
@@ -164,6 +183,8 @@ func ParseEncryptionMode(s string) (EncryptionMode, error) {
 		return AES128, nil
 	case "aes256":
 		return AES256, nil
+	case "chacha20", "chacha20-poly1305":
+		return CHACHA20, nil
 	default:
 		return NoEncryption, fmt.Errorf("invalid encryption mode: %s", s)
 	}
