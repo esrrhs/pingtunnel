@@ -78,8 +78,8 @@ Usage:
     -key      设置的密码，默认0
               Set password, default 0
 
-    -encrypt  加密模式，支持aes128, aes256
-              Encryption mode: aes128, aes256
+    -encrypt  加密模式，支持aes128, aes256, chacha20
+              Encryption mode: aes128, aes256, chacha20
 
     -encrypt-key 加密密钥，支持base64编码或密码短语
               Encryption key, supports base64 encoded key or passphrase
@@ -134,7 +134,7 @@ func main() {
 	server := flag.String("s", "", "server addr")
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	key := flag.Int("key", 0, "key")
-	encryption := flag.String("encrypt", "", "encryption mode: aes128, aes256")
+	encryption := flag.String("encrypt", "", "encryption mode: aes128, aes256, chacha20")
 	encryptionKey := flag.String("encrypt-key", "", "encryption key (base64 or passphrase)")
 	tcpmode := flag.Int("tcp", 0, "tcp mode")
 	tcpmode_buffersize := flag.Int("tcp_bs", 1*1024*1024, "tcp mode buffer size")
