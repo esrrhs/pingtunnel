@@ -15,7 +15,7 @@ import (
 func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
 	connId string, msgType uint32, data []byte, sproto int, rproto int, key int,
 	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int, tcpmode_compress int, tcpmode_stat int,
-	timeout int) {
+	timeout int, cryptoConfig *CryptoConfig) {
 
 	m := &MyMsg{
 		Id:                  connId,
@@ -40,6 +40,15 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		return
 	}
 
+	// Encrypt the marshaled data if encryption is enabled
+	if cryptoConfig != nil {
+		mb, err = cryptoConfig.Encrypt(mb)
+		if err != nil {
+			loggo.Error("sendICMP Encrypt error %s %s", server.String(), err)
+			return
+		}
+	}
+
 	body := &icmp.Echo{
 		ID:   id,
 		Seq:  sequence,
@@ -61,7 +70,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 	conn.WriteTo(bytes, server)
 }
 
-func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, recv chan<- *Packet) {
+func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, recv chan<- *Packet, cryptoConfig *CryptoConfig) {
 
 	defer common.CrashLog()
 
@@ -88,8 +97,20 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, 
 		echoId := int(binary.BigEndian.Uint16(bytes[4:6]))
 		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
 
+		// Extract the payload data
+		payloadData := bytes[8:n]
+
+		// Decrypt the data if encryption is enabled
+		if cryptoConfig != nil {
+			payloadData, err = cryptoConfig.Decrypt(payloadData)
+			if err != nil {
+				loggo.Debug("recvICMP Decrypt error: %s", err)
+				continue
+			}
+		}
+
 		my := &MyMsg{}
-		err = proto.Unmarshal(bytes[8:n], my)
+		err = proto.Unmarshal(payloadData, my)
 		if err != nil {
 			loggo.Debug("Unmarshal MyMsg error: %s", err)
 			continue
