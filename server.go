@@ -12,8 +12,9 @@ import (
 	"time"
 )
 
-func NewServer(key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig) (*Server, error) {
+func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig) (*Server, error) {
 	s := &Server{
+		icmpAddr:         icmpAddr,
 		exit:             false,
 		key:              key,
 		maxconn:          maxconn,
@@ -42,6 +43,8 @@ type Server struct {
 	maxprocessbuffer int
 	connecttmeout    int
 	cryptoConfig     *CryptoConfig
+
+	icmpAddr string
 
 	conn *icmp.PacketConn
 
@@ -78,7 +81,7 @@ type ServerConn struct {
 
 func (p *Server) Run() error {
 
-	conn, err := icmp.ListenPacket("ip4:icmp", "")
+	conn, err := icmp.ListenPacket("ip4:icmp", p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err

@@ -37,6 +37,9 @@ Usage:
 
 服务器参数server param:
 
+    -icmp_l   本地地址，侦听此地址上的ICMP流量，默认为0.0.0.0
+              Local address, listen for ICMP traffic on this address, defaults to 0.0.0.0
+
     -key      设置的纯数字密码，默认0, 参数为int类型，范围从0-2147483647，不可夹杂字母特殊符号
               Set password, default 0
 
@@ -71,6 +74,9 @@ Usage:
 
     -t        远端服务器转发的目的地址，流量将转发到这个地址
               Destination address forwarded by the remote server, traffic will be forwarded to this address
+
+    -icmp_l   本地地址，侦听此地址上的ICMP流量，默认为0.0.0.0
+              Local address, listen for ICMP traffic on this address, defaults to 0.0.0.0
 
     -timeout  本地记录连接超时的时间，单位是秒，默认60s
               The time when the local record connection timed out, in seconds, 60 seconds by default
@@ -132,6 +138,7 @@ func main() {
 	listen := flag.String("l", "", "listen addr")
 	target := flag.String("t", "", "target addr")
 	server := flag.String("s", "", "server addr")
+	icmpListen := flag.String("icmp_l", "0.0.0.0", "listen address for ICMP traffic")
 	timeout := flag.Int("timeout", 60, "conn timeout")
 	key := flag.Int("key", 0, "key")
 	encryption := flag.String("encrypt", "", "encryption mode: aes128, aes256, chacha20")
@@ -218,7 +225,7 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig)
+		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -271,15 +278,15 @@ func main() {
 			return ret != *s5filter
 		}
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key,
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key, *icmpListen,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
 			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
 		}
-		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s:", c.Addr(), c.IPAddr(),
-			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr())
+		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s ICMP Listen %s", c.Addr(), c.IPAddr(),
+			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr(), c.ICMPAddr())
 		err = c.Run()
 		if err != nil {
 			loggo.Error("Run ERROR: %s", err.Error())
