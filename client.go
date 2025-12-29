@@ -19,7 +19,7 @@ const (
 	RECV_PROTO int = 0
 )
 
-func NewClient(addr string, server string, target string, timeout int, key int,
+func NewClient(addr string, server string, target string, timeout int, key int, icmpAddr string,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
 	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, cryptoConfig *CryptoConfig) (*Client, error) {
 
@@ -55,6 +55,7 @@ func NewClient(addr string, server string, target string, timeout int, key int,
 		ipaddrServer:          ipaddrServer,
 		addrServer:            server,
 		targetAddr:            target,
+		icmpAddr:              icmpAddr,
 		timeout:               timeout,
 		key:                   key,
 		tcpmode:               tcpmode,
@@ -104,6 +105,8 @@ type Client struct {
 
 	targetAddr string
 
+	icmpAddr string
+
 	conn          *icmp.PacketConn
 	listenConn    *net.UDPConn
 	tcplistenConn *net.TCPListener
@@ -147,6 +150,10 @@ func (p *Client) TargetAddr() string {
 	return p.targetAddr
 }
 
+func (p *Client) ICMPAddr() string {
+	return p.icmpAddr
+}
+
 func (p *Client) ServerIPAddr() *net.IPAddr {
 	return p.ipaddrServer
 }
@@ -185,7 +192,7 @@ func (p *Client) LocalAddrToConnMapSize() int {
 
 func (p *Client) Run() error {
 
-	conn, err := icmp.ListenPacket("ip4:icmp", "")
+	conn, err := icmp.ListenPacket("ip4:icmp", p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
