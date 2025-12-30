@@ -2,14 +2,15 @@ package pingtunnel
 
 import (
 	"encoding/binary"
-	"github.com/esrrhs/gohome/common"
-	"github.com/esrrhs/gohome/loggo"
-	"google.golang.org/protobuf/proto"
-	"golang.org/x/net/icmp"
-	"golang.org/x/net/ipv4"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/esrrhs/gohome/common"
+	"github.com/esrrhs/gohome/loggo"
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
+	"google.golang.org/protobuf/proto"
 )
 
 func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
