@@ -1,5 +1,5 @@
 syntax = "proto3";
-option go_package = "pingtunnel";
+option go_package = "./pingtunnel";
 
 message MyMsg {
   enum TYPE {

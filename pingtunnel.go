@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 	"net"
