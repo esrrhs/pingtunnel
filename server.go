@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig) (*Server, error) {
+func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig) (*Server, error) {
 	s := &Server{
 		icmpAddr:         icmpAddr,
 		exit:             false,
@@ -22,6 +22,7 @@ func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxp
 		maxprocessbuffer: maxprocessbuffer,
 		connecttmeout:    connecttmeout,
 		cryptoConfig:     cryptoConfig,
+		forwardConfig:    forwardConfig,
 	}
 
 	if maxprocessthread > 0 {
@@ -43,6 +44,7 @@ type Server struct {
 	maxprocessbuffer int
 	connecttmeout    int
 	cryptoConfig     *CryptoConfig
+	forwardConfig    *ForwardConfig
 
 	icmpAddr string
 
@@ -67,7 +69,7 @@ type ServerConn struct {
 	ipaddrTarget   *net.UDPAddr
 	conn           *net.UDPConn
 	tcpaddrTarget  *net.TCPAddr
-	tcpconn        *net.TCPConn
+	tcpconn        net.Conn // Changed from *net.TCPConn to support proxy connections
 	id             string
 	activeRecvTime time.Time
 	activeSendTime time.Time
@@ -187,20 +189,32 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 	if packet.my.Tcpmode > 0 {
 
-		c, err := net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(p.connecttmeout))
+		var c net.Conn
+		var err error
+		if p.forwardConfig != nil {
+			c, err = DialThroughProxy(p.forwardConfig, addr, time.Millisecond*time.Duration(p.connecttmeout))
+		} else {
+			c, err = net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(p.connecttmeout))
+		}
 		if err != nil {
 			loggo.Error("Error listening for tcp packets: %s %s", id, err.Error())
 			p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
 			p.addConnError(addr)
 			return nil
 		}
-		targetConn := c.(*net.TCPConn)
-		ipaddrTarget := targetConn.RemoteAddr().(*net.TCPAddr)
+		// For proxy connections, parse target address; for direct connections, get from remote addr
+		var ipaddrTarget *net.TCPAddr
+		if p.forwardConfig != nil {
+			// When using proxy, resolve the original target address
+			ipaddrTarget, _ = net.ResolveTCPAddr("tcp", addr)
+		} else {
+			ipaddrTarget = c.RemoteAddr().(*net.TCPAddr)
+		}
 
 		fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, (int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress),
 			(int)(packet.my.TcpmodeStat))
 
-		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: targetConn, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
+		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
 
 		p.addServerConn(id, localConn)
