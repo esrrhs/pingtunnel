@@ -64,6 +64,9 @@ Usage:
     -conntt   server发起连接到目标地址的超时时间，默认1000ms
               The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
 
+    -forward  通过指定的代理转发TCP流量，支持socks5和http代理，如 socks5://localhost:2080 或 http://localhost:8080
+              Forward TCP traffic through the specified proxy. Supports socks5 and http proxies, e.g. socks5://localhost:2080 or http://localhost:8080
+
 客户端参数client param:
 
     -l        本地的地址，发到这个端口的流量将转发到服务器
@@ -158,6 +161,7 @@ func main() {
 	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
 	profile := flag.Int("profile", 0, "open profile")
 	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
+	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
 	s5filter := flag.String("s5filter", "", "sock5 filter")
 	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
 	flag.Usage = func() {
@@ -225,7 +229,19 @@ func main() {
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
-		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig)
+		// Parse forward proxy configuration
+		var forwardConfig *pingtunnel.ForwardConfig
+		if *forward != "" {
+			var err error
+			forwardConfig, err = pingtunnel.ParseForwardURL(*forward)
+			if err != nil {
+				fmt.Printf("Invalid forward URL: %v\n", err)
+				return
+			}
+			loggo.Info("Forward proxy configured: %s", *forward)
+		}
+
+		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig, forwardConfig)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
