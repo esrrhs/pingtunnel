@@ -68,7 +68,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 		return
 	}
 
-	conn.WriteTo(bytes, server)
+	conn.WriteTo(bytes, icmpDstAddr(server))
 }
 
 func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, recv chan<- *Packet, cryptoConfig *CryptoConfig) {
@@ -123,7 +123,7 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, 
 		}
 
 		recv <- &Packet{my: my,
-			src:    srcaddr.(*net.IPAddr),
+			src:    icmpSrcToIPAddr(srcaddr),
 			echoId: echoId, echoSeq: echoSeq}
 	}
 }

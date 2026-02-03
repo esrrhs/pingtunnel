@@ -192,7 +192,7 @@ func (p *Client) LocalAddrToConnMapSize() int {
 
 func (p *Client) Run() error {
 
-	conn, err := icmp.ListenPacket("ip4:icmp", p.icmpAddr)
+	conn, err := listenICMP(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
@@ -579,7 +579,7 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
-	if packet.echoId != p.id {
+	if !icmpDatagram && packet.echoId != p.id {
 		return
 	}
 
