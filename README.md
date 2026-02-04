@@ -60,6 +60,14 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
 
+### Use Android Client
+
+A dedicated Android client for pingtunnel is now available, developed by the community.
+
+* [**pingtunnel-client**](https://github.com/itismoej/pingtunnel-client)
+
+> Big thanks to [itismoej](https://github.com/itismoej) for developing this Android client!
+
 ### Use Docker
 It can also be started directly with docker, which is more convenient. Same parameters as above
 -   server:
