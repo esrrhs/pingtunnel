@@ -83,7 +83,7 @@ type ServerConn struct {
 
 func (p *Server) Run() error {
 
-	conn, err := icmp.ListenPacket("ip4:icmp", p.icmpAddr)
+	conn, err := listenICMP(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
