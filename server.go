@@ -5,8 +5,8 @@ import (
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"github.com/esrrhs/gohome/thread"
-	"google.golang.org/protobuf/proto"
 	"golang.org/x/net/icmp"
+	"google.golang.org/protobuf/proto"
 	"net"
 	"sync"
 	"time"
@@ -146,8 +146,8 @@ func (p *Server) processPacket(packet *Packet) {
 		t.UnmarshalBinary(packet.my.Data)
 		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
-			(int)(packet.my.Rproto), -1, p.key, 
-			0, 0, 0, 0, 0, 0, 
+			(int)(packet.my.Rproto), -1, p.key,
+			0, 0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
 		return
 	}
@@ -316,8 +316,8 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, -1, p.key, 0, 
-				0, 0, 0, 0, 0, 
+				conn.rproto, -1, p.key, 0,
+				0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
@@ -379,8 +379,8 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 					continue
 				}
 				sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-					conn.rproto, -1, p.key, 0, 
-					0, 0, 0, 0, 0, 
+					conn.rproto, -1, p.key, 0,
+					0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
@@ -441,8 +441,8 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
 			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, -1, p.key, 0, 
-				0, 0, 0, 0, 0, 
+				conn.rproto, -1, p.key, 0,
+				0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
@@ -507,9 +507,9 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		now := common.GetNowUpdateInSecond()
 		conn.activeSendTime = now
 
-		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), bytes[:n],
-			conn.rproto, -1, p.key, 0, 
-			0, 0, 0, 0, 0, 
+		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, conn.ipaddrTarget.String(), id, (uint32)(MyMsg_DATA), bytes[:n],
+			conn.rproto, -1, p.key, 0,
+			0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
 
 		p.sendPacket++
@@ -595,8 +595,8 @@ func (p *Server) deleteServerConn(uuid string) {
 
 func (p *Server) remoteError(echoId int, echoSeq int, uuid string, rprpto int, src *net.IPAddr) {
 	sendICMP(echoId, echoSeq, *p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
-		rprpto, -1, p.key, 
-		0, 0, 0, 0, 0, 0, 0, 
+		rprpto, -1, p.key,
+		0, 0, 0, 0, 0, 0, 0,
 		p.cryptoConfig)
 }
 
