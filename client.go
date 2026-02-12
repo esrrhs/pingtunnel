@@ -72,6 +72,8 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		pongTime:              now,
 		sock5_filter:          sock5_filter,
 		cryptoConfig:          cryptoConfig,
+		nextResolveAt:         now,
+		resolveRetryBackoff:   2 * time.Second,
 	}
 	c.lastActivityUnixNano.Store(now.UnixNano())
 	return c, nil
@@ -130,6 +132,8 @@ type Client struct {
 
 	pongTime             time.Time
 	lastActivityUnixNano atomic.Int64
+	nextResolveAt        time.Time
+	resolveRetryBackoff  time.Duration
 }
 
 type ClientConn struct {
@@ -236,6 +240,38 @@ func (p *Client) nextPingInterval(now time.Time) time.Duration {
 	return 10 * time.Second
 }
 
+func (p *Client) maybeRefreshServerAddr(now time.Time) {
+	if now.Before(p.nextResolveAt) {
+		return
+	}
+
+	ipaddrServer, err := net.ResolveIPAddr("ip", p.addrServer)
+	if err != nil {
+		if p.resolveRetryBackoff < 2*time.Second {
+			p.resolveRetryBackoff = 2 * time.Second
+		} else {
+			p.resolveRetryBackoff *= 2
+			if p.resolveRetryBackoff > time.Minute {
+				p.resolveRetryBackoff = time.Minute
+			}
+		}
+		p.nextResolveAt = now.Add(p.resolveRetryBackoff)
+		return
+	}
+
+	if p.ipaddrServer == nil || p.ipaddrServer.String() != ipaddrServer.String() {
+		loggo.Info("server ip refreshed %v -> %v", p.ipaddrServer, ipaddrServer)
+		p.ipaddrServer = ipaddrServer
+	}
+
+	p.resolveRetryBackoff = 2 * time.Second
+	if now.Sub(p.pongTime) > 3*time.Second {
+		p.nextResolveAt = now.Add(5 * time.Second)
+		return
+	}
+	p.nextResolveAt = now.Add(30 * time.Second)
+}
+
 func (p *Client) Run() error {
 
 	conn, err := listenICMP(p.icmpAddr)
@@ -290,19 +326,8 @@ func (p *Client) Run() error {
 				p.ping()
 				nextPingAt = now.Add(p.nextPingInterval(now))
 			}
+			p.maybeRefreshServerAddr(now)
 			<-ticker.C
-		}
-	}()
-
-	go func() {
-		defer common.CrashLog()
-
-		p.workResultLock.Add(1)
-		defer p.workResultLock.Done()
-
-		for !p.exit {
-			p.updateServerAddr()
-			time.Sleep(time.Second)
 		}
 	}()
 
@@ -1194,14 +1219,4 @@ func (p *Client) transfer(destination io.WriteCloser, source io.ReadCloser, dst 
 	loggo.Info("client begin transfer from %s -> %s", src, dst)
 	io.Copy(destination, source)
 	loggo.Info("client end transfer from %s -> %s", src, dst)
-}
-
-func (p *Client) updateServerAddr() {
-	ipaddrServer, err := net.ResolveIPAddr("ip", p.addrServer)
-	if err != nil {
-		return
-	}
-	if p.ipaddrServer.String() != ipaddrServer.String() {
-		p.ipaddrServer = ipaddrServer
-	}
 }
