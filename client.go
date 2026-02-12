@@ -47,7 +47,8 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 	}
 
 	rand.Seed(time.Now().UnixNano())
-	return &Client{
+	now := time.Now()
+	c := &Client{
 		exit:                  false,
 		rtt:                   0,
 		id:                    rand.Intn(math.MaxInt16),
@@ -68,10 +69,12 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		tcpmode_stat:          tcpmode_stat,
 		open_sock5:            open_sock5,
 		maxconn:               maxconn,
-		pongTime:              time.Now(),
+		pongTime:              now,
 		sock5_filter:          sock5_filter,
 		cryptoConfig:          cryptoConfig,
-	}, nil
+	}
+	c.lastActivityUnixNano.Store(now.UnixNano())
+	return c, nil
 }
 
 type Client struct {
@@ -125,7 +128,8 @@ type Client struct {
 
 	recvcontrol chan int
 
-	pongTime time.Time
+	pongTime             time.Time
+	lastActivityUnixNano atomic.Int64
 }
 
 type ClientConn struct {
@@ -197,6 +201,41 @@ func (p *Client) LocalAddrToConnMapSize() int {
 	return p.localAddrToConnMapSize
 }
 
+func (p *Client) touchActivity() {
+	p.lastActivityUnixNano.Store(time.Now().UnixNano())
+}
+
+func (p *Client) lastActivity() time.Time {
+	ns := p.lastActivityUnixNano.Load()
+	if ns <= 0 {
+		return time.Now()
+	}
+	return time.Unix(0, ns)
+}
+
+func (p *Client) activeConnCount() int {
+	count := 0
+	p.localIdToConnMap.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}
+
+func (p *Client) nextPingInterval(now time.Time) time.Duration {
+	const (
+		hotActivityWindow  = 5 * time.Second
+		warmActivityWindow = 30 * time.Second
+	)
+	if p.activeConnCount() > 0 || now.Sub(p.lastActivity()) <= hotActivityWindow {
+		return time.Second
+	}
+	if now.Sub(p.lastActivity()) <= warmActivityWindow {
+		return 3 * time.Second
+	}
+	return 10 * time.Second
+}
+
 func (p *Client) Run() error {
 
 	conn, err := listenICMP(p.icmpAddr)
@@ -238,11 +277,20 @@ func (p *Client) Run() error {
 		p.workResultLock.Add(1)
 		defer p.workResultLock.Done()
 
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		nextPingAt := time.Now()
 		for !p.exit {
 			p.checkTimeoutConn()
-			p.ping()
 			p.showNet()
-			time.Sleep(time.Second)
+
+			now := time.Now()
+			if !now.Before(nextPingAt) {
+				p.ping()
+				nextPingAt = now.Add(p.nextPingInterval(now))
+			}
+			<-ticker.C
 		}
 	}()
 
@@ -346,6 +394,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		fm:       fm}
 	p.addClientConn(uuid, tcpsrcaddr.String(), clientConn)
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
+	p.touchActivity()
 
 	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
 	clientConn.fm.Connect()
@@ -439,6 +488,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 			clientConn.fm.WriteSendBuffer(bytes[:n])
 			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
+			p.touchActivity()
 			notifyActivity(clientConn.activity)
 		}
 	}()
@@ -471,6 +521,7 @@ mainLoop:
 				p.sendPacket++
 				p.sendPacketSize += (uint64)(len(mb))
 			}
+			p.touchActivity()
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
@@ -489,6 +540,7 @@ mainLoop:
 			if n > 0 {
 				clientConn.fm.SkipRecvBuffer(n)
 				tcpActiveSendTime = now
+				p.touchActivity()
 			}
 		}
 
@@ -638,6 +690,7 @@ func (p *Client) Accept() error {
 
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(n)
+		p.touchActivity()
 	}
 	return nil
 }
@@ -728,6 +781,9 @@ func (p *Client) processPacket(packet *Packet) {
 
 	p.recvPacket++
 	p.recvPacketSize += (uint64)(len(packet.my.Data))
+	if packet.my.Type == (int32)(MyMsg_DATA) && len(packet.my.Data) > 0 {
+		p.touchActivity()
+	}
 }
 
 func (p *Client) close(clientConn *ClientConn) {
@@ -1002,6 +1058,7 @@ func (p *Client) recvSock5UDP(relayConn *net.UDPConn, expectedIP net.IP, expecte
 		p.sequence++
 		p.sendPacket++
 		p.sendPacketSize += (uint64)(len(payload))
+		p.touchActivity()
 	}
 }
 
