@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -139,6 +140,7 @@ type ClientConn struct {
 	close          bool
 	udpRelayConn   *net.UDPConn
 	udpTargetAddr  string
+	activity       chan struct{}
 
 	fm *network.FrameMgr
 }
@@ -340,7 +342,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	now := time.Now()
 	clientConn := &ClientConn{exit: false, tcpaddr: tcpsrcaddr, id: uuid, tcpmode: p.tcpmode, activeRecvTime: now, activeSendTime: now, close: false,
-		fm: fm}
+		activity: make(chan struct{}, 1),
+		fm:       fm}
 	p.addClientConn(uuid, tcpsrcaddr.String(), clientConn)
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
 
@@ -364,13 +367,17 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
-		time.Sleep(time.Millisecond * 10)
 		now := common.GetNowUpdateInSecond()
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*5 {
 			loggo.Info("can not connect remote tcp %s %s", uuid, tcpsrcaddr.String())
 			p.close(clientConn)
 			return
+		}
+
+		select {
+		case <-clientConn.activity:
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 
@@ -380,37 +387,61 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvTime := common.GetNowUpdateInSecond()
+	tcpActiveRecvUnix := atomic.Int64{}
+	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 	tcpActiveSendTime := common.GetNowUpdateInSecond()
+	readErr := make(chan error, 1)
+	stopRead := make(chan struct{})
 
-	for !p.exit && !clientConn.exit {
-		now := common.GetNowUpdateInSecond()
-		sleep := true
+	go func() {
+		defer common.CrashLog()
 
-		left := common.MinOfInt(clientConn.fm.GetSendBufferLeft(), len(bytes))
-		if left > 0 {
-			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 1))
+		for !p.exit && !clientConn.exit {
+			left := common.MinOfInt(clientConn.fm.GetSendBufferLeft(), len(bytes))
+			if left <= 0 {
+				select {
+				case <-stopRead:
+					return
+				case <-clientConn.activity:
+					continue
+				case <-time.After(20 * time.Millisecond):
+					continue
+				}
+			}
+
+			conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 			n, err := conn.Read(bytes[0:left])
 			if err != nil {
 				nerr, ok := err.(net.Error)
-				if !ok || !nerr.Timeout() {
-					loggo.Info("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
-					clientConn.fm.Close()
-					break
+				if ok && nerr.Timeout() {
+					continue
 				}
+				select {
+				case readErr <- err:
+				default:
+				}
+				return
 			}
-			if n > 0 {
-				sleep = false
-				clientConn.fm.WriteSendBuffer(bytes[:n])
-				tcpActiveRecvTime = now
+			if n <= 0 {
+				continue
 			}
+
+			clientConn.fm.WriteSendBuffer(bytes[:n])
+			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
+			notifyActivity(clientConn.activity)
 		}
+	}()
+
+mainLoop:
+	for !p.exit && !clientConn.exit {
+		now := common.GetNowUpdateInSecond()
+		hadWork := false
 
 		clientConn.fm.Update()
 
 		sendlist := clientConn.fm.GetSendList()
 		if sendlist.Len() > 0 {
-			sleep = false
+			hadWork = true
 			clientConn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
@@ -430,16 +461,16 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
-			sleep = false
+			hadWork = true
 			rr := clientConn.fm.GetRecvReadLineBuffer()
-			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 1))
+			conn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
 			n, err := conn.Write(rr)
 			if err != nil {
 				nerr, ok := err.(net.Error)
 				if !ok || !nerr.Timeout() {
 					loggo.Info("Error write tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
 					clientConn.fm.Close()
-					break
+					break mainLoop
 				}
 			}
 			if n > 0 {
@@ -448,13 +479,19 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			}
 		}
 
-		if sleep {
-			time.Sleep(time.Millisecond * 10)
+		select {
+		case err := <-readErr:
+			if err != nil {
+				loggo.Info("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
+				clientConn.fm.Close()
+				break mainLoop
+			}
+		default:
 		}
 
 		diffrecv := now.Sub(clientConn.activeRecvTime)
 		diffsend := now.Sub(clientConn.activeSendTime)
-		tcpdiffrecv := now.Sub(tcpActiveRecvTime)
+		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
 		tcpdiffsend := now.Sub(tcpActiveSendTime)
 		if diffrecv > time.Second*(time.Duration(p.timeout)) || diffsend > time.Second*(time.Duration(p.timeout)) ||
 			(tcpdiffrecv > time.Second*(time.Duration(p.timeout)) && tcpdiffsend > time.Second*(time.Duration(p.timeout))) {
@@ -468,7 +505,21 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			clientConn.fm.Close()
 			break
 		}
+
+		if !hadWork {
+			select {
+			case <-clientConn.activity:
+			case err := <-readErr:
+				if err != nil {
+					loggo.Info("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
+					clientConn.fm.Close()
+					break mainLoop
+				}
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
 	}
+	close(stopRead)
 
 	clientConn.fm.Close()
 
@@ -629,6 +680,7 @@ func (p *Client) processPacket(packet *Packet) {
 		}
 
 		clientConn.fm.OnRecvFrame(f)
+		notifyActivity(clientConn.activity)
 	} else {
 		if packet.my.Data == nil {
 			return
