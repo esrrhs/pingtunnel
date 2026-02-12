@@ -309,12 +309,14 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := common.GetNowUpdateInSecond()
+	connectWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
 	for !p.exit && !conn.exit {
 		if conn.fm.IsConnected() {
 			break
 		}
 		conn.fm.Update()
 		sendlist := conn.fm.GetSendList()
+		hadWork := sendlist.Len() > 0
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
@@ -333,10 +335,15 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			p.remoteError(conn.echoId, conn.echoSeq, id, conn.rproto, src)
 			return
 		}
-
+		if hadWork {
+			connectWait.hit()
+			continue
+		}
+		wait := connectWait.miss()
 		select {
 		case <-conn.activity:
-		case <-time.After(20 * time.Millisecond):
+			connectWait.hit()
+		case <-time.After(wait):
 		}
 	}
 
@@ -355,18 +362,22 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	go func() {
 		defer common.CrashLog()
 
+		readWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
 		for !p.exit && !conn.exit {
 			left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
 			if left <= 0 {
+				wait := readWait.miss()
 				select {
 				case <-stopRead:
 					return
 				case <-conn.activity:
+					readWait.hit()
 					continue
-				case <-time.After(20 * time.Millisecond):
+				case <-time.After(wait):
 					continue
 				}
 			}
+			readWait.hit()
 
 			conn.tcpconn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 			n, err := conn.tcpconn.Read(bytes[0:left])
@@ -390,6 +401,8 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			notifyActivity(conn.activity)
 		}
 	}()
+
+	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
 
 mainLoop:
 	for !p.exit && !conn.exit {
@@ -465,16 +478,20 @@ mainLoop:
 		}
 
 		if !hadWork {
+			wait := loopWait.miss()
 			select {
 			case <-conn.activity:
+				loopWait.hit()
 			case err := <-readErr:
 				if err != nil {
 					loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 					conn.fm.Close()
 					break mainLoop
 				}
-			case <-time.After(20 * time.Millisecond):
+			case <-time.After(wait):
 			}
+		} else {
+			loopWait.hit()
 		}
 	}
 	close(stopRead)
