@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -79,6 +80,7 @@ type ServerConn struct {
 	tcpmode        int
 	echoId         int
 	echoSeq        int
+	activity       chan struct{}
 }
 
 func (p *Server) Run() error {
@@ -215,7 +217,7 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 			(int)(packet.my.TcpmodeStat))
 
 		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
-			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
+			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode), activity: make(chan struct{}, 1)}
 
 		p.addServerConn(id, localConn)
 
@@ -277,6 +279,7 @@ func (p *Server) processDataPacket(packet *Packet) {
 			}
 
 			localConn.fm.OnRecvFrame(f)
+			notifyActivity(localConn.activity)
 
 		} else {
 			if packet.my.Data == nil {
@@ -322,7 +325,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
-		time.Sleep(time.Millisecond * 10)
 		now := common.GetNowUpdateInSecond()
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*5 {
@@ -330,6 +332,11 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			p.close(conn)
 			p.remoteError(conn.echoId, conn.echoSeq, id, conn.rproto, src)
 			return
+		}
+
+		select {
+		case <-conn.activity:
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 
@@ -339,37 +346,61 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvTime := common.GetNowUpdateInSecond()
+	tcpActiveRecvUnix := atomic.Int64{}
+	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 	tcpActiveSendTime := common.GetNowUpdateInSecond()
+	readErr := make(chan error, 1)
+	stopRead := make(chan struct{})
 
-	for !p.exit && !conn.exit {
-		now := common.GetNowUpdateInSecond()
-		sleep := true
+	go func() {
+		defer common.CrashLog()
 
-		left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
-		if left > 0 {
-			conn.tcpconn.SetReadDeadline(time.Now().Add(time.Millisecond * 1))
+		for !p.exit && !conn.exit {
+			left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
+			if left <= 0 {
+				select {
+				case <-stopRead:
+					return
+				case <-conn.activity:
+					continue
+				case <-time.After(20 * time.Millisecond):
+					continue
+				}
+			}
+
+			conn.tcpconn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 			n, err := conn.tcpconn.Read(bytes[0:left])
 			if err != nil {
 				nerr, ok := err.(net.Error)
-				if !ok || !nerr.Timeout() {
-					loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
-					conn.fm.Close()
-					break
+				if ok && nerr.Timeout() {
+					continue
 				}
+				select {
+				case readErr <- err:
+				default:
+				}
+				return
 			}
-			if n > 0 {
-				sleep = false
-				conn.fm.WriteSendBuffer(bytes[:n])
-				tcpActiveRecvTime = now
+			if n <= 0 {
+				continue
 			}
+
+			conn.fm.WriteSendBuffer(bytes[:n])
+			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
+			notifyActivity(conn.activity)
 		}
+	}()
+
+mainLoop:
+	for !p.exit && !conn.exit {
+		now := common.GetNowUpdateInSecond()
+		hadWork := false
 
 		conn.fm.Update()
 
 		sendlist := conn.fm.GetSendList()
 		if sendlist.Len() > 0 {
-			sleep = false
+			hadWork = true
 			conn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
@@ -388,16 +419,16 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 
 		if conn.fm.GetRecvBufferSize() > 0 {
-			sleep = false
+			hadWork = true
 			rr := conn.fm.GetRecvReadLineBuffer()
-			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 1))
+			conn.tcpconn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
 			n, err := conn.tcpconn.Write(rr)
 			if err != nil {
 				nerr, ok := err.(net.Error)
 				if !ok || !nerr.Timeout() {
 					loggo.Info("Error write tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 					conn.fm.Close()
-					break
+					break mainLoop
 				}
 			}
 			if n > 0 {
@@ -406,13 +437,19 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			}
 		}
 
-		if sleep {
-			time.Sleep(time.Millisecond * 10)
+		select {
+		case err := <-readErr:
+			if err != nil {
+				loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+				conn.fm.Close()
+				break mainLoop
+			}
+		default:
 		}
 
 		diffrecv := now.Sub(conn.activeRecvTime)
 		diffsend := now.Sub(conn.activeSendTime)
-		tcpdiffrecv := now.Sub(tcpActiveRecvTime)
+		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
 		tcpdiffsend := now.Sub(tcpActiveSendTime)
 		if diffrecv > time.Second*(time.Duration(conn.timeout)) || diffsend > time.Second*(time.Duration(conn.timeout)) ||
 			(tcpdiffrecv > time.Second*(time.Duration(conn.timeout)) && tcpdiffsend > time.Second*(time.Duration(conn.timeout))) {
@@ -426,7 +463,21 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			conn.fm.Close()
 			break
 		}
+
+		if !hadWork {
+			select {
+			case <-conn.activity:
+			case err := <-readErr:
+				if err != nil {
+					loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+					conn.fm.Close()
+					break mainLoop
+				}
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
 	}
+	close(stopRead)
 
 	conn.fm.Close()
 
