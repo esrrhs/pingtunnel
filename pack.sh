@@ -26,7 +26,8 @@ for line in $build_list; do
     continue
   fi
   if [ $os = "android" ]; then
-    CGO_ENABLED=1 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+    #CGO_ENABLED=1 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+    continue
   else
     CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
   fi  
