@@ -731,10 +731,13 @@ func sameUDPAddr(a *net.UDPAddr, b *net.UDPAddr) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	if a.Port != b.Port {
+	if b.Port != 0 && a.Port != b.Port {
 		return false
 	}
-	if a.IP == nil || b.IP == nil {
+	if b.IP == nil || b.IP.IsUnspecified() {
+		return true
+	}
+	if a.IP == nil {
 		return false
 	}
 	return a.IP.Equal(b.IP)
