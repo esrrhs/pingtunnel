@@ -44,6 +44,21 @@ jobs:
         with:
           go-version: 1.25
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          # sdkmanager exits after consuming enough input; `yes` then gets SIGPIPE.
+          # Temporarily disable pipefail so the pipeline status reflects sdkmanager.
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null
+          set -o pipefail
+          sdkmanager --install "ndk;27.1.12297006"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.1.12297006" >> "${GITHUB_ENV}"
+          echo "ANDROID_API_LEVEL=21" >> "${GITHUB_ENV}"
+
       - name: Build release artifacts
         run: ./pack.sh
 
