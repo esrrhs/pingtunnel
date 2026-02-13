@@ -25,7 +25,7 @@ for line in $build_list; do
   if [ $arch == "wasm" ]; then
     continue
   fi
-  CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+  GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
   if [ $? -ne 0 ]; then
     echo "os="$os" arch="$arch" build fail"
     exit 1
