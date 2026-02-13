@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -68,6 +69,9 @@ type ServerConn struct {
 	timeout        int
 	ipaddrTarget   *net.UDPAddr
 	conn           *net.UDPConn
+	udpTargetAddr  string
+	udpRelayAddr   *net.UDPAddr
+	udpViaProxy    bool
 	tcpaddrTarget  *net.TCPAddr
 	tcpconn        net.Conn // Changed from *net.TCPConn to support proxy connections
 	id             string
@@ -79,6 +83,7 @@ type ServerConn struct {
 	tcpmode        int
 	echoId         int
 	echoSeq        int
+	activity       chan struct{}
 }
 
 func (p *Server) Run() error {
@@ -215,7 +220,7 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 			(int)(packet.my.TcpmodeStat))
 
 		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
-			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode)}
+			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode), activity: make(chan struct{}, 1)}
 
 		p.addServerConn(id, localConn)
 
@@ -223,6 +228,44 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		return localConn
 
 	} else {
+		if p.forwardConfig != nil {
+			if p.forwardConfig.Scheme != "socks5" {
+				loggo.Error("UDP forwarding requires SOCKS5 proxy, got %s", p.forwardConfig.Scheme)
+				p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
+				p.addConnError(addr)
+				return nil
+			}
+
+			association, err := DialUDPThroughProxy(p.forwardConfig, time.Millisecond*time.Duration(p.connecttmeout))
+			if err != nil {
+				loggo.Error("Error creating udp forward association: %s %s", id, err.Error())
+				p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
+				p.addConnError(addr)
+				return nil
+			}
+
+			localConn := &ServerConn{
+				exit:           false,
+				timeout:        (int)(packet.my.Timeout),
+				conn:           association.UDPConn,
+				udpTargetAddr:  addr,
+				udpRelayAddr:   association.RelayAddr,
+				udpViaProxy:    true,
+				tcpconn:        association.ControlConn,
+				id:             id,
+				activeRecvTime: now,
+				activeSendTime: now,
+				close:          false,
+				rproto:         (int)(packet.my.Rproto),
+				tcpmode:        (int)(packet.my.Tcpmode),
+			}
+
+			p.addServerConn(id, localConn)
+
+			go p.Recv(localConn, id, packet.src)
+
+			return localConn
+		}
 
 		c, err := net.DialTimeout("udp", addr, time.Millisecond*time.Duration(p.connecttmeout))
 		if err != nil {
@@ -235,7 +278,7 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		ipaddrTarget := targetConn.RemoteAddr().(*net.UDPAddr)
 
 		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
-			rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode)}
+			rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode), udpTargetAddr: addr}
 
 		p.addServerConn(id, localConn)
 
@@ -277,12 +320,39 @@ func (p *Server) processDataPacket(packet *Packet) {
 			}
 
 			localConn.fm.OnRecvFrame(f)
+			notifyActivity(localConn.activity)
 
 		} else {
 			if packet.my.Data == nil {
 				return
 			}
-			_, err := localConn.conn.Write(packet.my.Data)
+
+			var err error
+			if localConn.udpViaProxy {
+				targetAddr := localConn.udpTargetAddr
+				if packet.my.Target != "" {
+					targetAddr = packet.my.Target
+				}
+				if targetAddr == "" {
+					loggo.Info("missing udp target for proxied udp conn %s", id)
+					localConn.close = true
+					return
+				}
+				udpPacket, packetErr := buildSocks5UDPDatagram(targetAddr, packet.my.Data)
+				if packetErr != nil {
+					loggo.Info("build socks5 udp datagram error %s", packetErr)
+					localConn.close = true
+					return
+				}
+				if localConn.udpRelayAddr == nil {
+					loggo.Info("missing udp relay addr for proxied udp conn %s", id)
+					localConn.close = true
+					return
+				}
+				_, err = localConn.conn.WriteToUDP(udpPacket, localConn.udpRelayAddr)
+			} else {
+				_, err = localConn.conn.Write(packet.my.Data)
+			}
 			if err != nil {
 				loggo.Info("WriteToUDP Error %s", err)
 				localConn.close = true
@@ -306,12 +376,14 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := common.GetNowUpdateInSecond()
+	connectWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
 	for !p.exit && !conn.exit {
 		if conn.fm.IsConnected() {
 			break
 		}
 		conn.fm.Update()
 		sendlist := conn.fm.GetSendList()
+		hadWork := sendlist.Len() > 0
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
@@ -322,7 +394,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			p.sendPacket++
 			p.sendPacketSize += (uint64)(len(mb))
 		}
-		time.Sleep(time.Millisecond * 10)
 		now := common.GetNowUpdateInSecond()
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*5 {
@@ -330,6 +401,16 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			p.close(conn)
 			p.remoteError(conn.echoId, conn.echoSeq, id, conn.rproto, src)
 			return
+		}
+		if hadWork {
+			connectWait.hit()
+			continue
+		}
+		wait := connectWait.miss()
+		select {
+		case <-conn.activity:
+			connectWait.hit()
+		case <-time.After(wait):
 		}
 	}
 
@@ -339,37 +420,67 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvTime := common.GetNowUpdateInSecond()
+	tcpActiveRecvUnix := atomic.Int64{}
+	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 	tcpActiveSendTime := common.GetNowUpdateInSecond()
+	readErr := make(chan error, 1)
+	stopRead := make(chan struct{})
 
-	for !p.exit && !conn.exit {
-		now := common.GetNowUpdateInSecond()
-		sleep := true
+	go func() {
+		defer common.CrashLog()
 
-		left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
-		if left > 0 {
-			conn.tcpconn.SetReadDeadline(time.Now().Add(time.Millisecond * 1))
+		readWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
+		for !p.exit && !conn.exit {
+			left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
+			if left <= 0 {
+				wait := readWait.miss()
+				select {
+				case <-stopRead:
+					return
+				case <-conn.activity:
+					readWait.hit()
+					continue
+				case <-time.After(wait):
+					continue
+				}
+			}
+			readWait.hit()
+
+			conn.tcpconn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 			n, err := conn.tcpconn.Read(bytes[0:left])
 			if err != nil {
 				nerr, ok := err.(net.Error)
-				if !ok || !nerr.Timeout() {
-					loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
-					conn.fm.Close()
-					break
+				if ok && nerr.Timeout() {
+					continue
 				}
+				select {
+				case readErr <- err:
+				default:
+				}
+				return
 			}
-			if n > 0 {
-				sleep = false
-				conn.fm.WriteSendBuffer(bytes[:n])
-				tcpActiveRecvTime = now
+			if n <= 0 {
+				continue
 			}
+
+			conn.fm.WriteSendBuffer(bytes[:n])
+			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
+			notifyActivity(conn.activity)
 		}
+	}()
+
+	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
+
+mainLoop:
+	for !p.exit && !conn.exit {
+		now := common.GetNowUpdateInSecond()
+		hadWork := false
 
 		conn.fm.Update()
 
 		sendlist := conn.fm.GetSendList()
 		if sendlist.Len() > 0 {
-			sleep = false
+			hadWork = true
 			conn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
@@ -388,16 +499,16 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 
 		if conn.fm.GetRecvBufferSize() > 0 {
-			sleep = false
+			hadWork = true
 			rr := conn.fm.GetRecvReadLineBuffer()
-			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 1))
+			conn.tcpconn.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
 			n, err := conn.tcpconn.Write(rr)
 			if err != nil {
 				nerr, ok := err.(net.Error)
 				if !ok || !nerr.Timeout() {
 					loggo.Info("Error write tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 					conn.fm.Close()
-					break
+					break mainLoop
 				}
 			}
 			if n > 0 {
@@ -406,13 +517,19 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			}
 		}
 
-		if sleep {
-			time.Sleep(time.Millisecond * 10)
+		select {
+		case err := <-readErr:
+			if err != nil {
+				loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+				conn.fm.Close()
+				break mainLoop
+			}
+		default:
 		}
 
 		diffrecv := now.Sub(conn.activeRecvTime)
 		diffsend := now.Sub(conn.activeSendTime)
-		tcpdiffrecv := now.Sub(tcpActiveRecvTime)
+		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
 		tcpdiffsend := now.Sub(tcpActiveSendTime)
 		if diffrecv > time.Second*(time.Duration(conn.timeout)) || diffsend > time.Second*(time.Duration(conn.timeout)) ||
 			(tcpdiffrecv > time.Second*(time.Duration(conn.timeout)) && tcpdiffsend > time.Second*(time.Duration(conn.timeout))) {
@@ -426,7 +543,25 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			conn.fm.Close()
 			break
 		}
+
+		if !hadWork {
+			wait := loopWait.miss()
+			select {
+			case <-conn.activity:
+				loopWait.hit()
+			case err := <-readErr:
+				if err != nil {
+					loggo.Info("Error read tcp %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+					conn.fm.Close()
+					break mainLoop
+				}
+			case <-time.After(wait):
+			}
+		} else {
+			loopWait.hit()
+		}
 	}
+	close(stopRead)
 
 	conn.fm.Close()
 
@@ -487,14 +622,14 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
-	loggo.Info("server waiting target response %s -> %s %s", conn.ipaddrTarget.String(), conn.id, conn.conn.LocalAddr().String())
+	loggo.Info("server waiting target response %s -> %s %s", conn.udpTargetString(), conn.id, conn.conn.LocalAddr().String())
 
 	bytes := make([]byte, 2000)
 
 	for !p.exit {
 
 		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		n, _, err := conn.conn.ReadFromUDP(bytes)
+		n, srcAddr, err := conn.conn.ReadFromUDP(bytes)
 		if err != nil {
 			nerr, ok := err.(net.Error)
 			if !ok || !nerr.Timeout() {
@@ -503,17 +638,36 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 				return
 			}
 		}
+		if n <= 0 {
+			continue
+		}
 
 		now := common.GetNowUpdateInSecond()
 		conn.activeSendTime = now
 
-		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, conn.ipaddrTarget.String(), id, (uint32)(MyMsg_DATA), bytes[:n],
+		targetAddr := conn.udpTargetString()
+		payload := bytes[:n]
+
+		if conn.udpViaProxy {
+			if conn.udpRelayAddr != nil && !sameUDPAddr(srcAddr, conn.udpRelayAddr) {
+				continue
+			}
+			parsedTarget, parsedPayload, parseErr := parseSocks5UDPDatagram(bytes[:n])
+			if parseErr != nil {
+				loggo.Debug("parse udp datagram from socks5 relay failed: %s", parseErr)
+				continue
+			}
+			targetAddr = parsedTarget
+			payload = parsedPayload
+		}
+
+		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
 			conn.rproto, -1, p.key, 0,
 			0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
 
 		p.sendPacket++
-		p.sendPacketSize += (uint64)(n)
+		p.sendPacketSize += (uint64)(len(payload))
 	}
 }
 
@@ -557,10 +711,36 @@ func (p *Server) checkTimeoutConn() {
 			continue
 		}
 		if conn.close {
-			loggo.Info("close inactive conn %s %s", id, conn.ipaddrTarget.String())
+			loggo.Info("close inactive conn %s %s", id, conn.udpTargetString())
 			p.close(conn)
 		}
 	}
+}
+
+func (conn *ServerConn) udpTargetString() string {
+	if conn.udpTargetAddr != "" {
+		return conn.udpTargetAddr
+	}
+	if conn.ipaddrTarget != nil {
+		return conn.ipaddrTarget.String()
+	}
+	return "unknown"
+}
+
+func sameUDPAddr(a *net.UDPAddr, b *net.UDPAddr) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if b.Port != 0 && a.Port != b.Port {
+		return false
+	}
+	if b.IP == nil || b.IP.IsUnspecified() {
+		return true
+	}
+	if a.IP == nil {
+		return false
+	}
+	return a.IP.Equal(b.IP)
 }
 
 func (p *Server) showNet() {

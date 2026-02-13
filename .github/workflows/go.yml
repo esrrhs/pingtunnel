@@ -10,14 +10,13 @@ on:
     branches: [ "master" ]
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: 1.25
 
@@ -28,3 +27,66 @@ jobs:
 
       - name: Test
         run: go test -v ./...
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25
+
+      - name: Build release artifacts
+        run: ./pack.sh
+
+      - name: Prepare release metadata
+        id: release_meta
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="master-${AFTER_SHA}"
+          RELEASE_NAME="master build ${RUN_NUMBER}"
+
+          if [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            COMMIT_LINES="$(git log --pretty='- %h %s' "${AFTER_SHA}")"
+          else
+            COMMIT_LINES="$(git log --pretty='- %h %s' "${BEFORE_SHA}..${AFTER_SHA}")"
+          fi
+
+          if [ -z "${COMMIT_LINES}" ]; then
+            COMMIT_LINES="- ${AFTER_SHA:0:7} no commit messages found"
+          fi
+
+          {
+            echo "tag_name=${TAG_NAME}"
+            echo "release_name=${RELEASE_NAME}"
+            echo "body<<EOF"
+            echo "Automated release for commit ${AFTER_SHA} on master."
+            echo ""
+            echo "## Commits in this push"
+            echo "${COMMIT_LINES}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Create release and upload artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag_name }}
+          name: ${{ steps.release_meta.outputs.release_name }}
+          body: ${{ steps.release_meta.outputs.body }}
+          files: |
+            cmd/pack.zip
+            cmd/pack/*.zip
+          fail_on_unmatched_files: true
