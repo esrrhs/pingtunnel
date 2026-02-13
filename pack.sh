@@ -25,7 +25,11 @@ for line in $build_list; do
   if [ $arch == "wasm" ]; then
     continue
   fi
-  GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+  if [ $os = "android" ]; then
+    CGO_ENABLED=1 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+  else
+    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+  fi  
   if [ $? -ne 0 ]; then
     echo "os="$os" arch="$arch" build fail"
     exit 1
