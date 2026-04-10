@@ -8,7 +8,7 @@
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/actions/workflow/status/esrrhs/pingtunnel/go.yml?branch=master">](https://github.com/esrrhs/pingtunnel/actions)
 
-Pingtunnel is a tool that send TCP/UDP traffic over ICMP.
+Pingtunnel is a tool that sends TCP/UDP traffic over ICMP.
 
 ## Note: This tool is only to be used for study and research, do not use it for illegal purposes
 
@@ -38,11 +38,11 @@ echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 
 -   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
 -   Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
--   If you see a log of ping pong, the connection is normal
+-   If you see ping/pong logs, the connection is normal
 -   “-key” parameter is **int** type, only supports numbers between 0-2147483647
 
 
-#### Forward sock5
+#### Forward SOCKS5
 
 ```
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
@@ -69,7 +69,7 @@ A dedicated Android client for pingtunnel is now available, developed by the com
 > Big thanks to [itismoej](https://github.com/itismoej) for developing this Android client!
 
 ### Use Docker
-It can also be started directly with docker, which is more convenient. Same parameters as above
+It can also be started directly with docker, which is more convenient. It uses the same parameters as above.
 -   server:
 ```
 docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
