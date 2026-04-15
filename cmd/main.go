@@ -123,6 +123,12 @@ Usage:
     -sock5    开启sock5转发，默认0
               Turn on sock5 forwarding, default 0 is off
 
+    -s5user   sock5用户名，默认为空不需要认证
+              sock5 username, default is empty and no authentication is required
+
+    -s5pass   sock5密码，默认为空不需要认证
+              sock5 password, default is empty and no authentication is required
+
     -profile  在指定端口开启性能检测，默认0不开启
               Enable performance detection on the specified port. The default 0 is not enabled.
 
@@ -156,6 +162,8 @@ func main() {
 	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
 	loglevel := flag.String("loglevel", "info", "log level")
 	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
+	sock5_user := flag.String("s5user", "", "sock5 username")
+	sock5_pass := flag.String("s5pass", "", "sock5 password")
 	maxconn := flag.Int("maxconn", 0, "max num of connections")
 	max_process_thread := flag.Int("maxprt", 100, "max process thread in server")
 	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
@@ -296,7 +304,7 @@ func main() {
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key, *icmpListen,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig)
+			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig, *sock5_user, *sock5_pass)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
