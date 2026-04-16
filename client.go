@@ -23,7 +23,8 @@ const (
 
 func NewClient(addr string, server string, target string, timeout int, key int, icmpAddr string,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, cryptoConfig *CryptoConfig) (*Client, error) {
+	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, cryptoConfig *CryptoConfig,
+	sock5_user string, sock5_pass string) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -71,6 +72,8 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		maxconn:               maxconn,
 		pongTime:              now,
 		sock5_filter:          sock5_filter,
+		sock5_user:            sock5_user,
+		sock5_pass:            sock5_pass,
 		cryptoConfig:          cryptoConfig,
 		nextResolveAt:         now,
 		resolveRetryBackoff:   2 * time.Second,
@@ -101,6 +104,8 @@ type Client struct {
 
 	open_sock5   int
 	sock5_filter *func(addr string) bool
+	sock5_user   string
+	sock5_pass   string
 	cryptoConfig *CryptoConfig
 
 	ipaddr  *net.UDPAddr
@@ -902,7 +907,7 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 	defer p.workResultLock.Done()
 
 	var err error = nil
-	if err = network.Sock5HandshakeBy(conn, "", ""); err != nil {
+	if err = network.Sock5HandshakeBy(conn, p.sock5_user, p.sock5_pass); err != nil {
 		loggo.Error("socks handshake: %s", err)
 		conn.Close()
 		return
