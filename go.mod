@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/esrrhs/gohome v0.0.0-20251230021531-10dd8849d958
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.55.0
 	google.golang.org/protobuf v1.36.11
 )
