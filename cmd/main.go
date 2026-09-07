@@ -32,6 +32,9 @@ Usage:
     // client, Forward sock5, implicitly open tcp, so no target server is needed
     pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -sock5 1
 
+    // client, Forward multiple rules from config file
+    pingtunnel -type client -c config.yaml
+
     -type     服务器或者客户端
               client or server
 
@@ -68,6 +71,11 @@ Usage:
               Forward TCP traffic through the specified proxy. Supports socks5 and http proxies, e.g. socks5://localhost:2080 or http://localhost:8080
 
 客户端参数client param:
+
+    -c        配置文件模式，从yaml文件读取多条转发规则，单进程并发处理，不用起多个进程。与-l/-t互斥，如 -c config.yaml
+              Config file mode, read multiple client rules from a yaml file and forward them concurrently in one process. Mutually exclusive with -l/-t, e.g. -c config.yaml
+              文件格式为yaml字符串列表，每行一条规则，参数与命令行相同。配置里的进程级参数(nolog/noprint/encrypt等)以命令行为准。命令行上设置的参数作为所有规则的默认值。
+              The file is a yaml list of strings, one rule per line with the same parameters as the command line. Process level flags in rules (nolog/noprint/encrypt...) are ignored, command line wins. Command line parameters act as defaults for all rules.
 
     -l        本地的地址，发到这个端口的流量将转发到服务器
               Local address, traffic sent to this port will be forwarded to the server
@@ -144,34 +152,8 @@ func main() {
 	defer common.CrashLog()
 
 	t := flag.String("type", "", "client or server")
-	listen := flag.String("l", "", "listen addr")
-	target := flag.String("t", "", "target addr")
-	server := flag.String("s", "", "server addr")
-	icmpListen := flag.String("icmp_l", "0.0.0.0", "listen address for ICMP traffic")
-	timeout := flag.Int("timeout", 60, "conn timeout")
-	key := flag.Int("key", 0, "key")
-	encryption := flag.String("encrypt", "", "encryption mode: aes128, aes256, chacha20")
-	encryptionKey := flag.String("encrypt-key", "", "encryption key (base64 or passphrase)")
-	tcpmode := flag.Int("tcp", 0, "tcp mode")
-	tcpmode_buffersize := flag.Int("tcp_bs", 1*1024*1024, "tcp mode buffer size")
-	tcpmode_maxwin := flag.Int("tcp_mw", 20000, "tcp mode max win")
-	tcpmode_resend_timems := flag.Int("tcp_rst", 400, "tcp mode resend time ms")
-	tcpmode_compress := flag.Int("tcp_gz", 0, "tcp data compress")
-	nolog := flag.Int("nolog", 0, "write log file")
-	noprint := flag.Int("noprint", 0, "print stdout")
-	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
-	loglevel := flag.String("loglevel", "info", "log level")
-	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
-	sock5_user := flag.String("s5user", "", "sock5 username")
-	sock5_pass := flag.String("s5pass", "", "sock5 password")
-	maxconn := flag.Int("maxconn", 0, "max num of connections")
-	max_process_thread := flag.Int("maxprt", 100, "max process thread in server")
-	max_process_buffer := flag.Int("maxprb", 1000, "max process thread's buffer in server")
-	profile := flag.Int("profile", 0, "open profile")
-	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
-	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
-	s5filter := flag.String("s5filter", "", "sock5 filter")
-	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
+	configFile := flag.String("c", "", "config file with multiple client rules")
+	cf := newClientFlagSet(flag.CommandLine, nil)
 	flag.Usage = func() {
 		fmt.Print(usage)
 	}
@@ -183,31 +165,33 @@ func main() {
 		return
 	}
 	if *t == "client" {
-		if len(*listen) == 0 || len(*server) == 0 {
-			flag.Usage()
-			return
-		}
-		if *open_sock5 == 0 && len(*target) == 0 {
-			flag.Usage()
-			return
-		}
-		if *open_sock5 != 0 {
-			*tcpmode = 1
+		if len(*configFile) == 0 {
+			if len(*cf.listen) == 0 || len(*cf.server) == 0 {
+				flag.Usage()
+				return
+			}
+			if *cf.openSock5 == 0 && len(*cf.target) == 0 {
+				flag.Usage()
+				return
+			}
+			if *cf.openSock5 != 0 {
+				*cf.tcpmode = 1
+			}
 		}
 	}
-	if *tcpmode_maxwin*10 > pingtunnel.FRAME_MAX_ID {
+	if *cf.tcpmodeMaxwin*10 > pingtunnel.FRAME_MAX_ID {
 		fmt.Println("set tcp win to big, max = " + strconv.Itoa(pingtunnel.FRAME_MAX_ID/10))
 		return
 	}
 
 	// Validate encryption parameters
-	encryptionMode, err := pingtunnel.ParseEncryptionMode(*encryption)
+	encryptionMode, err := pingtunnel.ParseEncryptionMode(*cf.encryption)
 	if err != nil {
 		fmt.Printf("Invalid encryption mode: %v\n", err)
 		return
 	}
 
-	if encryptionMode != pingtunnel.NoEncryption && *encryptionKey == "" {
+	if encryptionMode != pingtunnel.NoEncryption && *cf.encryptionKey == "" {
 		fmt.Println("Encryption key is required when encryption mode is specified")
 		return
 	}
@@ -215,7 +199,7 @@ func main() {
 	// Create crypto configuration
 	var cryptoConfig *pingtunnel.CryptoConfig
 	if encryptionMode != pingtunnel.NoEncryption {
-		cryptoConfig, err = pingtunnel.NewCryptoConfig(encryptionMode, *encryptionKey)
+		cryptoConfig, err = pingtunnel.NewCryptoConfig(encryptionMode, *cf.encryptionKey)
 		if err != nil {
 			fmt.Printf("Failed to create crypto config: %v\n", err)
 			return
@@ -223,33 +207,33 @@ func main() {
 	}
 
 	level := loggo.LEVEL_INFO
-	if loggo.NameToLevel(*loglevel) >= 0 {
-		level = loggo.NameToLevel(*loglevel)
+	if loggo.NameToLevel(*cf.loglevel) >= 0 {
+		level = loggo.NameToLevel(*cf.loglevel)
 	}
 	loggo.Ini(loggo.Config{
 		Level:     level,
 		Prefix:    "pingtunnel",
 		MaxDay:    3,
-		NoLogFile: *nolog > 0,
-		NoPrint:   *noprint > 0,
+		NoLogFile: *cf.nolog > 0,
+		NoPrint:   *cf.noprint > 0,
 	})
 	loggo.Info("start...")
-	loggo.Info("key %d", *key)
+	loggo.Info("key %d", *cf.key)
 
 	if *t == "server" {
 		// Parse forward proxy configuration
 		var forwardConfig *pingtunnel.ForwardConfig
-		if *forward != "" {
+		if *cf.forward != "" {
 			var err error
-			forwardConfig, err = pingtunnel.ParseForwardURL(*forward)
+			forwardConfig, err = pingtunnel.ParseForwardURL(*cf.forward)
 			if err != nil {
 				fmt.Printf("Invalid forward URL: %v\n", err)
 				return
 			}
-			loggo.Info("Forward proxy configured: %s", *forward)
+			loggo.Info("Forward proxy configured: %s", *cf.forward)
 		}
 
-		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig, forwardConfig)
+		s, err := pingtunnel.NewServer(*cf.icmpListen, *cf.key, *cf.maxconn, *cf.maxProcessThread, *cf.maxProcessBuffer, *cf.conntt, cryptoConfig, forwardConfig)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -263,27 +247,23 @@ func main() {
 	} else if *t == "client" {
 
 		loggo.Info("type %s", *t)
-		loggo.Info("listen %s", *listen)
-		loggo.Info("server %s", *server)
-		loggo.Info("target %s", *target)
-
-		if *tcpmode == 0 {
-			*tcpmode_buffersize = 0
-			*tcpmode_maxwin = 0
-			*tcpmode_resend_timems = 0
-			*tcpmode_compress = 0
-			*tcpmode_stat = 0
+		if len(*configFile) > 0 {
+			loggo.Info("config %s", *configFile)
+		} else {
+			loggo.Info("listen %s", *cf.listen)
+			loggo.Info("server %s", *cf.server)
+			loggo.Info("target %s", *cf.target)
 		}
 
-		if len(*s5filter) > 0 {
-			err := thirdparty.LoadGeoip2(*s5ftfile)
+		if len(*cf.s5filter) > 0 {
+			err := thirdparty.LoadGeoip2(*cf.s5ftfile)
 			if err != nil {
 				loggo.Error("Load Sock5 ip file ERROR: %s", err.Error())
 				return
 			}
 		}
 		filter := func(addr string) bool {
-			if len(*s5filter) <= 0 {
+			if len(*cf.s5filter) <= 0 {
 				return true
 			}
 
@@ -299,32 +279,100 @@ func main() {
 			if len(ret) <= 0 {
 				return false
 			}
-			return ret != *s5filter
+			return ret != *cf.s5filter
 		}
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key, *icmpListen,
-			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig, *sock5_user, *sock5_pass)
-		if err != nil {
-			loggo.Error("ERROR: %s", err.Error())
-			return
-		}
-		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s ICMP Listen %s", c.Addr(), c.IPAddr(),
-			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr(), c.ICMPAddr())
-		err = c.Run()
-		if err != nil {
-			loggo.Error("Run ERROR: %s", err.Error())
-			return
+		if len(*configFile) > 0 {
+			clients, err := runClientsFromConfig(*configFile, cf, &filter, cryptoConfig)
+			if err != nil {
+				loggo.Error("ERROR: %s", err.Error())
+				return
+			}
+			for i, c := range clients {
+				loggo.Info("Client[%d] Listen %s (%s) Server %s (%s) TargetPort %s ICMP Listen %s", i+1, c.Addr(), c.IPAddr(),
+					c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr(), c.ICMPAddr())
+			}
+		} else {
+			if *cf.tcpmode == 0 {
+				*cf.tcpmodeBuffersize = 0
+				*cf.tcpmodeMaxwin = 0
+				*cf.tcpmodeResendTimems = 0
+				*cf.tcpmodeCompress = 0
+				*cf.tcpmodeStat = 0
+			}
+			c, err := pingtunnel.NewClient(*cf.listen, *cf.server, *cf.target, *cf.timeout, *cf.key, *cf.icmpListen,
+				*cf.tcpmode, *cf.tcpmodeBuffersize, *cf.tcpmodeMaxwin, *cf.tcpmodeResendTimems, *cf.tcpmodeCompress,
+				*cf.tcpmodeStat, *cf.openSock5, *cf.maxconn, &filter, cryptoConfig, *cf.sock5User, *cf.sock5Pass)
+			if err != nil {
+				loggo.Error("ERROR: %s", err.Error())
+				return
+			}
+			loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s ICMP Listen %s", c.Addr(), c.IPAddr(),
+				c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr(), c.ICMPAddr())
+			err = c.Run()
+			if err != nil {
+				loggo.Error("Run ERROR: %s", err.Error())
+				return
+			}
 		}
 	} else {
 		return
 	}
 
-	if *profile > 0 {
-		go http.ListenAndServe("0.0.0.0:"+strconv.Itoa(*profile), nil)
+	if *cf.profile > 0 {
+		go http.ListenAndServe("0.0.0.0:"+strconv.Itoa(*cf.profile), nil)
 	}
 
 	for {
 		time.Sleep(time.Hour)
 	}
+}
+
+// runClientsFromConfig creates and runs one client per config rule. If any
+// rule fails, all already started clients are stopped before returning the
+// error.
+func runClientsFromConfig(configFile string, cf *ClientFlags, filter *func(addr string) bool, cryptoConfig *pingtunnel.CryptoConfig) (clients []*pingtunnel.Client, err error) {
+
+	rules, err := loadClientRules(configFile, cf.toRule())
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err != nil {
+			for _, c := range clients {
+				c.Stop()
+			}
+		}
+	}()
+
+	for i, r := range rules {
+
+		tcpmodeBuffersize := r.tcpmodeBuffersize
+		tcpmodeMaxwin := r.tcpmodeMaxwin
+		tcpmodeResendTimems := r.tcpmodeResendTimems
+		tcpmodeCompress := r.tcpmodeCompress
+		tcpmodeStat := r.tcpmodeStat
+		if r.tcpmode == 0 {
+			tcpmodeBuffersize = 0
+			tcpmodeMaxwin = 0
+			tcpmodeResendTimems = 0
+			tcpmodeCompress = 0
+			tcpmodeStat = 0
+		}
+
+		c, err := pingtunnel.NewClient(r.listen, r.server, r.target, r.timeout, r.key, *cf.icmpListen,
+			r.tcpmode, tcpmodeBuffersize, tcpmodeMaxwin, tcpmodeResendTimems, tcpmodeCompress,
+			tcpmodeStat, r.openSock5, r.maxconn, filter, cryptoConfig, r.sock5User, r.sock5Pass)
+		if err != nil {
+			return clients, fmt.Errorf("config rule %d: %s", i+1, err.Error())
+		}
+		err = c.Run()
+		if err != nil {
+			return clients, fmt.Errorf("config rule %d: %s", i+1, err.Error())
+		}
+		clients = append(clients, c)
+	}
+
+	return clients, nil
 }

@@ -21,6 +21,12 @@ const (
 	RECV_PROTO int = 0
 )
 
+// usedClientIDs tracks the ICMP echo ids of live clients. Multiple clients
+// may run in one process (see the -c config file mode); two of them sharing
+// an echo id would steal each other's replies and kick the other's
+// connections off the server.
+var usedClientIDs sync.Map
+
 func NewClient(addr string, server string, target string, timeout int, key int, icmpAddr string,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
 	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, cryptoConfig *CryptoConfig,
@@ -47,12 +53,18 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		return nil, err
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	now := time.Now()
+	id := rand.Intn(math.MaxInt16)
+	for {
+		if _, loaded := usedClientIDs.LoadOrStore(id, struct{}{}); !loaded {
+			break
+		}
+		id = rand.Intn(math.MaxInt16)
+	}
 	c := &Client{
 		exit:                  false,
 		rtt:                   0,
-		id:                    rand.Intn(math.MaxInt16),
+		id:                    id,
 		ipaddr:                ipaddr,
 		tcpaddr:               tcpaddr,
 		addr:                  addr,
@@ -357,6 +369,15 @@ func (p *Client) Run() error {
 
 func (p *Client) Stop() {
 	p.exit = true
+	usedClientIDs.Delete(p.id)
+	if p.conn == nil || p.recvcontrol == nil {
+		// Never Run, or Run failed before the goroutines started:
+		// nothing to wait for or close except possibly the ICMP conn.
+		if p.conn != nil {
+			p.conn.Close()
+		}
+		return
+	}
 	p.recvcontrol <- 1
 	p.workResultLock.Wait()
 	p.conn.Close()

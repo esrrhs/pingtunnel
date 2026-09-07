@@ -60,6 +60,24 @@ pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com
 pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
 ```
 
+#### Forward multiple rules from config file
+
+Multiple port mappings can run concurrently in a single process. Create a `config.yaml` with one rule per line, using the same parameters as the command line:
+
+```yaml
+- -l :16121 -s www.yourserver.com -t 192.168.0.61:22 -tcp 1
+- -l :16122 -s www.yourserver.com -t 192.168.0.62:22 -tcp 1
+- -l :16123 -s www.yourserver.com -t 192.168.0.63:22 -tcp 1
+```
+
+Then start the client with `-c`:
+
+```
+pingtunnel.exe -type client -c config.yaml -noprint 1 -nolog 1
+```
+
+Process level flags (`-noprint`, `-nolog`, `-loglevel`, `-encrypt`, `-encrypt-key`, `-profile`...) are set on the command line; any such flags inside a rule are ignored. Parameters set on the command line (like `-key`) act as defaults for every rule. If a rule fails to start, all already started rules are stopped.
+
 ### Use Android Client
 
 A dedicated Android client for pingtunnel is now available, developed by the community.

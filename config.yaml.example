@@ -1,0 +1,9 @@
+# pingtunnel client rules, one rule per line, same parameters as the command line.
+# Start with: pingtunnel.exe -type client -c config.yaml
+# Process level flags (noprint, nolog, loglevel, encrypt, encrypt-key, profile...)
+# must be set on the command line; such flags inside a rule are ignored.
+# Parameters set on the command line act as defaults for every rule.
+
+- -l :16121 -s 3.1.4.5 -t 192.168.0.61:22 -tcp 1
+- -l :16122 -s 3.1.4.5 -t 192.168.0.62:22 -tcp 1
+- -l :16123 -s 3.1.4.5 -t 192.168.0.63:22 -tcp 1
