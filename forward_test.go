@@ -1,6 +1,7 @@
 package pingtunnel
 
 import (
+	"net"
 	"testing"
 )
 
@@ -128,3 +129,26 @@ func TestForwardConfigAddress(t *testing.T) {
 		t.Errorf("ForwardConfig.Address() = %q, want %q", got, want)
 	}
 }
+
+func TestSocks5UDPAssociateAddr(t *testing.T) {
+	if got := socks5UDPAssociateAddr(nil); got != "0.0.0.0:0" {
+		t.Errorf("expected 0.0.0.0:0, got %s", got)
+	}
+
+	addr := &net.UDPAddr{
+		IP:   net.ParseIP("192.168.1.10"),
+		Port: 12345,
+	}
+	if got := socks5UDPAssociateAddr(addr); got != "192.168.1.10:12345" {
+		t.Errorf("expected 192.168.1.10:12345, got %s", got)
+	}
+
+	unspecAddr := &net.UDPAddr{
+		IP:   net.IPv4zero,
+		Port: 54321,
+	}
+	if got := socks5UDPAssociateAddr(unspecAddr); got != "0.0.0.0:54321" {
+		t.Errorf("expected 0.0.0.0:54321, got %s", got)
+	}
+}
+
