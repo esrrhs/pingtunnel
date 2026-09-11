@@ -2,6 +2,7 @@ package pingtunnel
 
 import (
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -74,4 +75,35 @@ func TestMyMsgCorruptedUnmarshal(t *testing.T) {
 		t.Fatalf("expected error unmarshaling corrupted data, got nil")
 	}
 }
+
+func TestClientNextPingInterval(t *testing.T) {
+	client := &Client{}
+	now := time.Now()
+
+	// 1. When idle and no activity: interval should be 10s
+	client.lastActivityUnixNano.Store(now.Add(-60 * time.Second).UnixNano())
+	if interval := client.nextPingInterval(now); interval != 10*time.Second {
+		t.Fatalf("expected 10s interval for cold/idle client, got %v", interval)
+	}
+
+	// 2. When warm activity (within 30s): interval should be 3s
+	client.lastActivityUnixNano.Store(now.Add(-15 * time.Second).UnixNano())
+	if interval := client.nextPingInterval(now); interval != 3*time.Second {
+		t.Fatalf("expected 3s interval for warm client, got %v", interval)
+	}
+
+	// 3. When hot activity (within 5s): interval should be 1s
+	client.lastActivityUnixNano.Store(now.Add(-2 * time.Second).UnixNano())
+	if interval := client.nextPingInterval(now); interval != time.Second {
+		t.Fatalf("expected 1s interval for hot client, got %v", interval)
+	}
+
+	// 4. When has active connections: interval should always be 1s regardless of lastActivity
+	client.lastActivityUnixNano.Store(now.Add(-100 * time.Second).UnixNano())
+	client.localIdToConnMap.Store("conn-1", &ClientConn{})
+	if interval := client.nextPingInterval(now); interval != time.Second {
+		t.Fatalf("expected 1s interval when active connection exists, got %v", interval)
+	}
+}
+
 
