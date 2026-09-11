@@ -25,6 +25,9 @@ jobs:
           go mod tidy
           go build -v ./...
 
+      - name: Vet
+        run: go vet ./...
+
       - name: Test
         run: go test -v ./...
 
