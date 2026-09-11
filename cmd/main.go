@@ -137,6 +137,9 @@ Usage:
 
     -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
               The data file in sock5 filter mode, the default reading of the current directory GeoLite2-Country.mmdb
+
+    -c        从指定json配置文件读取参数，命令行参数可覆盖配置文件
+              Read parameters from the specified json config file, command line parameters take precedence
 `
 
 func main() {
@@ -172,11 +175,115 @@ func main() {
 	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
 	s5filter := flag.String("s5filter", "", "sock5 filter")
 	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
+	configFile := flag.String("c", "", "path to json config file")
 	flag.Usage = func() {
 		fmt.Print(usage)
 	}
 
 	flag.Parse()
+
+	// Track which flags were explicitly set via command line
+	setFlags := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		setFlags[f.Name] = true
+	})
+
+	// Load configuration file if specified
+	if *configFile != "" {
+		cfg, err := pingtunnel.LoadConfig(*configFile)
+		if err != nil {
+			fmt.Printf("Failed to load config file: %v\n", err)
+			return
+		}
+
+		if !setFlags["type"] && cfg.Type != "" {
+			*t = cfg.Type
+		}
+		if !setFlags["l"] && cfg.Listen != "" {
+			*listen = cfg.Listen
+		}
+		if !setFlags["t"] && cfg.Target != "" {
+			*target = cfg.Target
+		}
+		if !setFlags["s"] && cfg.Server != "" {
+			*server = cfg.Server
+		}
+		if !setFlags["icmp_l"] && cfg.ICMPListen != "" {
+			*icmpListen = cfg.ICMPListen
+		}
+		if !setFlags["timeout"] && cfg.Timeout != 0 {
+			*timeout = cfg.Timeout
+		}
+		if !setFlags["key"] && cfg.Key != 0 {
+			*key = cfg.Key
+		}
+		if !setFlags["encrypt"] && cfg.Encrypt != "" {
+			*encryption = cfg.Encrypt
+		}
+		if !setFlags["encrypt-key"] && cfg.EncryptKey != "" {
+			*encryptionKey = cfg.EncryptKey
+		}
+		if !setFlags["tcp"] && cfg.TCPMode != 0 {
+			*tcpmode = cfg.TCPMode
+		}
+		if !setFlags["tcp_bs"] && cfg.TCPBufferSize != 0 {
+			*tcpmode_buffersize = cfg.TCPBufferSize
+		}
+		if !setFlags["tcp_mw"] && cfg.TCPMaxWin != 0 {
+			*tcpmode_maxwin = cfg.TCPMaxWin
+		}
+		if !setFlags["tcp_rst"] && cfg.TCPResendTimeMs != 0 {
+			*tcpmode_resend_timems = cfg.TCPResendTimeMs
+		}
+		if !setFlags["tcp_gz"] && cfg.TCPCompress != 0 {
+			*tcpmode_compress = cfg.TCPCompress
+		}
+		if !setFlags["nolog"] && cfg.NoLog != 0 {
+			*nolog = cfg.NoLog
+		}
+		if !setFlags["noprint"] && cfg.NoPrint != 0 {
+			*noprint = cfg.NoPrint
+		}
+		if !setFlags["tcp_stat"] && cfg.TCPStat != 0 {
+			*tcpmode_stat = cfg.TCPStat
+		}
+		if !setFlags["loglevel"] && cfg.LogLevel != "" {
+			*loglevel = cfg.LogLevel
+		}
+		if !setFlags["sock5"] && cfg.Sock5 != 0 {
+			*open_sock5 = cfg.Sock5
+		}
+		if !setFlags["s5user"] && cfg.Sock5User != "" {
+			*sock5_user = cfg.Sock5User
+		}
+		if !setFlags["s5pass"] && cfg.Sock5Pass != "" {
+			*sock5_pass = cfg.Sock5Pass
+		}
+		if !setFlags["maxconn"] && cfg.MaxConn != 0 {
+			*maxconn = cfg.MaxConn
+		}
+		if !setFlags["maxprt"] && cfg.MaxProcessThread != 0 {
+			*max_process_thread = cfg.MaxProcessThread
+		}
+		if !setFlags["maxprb"] && cfg.MaxProcessBuffer != 0 {
+			*max_process_buffer = cfg.MaxProcessBuffer
+		}
+		if !setFlags["profile"] && cfg.Profile != 0 {
+			*profile = cfg.Profile
+		}
+		if !setFlags["conntt"] && cfg.ConnectTimeout != 0 {
+			*conntt = cfg.ConnectTimeout
+		}
+		if !setFlags["forward"] && cfg.Forward != "" {
+			*forward = cfg.Forward
+		}
+		if !setFlags["s5filter"] && cfg.Sock5Filter != "" {
+			*s5filter = cfg.Sock5Filter
+		}
+		if !setFlags["s5ftfile"] && cfg.Sock5FilterFile != "" {
+			*s5ftfile = cfg.Sock5FilterFile
+		}
+	}
 
 	if *t != "client" && *t != "server" {
 		flag.Usage()

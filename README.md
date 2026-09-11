@@ -14,67 +14,79 @@ Pingtunnel is a tool that sends TCP/UDP traffic over ICMP.
 
 ![image](network.jpg)
 
-## Usage
+## Usage & Detailed Documentation
 
-### Install server
+> 📖 **完整使用文档请参阅 [USAGE.md](USAGE.md)**：包含全部命令行参数列表、配置文件模式（`-c config.json`）、各场景代理设置（SOCKS5全局、GeoIP分流、TCP端口穿透、UDP转发、二级上游代理、端到端AES/ChaCha20加密）等。
 
--   First prepare a server with a public IP, such as EC2 on AWS, assuming the domain name or public IP is www.yourserver.com
--   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_linux64.zip, then decompress and execute with **root** privileges
--   “-key” parameter is **int** type, only supports numbers between 0-2147483647
+### Quick Start
 
+#### 1. Server
+
+- Prepare a server with a public IP (e.g. `www.yourserver.com`)
+- Download the release package from [releases](https://github.com/esrrhs/pingtunnel/releases) (e.g. `pingtunnel_linux64.zip`), unzip and execute with **root** privileges:
+
+```bash
+sudo ./pingtunnel -type server -key 123456
 ```
-sudo wget (link of latest release)
-sudo unzip pingtunnel_linux64.zip
-sudo ./pingtunnel -type server
-```
 
--   (Optional) Disable system default ping
+- (Optional) Disable system default ICMP echo response:
 
-```
+```bash
 echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 
-### Install the client
+#### 2. Client
 
--   Download the corresponding installation package from [releases](https://github.com/esrrhs/pingtunnel/releases), such as pingtunnel_windows64.zip, and decompress it
--   Then run with **administrator** privileges. The commands corresponding to different forwarding functions are as follows.
--   If you see ping/pong logs, the connection is normal
--   “-key” parameter is **int** type, only supports numbers between 0-2147483647
+Run with **administrator** privileges:
 
-
-#### Forward SOCKS5
-
-```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -sock5 1
+- **SOCKS5 Proxy Mode**:
+```bash
+pingtunnel -type client -l :4455 -s www.yourserver.com -sock5 1 -key 123456
 ```
 
-#### Forward tcp
+- **Forward TCP (e.g. SSH/Web)**:
+```bash
+pingtunnel -type client -l :4455 -s www.yourserver.com -t 192.168.1.100:22 -tcp 1 -key 123456
+```
 
-```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455 -tcp 1
+- **Forward UDP (e.g. DNS)**:
+```bash
+pingtunnel -type client -l :4455 -s www.yourserver.com -t 8.8.8.8:53 -key 123456
 ```
 
-#### Forward udp
+#### 3. Config File Mode (`-c`)
 
+Both client and server support JSON configuration files:
+
+```bash
+# Start server with config
+sudo ./pingtunnel -c server.json
+
+# Start client with config
+./pingtunnel -c client.json
 ```
-pingtunnel.exe -type client -l :4455 -s www.yourserver.com -t www.yourserver.com:4455
-```
+
+See [USAGE.md](USAGE.md#2-配置文件使用-config-file-mode) for JSON configuration templates and rules.
 
 ### Use Android Client
 
-A dedicated Android client for pingtunnel is now available, developed by the community.
+A dedicated Android client for pingtunnel is available, developed by the community:
 
 * [**pingtunnel-client**](https://github.com/itismoej/pingtunnel-client)
 
 > Big thanks to [itismoej](https://github.com/itismoej) for developing this Android client!
 
 ### Use Docker
-It can also be started directly with docker, which is more convenient. It uses the same parameters as above.
--   server:
-```
+
+You can also start pingtunnel directly with Docker:
+
+- **Server**:
+```bash
 docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
 ```
--   client:
-```
+
+- **Client**:
+```bash
 docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
 ```
+
