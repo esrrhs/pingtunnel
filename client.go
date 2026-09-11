@@ -47,7 +47,6 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		return nil, err
 	}
 
-	rand.Seed(time.Now().UnixNano())
 	now := time.Now()
 	c := &Client{
 		exit:                  false,
