@@ -84,3 +84,56 @@ func TestSocks5UDPDatagramRejectFragment(t *testing.T) {
 		t.Fatalf("expected error, got nil")
 	}
 }
+
+func TestEncodeAndParseSocks5Address(t *testing.T) {
+	testCases := []string{
+		"127.0.0.1:8080",
+		"192.168.1.1:53",
+		"[::1]:1080",
+		"google.com:443",
+		"example.org:80",
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc, func(t *testing.T) {
+			encoded, err := encodeSocks5Address(tc)
+			if err != nil {
+				t.Fatalf("encodeSocks5Address(%q) failed: %v", tc, err)
+			}
+
+			parsed, consumed, err := parseSocks5Address(encoded)
+			if err != nil {
+				t.Fatalf("parseSocks5Address failed: %v", err)
+			}
+			if consumed != len(encoded) {
+				t.Fatalf("consumed %d, expected %d", consumed, len(encoded))
+			}
+			if parsed != tc {
+				t.Fatalf("roundtrip mismatch: got %s, want %s", parsed, tc)
+			}
+		})
+	}
+}
+
+func TestWriteSocks5Reply(t *testing.T) {
+	var buf bytes.Buffer
+	err := writeSocks5Reply(&buf, socks5ReplySucceeded, "127.0.0.1:1080")
+	if err != nil {
+		t.Fatalf("writeSocks5Reply failed: %v", err)
+	}
+
+	replyBytes := buf.Bytes()
+	if len(replyBytes) < 4 {
+		t.Fatalf("reply too short: %d", len(replyBytes))
+	}
+	if replyBytes[0] != socks5Version {
+		t.Fatalf("unexpected version: %d", replyBytes[0])
+	}
+	if replyBytes[1] != socks5ReplySucceeded {
+		t.Fatalf("unexpected reply code: %d", replyBytes[1])
+	}
+	if replyBytes[2] != 0x00 {
+		t.Fatalf("unexpected reserved byte: %d", replyBytes[2])
+	}
+}
+

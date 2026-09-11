@@ -286,8 +286,6 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 		return localConn
 	}
-
-	return nil
 }
 
 func (p *Server) processDataPacket(packet *Packet) {
