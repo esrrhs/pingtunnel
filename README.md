@@ -78,9 +78,3 @@ docker run --name pingtunnel-server -d --privileged --network host --restart=alw
 ```
 docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
 ```
-
-## Thanks for free JetBrains Open Source license
-
-<img src="https://resources.jetbrains.com/storage/products/company/brand/logos/GoLand.png" height="200"/></a>
-
-
