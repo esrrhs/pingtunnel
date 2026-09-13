@@ -23,6 +23,7 @@ type Config struct {
 	TCPResendTimeMs  int    `json:"tcp_rst,omitempty"`
 	TCPCompress      int    `json:"tcp_gz,omitempty"`
 	TCPStat          int    `json:"tcp_stat,omitempty"`
+	Congestion       string `json:"congestion,omitempty"`
 	NoLog            int    `json:"nolog,omitempty"`
 	NoPrint          int    `json:"noprint,omitempty"`
 	LogLevel         string `json:"loglevel,omitempty"`
