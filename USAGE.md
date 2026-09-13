@@ -1,91 +1,91 @@
-# Pingtunnel 使用与配置指南 / Usage and Configuration Guide
+# Pingtunnel Usage and Configuration Guide
 
-本指南详细介绍 Pingtunnel 的命令行参数、配置文件（`-c`）使用方法，以及在各种典型网络场景下的代理设置。
-
----
-
-## 目录 / Table of Contents
-
-- [1. 命令行参数详解](#1-命令行参数详解)
-  - [服务端参数 (Server Flags)](#服务端参数-server-flags)
-  - [客户端参数 (Client Flags)](#客户端参数-client-flags)
-- [2. 配置文件使用 (Config File Mode)](#2-配置文件使用-config-file-mode)
-  - [服务端配置示例 (Server Config)](#服务端配置示例-server-config)
-  - [客户端配置示例 (Client Config)](#客户端配置示例-client-config)
-  - [参数优先级 (Precedence)](#参数优先级-precedence)
-- [3. 典型代理场景与设置指南](#3-典型代理场景与设置指南)
-  - [场景一：SOCKS5 全局代理翻越 / 突破封锁](#场景一socks5-全局代理翻越--突破封锁)
-  - [场景二：SOCKS5 国内/国外分流 (基于 GeoIP 过滤)](#场景二socks5-国内国外分流-基于-geoip-过滤)
-  - [场景三：远程内网特定 TCP 服务穿透 (如 SSH / 远程桌面)](#场景三远程内网特定-tcp-服务穿透-如-ssh--远程桌面)
-  - [场景四：特定 UDP 业务转发 (如 DNS / 游戏服务器)](#场景四特定-udp-业务转发-如-dns--游戏服务器)
-  - [场景五：前置/上游二级代理转发 (Forward Proxy)](#场景五前置上游二级代理转发-forward-proxy)
-  - [场景六：开启端到端高强度加密传输](#场景六开启端到端高强度加密传输)
-- [4. Docker 与守护进程运行](#4-docker-与守护进程运行)
+This guide provides detailed documentation on Pingtunnel command-line flags, JSON configuration file (`-c`) usage, and proxy setup recipes for typical network scenarios.
 
 ---
 
-## 1. 命令行参数详解
+## Table of Contents
 
-### 服务端参数 (Server Flags)
+- [1. Command-Line Flags](#1-command-line-flags)
+  - [Server Flags](#server-flags)
+  - [Client Flags](#client-flags)
+- [2. Config File Mode](#2-config-file-mode)
+  - [Server Config Example](#server-config-example)
+  - [Client Config Example](#client-config-example)
+  - [Flag Precedence](#flag-precedence)
+- [3. Typical Proxy Scenarios](#3-typical-proxy-scenarios)
+  - [Scenario 1: Global SOCKS5 Proxy](#scenario-1-global-socks5-proxy)
+  - [Scenario 2: GeoIP Split Routing (Domestic / International Bypass)](#scenario-2-geoip-split-routing-domestic--international-bypass)
+  - [Scenario 3: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)](#scenario-3-specific-remote-tcp-port-forwarding-eg-ssh--rdp)
+  - [Scenario 4: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)](#scenario-4-specific-udp-traffic-forwarding-eg-dns--gaming)
+  - [Scenario 5: Upstream Forward Proxy](#scenario-5-upstream-forward-proxy)
+  - [Scenario 6: End-to-End High-Strength Encryption](#scenario-6-end-to-end-high-strength-encryption)
+- [4. Docker and Daemon Execution](#4-docker-and-daemon-execution)
 
-| 参数 Flag | 默认值 Default | 说明 Description |
+---
+
+## 1. Command-Line Flags
+
+### Server Flags
+
+| Flag | Default | Description |
 |---|---|---|
-| `-type` | `""` | 运行角色，必须指定为 `server` 或 `client` |
-| `-c` | `""` | 指定 JSON 配置文件路径，命令行参数可覆盖文件配置 |
-| `-icmp_l` | `0.0.0.0` | 本地监听 ICMP 流量的网卡 IP |
-| `-key` | `0` | 纯数字密码（0 ~ 2147483647），需与客户端一致 |
-| `-encrypt` | `""` | 加密算法，支持 `aes128`、`aes256`、`chacha20`（空表示不加密） |
-| `-encrypt-key` | `""` | 加密密钥（可为密码短语或 base64 字符串），需与客户端一致 |
-| `-maxconn` | `0` | 最大并发连接数限制（0 表示不限制） |
-| `-maxprt` | `100` | 服务端数据包最大处理工作协程数 |
-| `-maxprb` | `1000` | 服务端处理协程输入缓冲区大小 |
-| `-conntt` | `1000` | 服务端向目标地址发起连接的超时时间（毫秒） |
-| `-forward` | `""` | 服务端上游前置代理，支持 `socks5://host:port` 或 `http://host:port` |
-| `-congestion` | `bb` | 拥塞控制算法，默认 `bb`（类似 BBR 带宽自适应算法，防止大流量下载打爆网络导致断网），传空字符串表示不开启 |
-| `-nolog` | `0` | 设为 `1` 时不写入日志文件，仅控制台输出 |
-| `-noprint` | `0` | 设为 `1` 时不向控制台输出日志 |
-| `-loglevel` | `info` | 日志级别（`debug`, `info`, `warn`, `error`） |
-| `-profile` | `0` | 性能分析（pprof）监听端口，默认不开启 |
+| `-type` | `""` | Operating role, must be `server` or `client` |
+| `-c` | `""` | Path to JSON config file (CLI flags override config values) |
+| `-icmp_l` | `0.0.0.0` | Local network interface IP to listen for ICMP traffic |
+| `-key` | `0` | Numeric key / authentication code (`0` - `2147483647`), must match client |
+| `-encrypt` | `""` | Encryption algorithm: `aes128`, `aes256`, or `chacha20` (empty means disabled) |
+| `-encrypt-key` | `""` | Encryption key (passphrase or base64 string), must match client |
+| `-maxconn` | `0` | Maximum concurrent connections limit (`0` for unlimited) |
+| `-maxprt` | `100` | Maximum packet processing worker goroutines on server |
+| `-maxprb` | `1000` | Input buffer size for server packet processing workers |
+| `-conntt` | `1000` | Connect timeout to destination address in milliseconds |
+| `-forward` | `""` | Upstream forward proxy, supports `socks5://host:port` or `http://host:port` |
+| `-congestion` | `bb` | Congestion control algorithm; default `bb` (bandwidth-adaptive algorithm similar to BBR to prevent bufferbloat / disconnections during heavy downloads). Pass empty string `""` to disable |
+| `-nolog` | `0` | Set to `1` to disable writing to log files (console only) |
+| `-noprint` | `0` | Set to `1` to suppress console output |
+| `-loglevel` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+| `-profile` | `0` | Performance profiling (pprof) listening port (`0` to disable) |
 
-### 客户端参数 (Client Flags)
+### Client Flags
 
-| 参数 Flag | 默认值 Default | 说明 Description |
+| Flag | Default | Description |
 |---|---|---|
-| `-type` | `""` | 运行角色，指定为 `client` |
-| `-c` | `""` | 指定 JSON 配置文件路径 |
-| `-l` | `""` | 客户端本地监听地址及端口（例如 `:4455` 或 `127.0.0.1:1080`） |
-| `-s` | `""` | 远程 Pingtunnel 服务端 IP 或域名 |
-| `-t` | `""` | 目标服务的终点地址（例如 `1.1.1.1:53` 或 `目标内网IP:22`，开启 sock5 时可留空） |
-| `-sock5` | `0` | 设为 `1` 开启本地 SOCKS5 代理模式（自动开启 TCP） |
-| `-s5user` | `""` | 本地 SOCKS5 认证用户名（可选） |
-| `-s5pass` | `""` | 本地 SOCKS5 认证密码（可选） |
-| `-s5filter`| `""` | SOCKS5 分流过滤国家代码（如 `CN` 表示大陆地区直连，不走隧道） |
-| `-s5ftfile`| `GeoLite2-Country.mmdb` | 分流 IP 数据库文件路径 |
-| `-congestion` | `bb` | 拥塞控制算法，默认 `bb`（类似 BBR 带宽自适应算法，防止大流量下载打爆网络导致断网），传空字符串表示不开启 |
-| `-tcp` | `0` | 是否按 TCP 模式转发（UDP 业务设为 0，TCP 设为 1） |
-| `-tcp_bs` | `1048576` (1MB)| TCP 流量滑动窗口收发缓冲区大小 |
-| `-tcp_mw` | `20000` | TCP 模式最大窗口大小 |
-| `-tcp_rst` | `400` | TCP 超时重传时间（毫秒） |
-| `-tcp_gz` | `0` | 数据包超过指定大小（字节）时启用压缩，0 表示不压缩 |
-| `-tcp_stat`| `0` | 设为 `1` 周期性输出 TCP 连接流控统计 |
-| `-timeout` | `60` | 连接空闲超时释放时间（秒） |
+| `-type` | `""` | Operating role, specified as `client` |
+| `-c` | `""` | Path to JSON config file |
+| `-l` | `""` | Local listen address and port (e.g. `:4455` or `127.0.0.1:1080`) |
+| `-s` | `""` | Remote Pingtunnel server IP or domain name |
+| `-t` | `""` | Destination target address (e.g. `1.1.1.1:53` or internal IP `10.0.0.5:22`; can be omitted when `sock5` is enabled) |
+| `-sock5` | `0` | Set to `1` to enable local SOCKS5 proxy mode (automatically enables TCP) |
+| `-s5user` | `""` | Local SOCKS5 username authentication (optional) |
+| `-s5pass` | `""` | Local SOCKS5 password authentication (optional) |
+| `-s5filter`| `""` | SOCKS5 split routing country code (e.g. `CN` to connect directly without tunneling) |
+| `-s5ftfile`| `GeoLite2-Country.mmdb` | GeoIP database file path for split routing |
+| `-congestion` | `bb` | Congestion control algorithm; default `bb` (bandwidth-adaptive algorithm similar to BBR to prevent bufferbloat / disconnections during heavy downloads). Pass empty string `""` to disable |
+| `-tcp` | `0` | Whether to forward in TCP mode (`0` for UDP service, `1` for TCP) |
+| `-tcp_bs` | `1048576` (1MB)| TCP sliding window send/receive buffer size |
+| `-tcp_mw` | `20000` | Maximum TCP window size |
+| `-tcp_rst` | `400` | TCP retransmission timeout in milliseconds |
+| `-tcp_gz` | `0` | Enable compression when packet size exceeds this threshold (bytes); `0` to disable |
+| `-tcp_stat`| `0` | Set to `1` to periodically output TCP flow control statistics |
+| `-timeout` | `60` | Connection idle timeout in seconds before release |
 
 ---
 
-## 2. 配置文件使用 (Config File Mode)
+## 2. Config File Mode
 
-Pingtunnel 支持使用 `-c <config.json>` 启动，无需在命令行拼接冗长参数。
+Pingtunnel supports `-c <config.json>` to load settings from a file instead of passing long command-line arguments.
 
-### 命令行加载配置
+### Running with Config File
 ```bash
-# 服务端
+# Server
 sudo pingtunnel -c /etc/pingtunnel/server.json
 
-# 客户端
+# Client
 pingtunnel -c ./client.json
 ```
 
-### 服务端配置示例 (Server Config)
+### Server Config Example
 `server.json`:
 ```json
 {
@@ -100,9 +100,9 @@ pingtunnel -c ./client.json
 }
 ```
 
-### 客户端配置示例 (Client Config)
+### Client Config Example
 
-#### 1. SOCKS5 代理客户端 (`client-socks5.json`):
+#### 1. SOCKS5 Proxy Client (`client-socks5.json`):
 ```json
 {
   "type": "client",
@@ -118,7 +118,7 @@ pingtunnel -c ./client.json
 }
 ```
 
-#### 2. TCP 单端口转发客户端 (`client-tcp.json`):
+#### 2. TCP Port Forwarding Client (`client-tcp.json`):
 ```json
 {
   "type": "client",
@@ -130,116 +130,117 @@ pingtunnel -c ./client.json
 }
 ```
 
-### 参数优先级 (Precedence)
-**命令行直接传入的参数优先于配置文件中的同名参数**。例如：
+### Flag Precedence
+**Command-line arguments take precedence over matching keys in the configuration file.** For example:
 ```bash
 pingtunnel -c client.json -loglevel debug
 ```
-此时将使用 `client.json` 中的全部配置，但会将日志级别覆盖为 `debug`。
+This applies all options from `client.json` while overriding `loglevel` to `debug`.
 
 ---
 
-## 3. 典型代理场景与设置指南
 
-### 场景一：SOCKS5 全局代理翻越 / 突破封锁
-适用于客户机环境被防火墙严格限制 TCP/UDP 外部端口访问，但放行 ICMP (Ping) 回显协议的场景。
+## 3. Typical Proxy Scenarios
 
-1. **服务端启动**：
+### Scenario 1: Global SOCKS5 Proxy
+Useful when client networks block outbound TCP/UDP traffic but allow ICMP (Ping) Echo packets.
+
+1. **Start Server**:
    ```bash
    sudo ./pingtunnel -type server -key 123456
    ```
-2. **客户端启动**：
+2. **Start Client**:
    ```bash
-   ./pingtunnel -type client -l 127.0.0.1:1080 -s <服务端公网IP> -sock5 1 -key 123456
+   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -sock5 1 -key 123456
    ```
-3. **代理设置**：
-   * 在浏览器、SwitchyOmega 或系统中设置 SOCKS5 代理：
-     * **主机**：`127.0.0.1`
-     * **端口**：`1080`
-   * 所有 TCP 网页访问、视频流媒体均将封装进 ICMP Echo 请求发往服务器由其代为请求。
+3. **Configure Proxy**:
+   * Configure SOCKS5 proxy in your browser, SwitchyOmega, or operating system:
+     * **Host**: `127.0.0.1`
+     * **Port**: `1080`
+   * TCP web requests and media streams will be encapsulated into ICMP Echo packets and relayed by the server.
 
 ---
 
-### 场景二：SOCKS5 国内/国外分流 (基于 GeoIP 过滤)
-当客户端使用 SOCKS5 代理时，希望大陆境内 IP 直连，只有境外 IP 才走 ICMP 隧道。
+### Scenario 2: GeoIP Split Routing (Domestic / International Bypass)
+Allows domestic destination IPs to connect directly without tunneling, while routing foreign IPs through the ICMP tunnel.
 
-1. **确保运行目录下存在 `GeoLite2-Country.mmdb`**。
-2. **客户端启动**：
+1. **Ensure `GeoLite2-Country.mmdb` is placed in the working directory.**
+2. **Start Client**:
    ```bash
-   ./pingtunnel -type client -l 127.0.0.1:1080 -s <服务端公网IP> -sock5 1 -key 123456 -s5filter CN
+   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -sock5 1 -key 123456 -s5filter CN
    ```
-3. **效果**：客户端访问境内网站时由本机直连，不消耗服务器隧道流量；访问境外网站自动经由隧道中转。
+3. **Behavior**: Direct connection is used for domestic (CN) addresses without consuming tunnel bandwidth; foreign destinations are routed through the tunnel.
 
 ---
 
-### 场景三：远程内网特定 TCP 服务穿透 (如 SSH / 远程桌面)
-适用于需要远程访问服务端所在私有局域网内的某台特定主机（例如内网 `192.168.1.100:22` 或 `:3389`）。
+### Scenario 3: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)
+Useful when exposing a service inside the server's private network (e.g. `192.168.1.100:22` or `:3389`).
 
-1. **服务端启动**：
+1. **Start Server**:
    ```bash
    sudo ./pingtunnel -type server -key 123456
    ```
-2. **客户端启动（映射远程内网 22 到本地 2222）**：
+2. **Start Client (maps remote private port 22 to local port 2222)**:
    ```bash
-   ./pingtunnel -type client -l :2222 -s <服务端公网IP> -t 192.168.1.100:22 -tcp 1 -key 123456
+   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -tcp 1 -key 123456
    ```
-3. **发起连接**：
+3. **Connect**:
    ```bash
    ssh -p 2222 user@127.0.0.1
    ```
-   流量将通过 ICMP 封装送达服务端后，由服务端解包转交至 `192.168.1.100:22`。
+   Traffic is encapsulated over ICMP to the server, which forwards it to `192.168.1.100:22`.
 
 ---
 
-### 场景四：特定 UDP 业务转发 (如 DNS / 游戏服务器)
-适用于本地受限无法直接查询外网 UDP 53 DNS，或游戏 UDP 端口被限速丢包时。
+### Scenario 4: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)
+Useful when local networks restrict direct outbound UDP port 53 (DNS) or throttle game UDP traffic.
 
-1. **客户端启动（将本地 UDP 5353 转发至远端 8.8.8.8:53）**：
+1. **Start Client (forwards local UDP 5353 to remote 8.8.8.8:53)**:
    ```bash
-   ./pingtunnel -type client -l :5353 -s <服务端公网IP> -t 8.8.8.8:53 -key 123456
+   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -key 123456
    ```
-2. **测试 DNS 解析**：
+2. **Test DNS Resolution**:
    ```bash
    dig @127.0.0.1 -p 5353 google.com
    ```
 
 ---
 
-### 场景五：前置/上游二级代理转发 (Forward Proxy)
-适用于服务端所在网络无法直接连外网，或服务端也需要经过一层公司企业级代理（SOCKS5 / HTTP Proxy）出网。
+### Scenario 5: Upstream Forward Proxy
+Useful when the Pingtunnel server cannot directly reach external internet services and needs an enterprise egress proxy (SOCKS5 / HTTP Proxy).
 
-1. **服务端配置 `-forward`**：
+1. **Configure `-forward` on Server**:
    ```bash
    sudo ./pingtunnel -type server -key 123456 -forward "socks5://127.0.0.1:2080"
-   # 或使用 HTTP 代理:
+   # Or with an HTTP proxy:
    # sudo ./pingtunnel -type server -key 123456 -forward "http://proxy.corp.internal:8080"
    ```
-2. **客户端正常启动连接服务端**：
+2. **Start Client normally**:
    ```bash
-   ./pingtunnel -type client -l :1080 -s <服务端IP> -sock5 1 -key 123456
+   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -sock5 1 -key 123456
    ```
-3. 服务端收到 ICMP 解包请求后，将通过二级代理 `127.0.0.1:2080` 进一步向外发起请求。
+3. Upon receiving encapsulated requests via ICMP, the server relays traffic through `127.0.0.1:2080`.
 
 ---
 
-### 场景六：开启端到端高强度加密传输
-默认情况下流量仅包含简单的 magic key 校验。在敏感网络环境推荐启用 AEAD 加密（支持 `aes128`, `aes256`, `chacha20`）。
+### Scenario 6: End-to-End High-Strength Encryption
+By default, traffic uses numeric key verification. In sensitive network environments, AEAD encryption (`aes128`, `aes256`, `chacha20`) can be enabled.
 
-1. **服务端**：
+1. **Server**:
    ```bash
    sudo ./pingtunnel -type server -key 123456 -encrypt chacha20 -encrypt-key "P@ssw0rdCustomSecret!"
    ```
-2. **客户端**：
+2. **Client**:
    ```bash
-   ./pingtunnel -type client -l :1080 -s <服务端IP> -sock5 1 -key 123456 -encrypt chacha20 -encrypt-key "P@ssw0rdCustomSecret!"
+   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -sock5 1 -key 123456 -encrypt chacha20 -encrypt-key "P@ssw0rdCustomSecret!"
    ```
-3. ICMP 包内的 Protobuf Payload 将全部被 ChaCha20-Poly1305 加密，防御 DPI 协议特征检测。
+3. The Protobuf payload inside ICMP packets is encrypted using ChaCha20-Poly1305 to resist deep packet inspection (DPI).
 
 ---
 
-## 4. Docker 与守护进程运行
+## 4. Docker and Daemon Execution
 
-### 服务端 Docker 运行（轻量镜像，推荐）
+### Server Docker Run (Slim Image, Recommended)
 ```bash
 docker run -d --name pingtunnel-server \
   --restart=always \
@@ -248,7 +249,7 @@ docker run -d --name pingtunnel-server \
   esrrhs/pingtunnel ./pingtunnel -type server -key 123456
 ```
 
-### 挂载配置文件运行
+### Running with Mounted Config File
 ```bash
 docker run -d --name pingtunnel-server \
   --restart=always \
@@ -257,3 +258,4 @@ docker run -d --name pingtunnel-server \
   -v /etc/pingtunnel/server.json:/app/server.json:ro \
   esrrhs/pingtunnel ./pingtunnel -c /app/server.json
 ```
+
