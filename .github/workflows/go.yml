@@ -23,7 +23,10 @@ jobs:
       - name: Build
         run: |
           go mod tidy
-          go build -v ./...
+          BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+          GIT_BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")}"
+          go build -v -ldflags="-X 'github.com/esrrhs/pingtunnel.BuildTime=${BUILD_TIME}' -X 'github.com/esrrhs/pingtunnel.GitCommit=${GIT_COMMIT}' -X 'github.com/esrrhs/pingtunnel.GitBranch=${GIT_BRANCH}'" ./...
 
       - name: Vet
         run: go vet ./...
@@ -45,15 +48,60 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check version change
+        id: check_version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          CURRENT_VERSION=$(sed -n 's/.*const Version = "\(.*\)".*/\1/p' version.go || true)
+          echo "Current version in version.go: ${CURRENT_VERSION}"
+
+          if [ -z "${CURRENT_VERSION}" ]; then
+            echo "No version found in version.go, skipping release."
+            echo "should_release=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          PREV_VERSION=""
+          if [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            if git cat-file -e "${BEFORE_SHA}:version.go" 2>/dev/null; then
+              PREV_VERSION=$(git show "${BEFORE_SHA}:version.go" | sed -n 's/.*const Version = "\(.*\)".*/\1/p' || true)
+            fi
+          fi
+          echo "Previous version: ${PREV_VERSION}"
+
+          if [ "${CURRENT_VERSION}" = "${PREV_VERSION}" ]; then
+            echo "Version has not changed (${CURRENT_VERSION}), skipping release."
+            echo "should_release=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # Check if tag already exists in repository
+          if git rev-parse "${CURRENT_VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${CURRENT_VERSION} already exists, skipping release to prevent duplicate."
+            echo "should_release=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "Version changed from '${PREV_VERSION}' to '${CURRENT_VERSION}'. Triggering release!"
+          echo "should_release=true" >> "${GITHUB_OUTPUT}"
+          echo "version=${CURRENT_VERSION}" >> "${GITHUB_OUTPUT}"
+
       - name: Set up Go
+        if: steps.check_version.outputs.should_release == 'true'
         uses: actions/setup-go@v5
         with:
           go-version: 1.25
 
       - name: Set up Android SDK
+        if: steps.check_version.outputs.should_release == 'true'
         uses: android-actions/setup-android@v3
 
       - name: Install Android NDK
+        if: steps.check_version.outputs.should_release == 'true'
         run: |
           set -euo pipefail
           # sdkmanager exits after consuming enough input; `yes` then gets SIGPIPE.
@@ -66,42 +114,45 @@ jobs:
           echo "ANDROID_API_LEVEL=21" >> "${GITHUB_ENV}"
 
       - name: Build release artifacts
+        if: steps.check_version.outputs.should_release == 'true'
         run: ./pack.sh
 
       - name: Prepare release metadata
+        if: steps.check_version.outputs.should_release == 'true'
         id: release_meta
         env:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
-          RUN_NUMBER: ${{ github.run_number }}
+          VERSION: ${{ steps.check_version.outputs.version }}
         run: |
           set -euo pipefail
 
-          TAG_NAME="master-${AFTER_SHA}"
-          RELEASE_NAME="master build ${RUN_NUMBER}"
+          TAG_NAME="${VERSION}"
+          RELEASE_NAME="${VERSION}"
 
           if [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            COMMIT_LINES="$(git log --pretty='- %h %s' "${AFTER_SHA}")"
+            COMMIT_LINES="$(git log -n 10 --pretty='- %h %s' "${AFTER_SHA}")"
           else
             COMMIT_LINES="$(git log --pretty='- %h %s' "${BEFORE_SHA}..${AFTER_SHA}")"
           fi
 
           if [ -z "${COMMIT_LINES}" ]; then
-            COMMIT_LINES="- ${AFTER_SHA:0:7} no commit messages found"
+            COMMIT_LINES="- ${AFTER_SHA:0:7} release version ${VERSION}"
           fi
 
           {
             echo "tag_name=${TAG_NAME}"
             echo "release_name=${RELEASE_NAME}"
             echo "body<<EOF"
-            echo "Automated release for commit ${AFTER_SHA} on master."
+            echo "Release ${VERSION} (${AFTER_SHA:0:7})"
             echo ""
-            echo "## Commits in this push"
+            echo "## Commits"
             echo "${COMMIT_LINES}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Create release and upload artifacts
+        if: steps.check_version.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_meta.outputs.tag_name }}
