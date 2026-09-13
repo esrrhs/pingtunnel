@@ -2,7 +2,6 @@
 
 [<img src="https://img.shields.io/github/license/esrrhs/pingtunnel">](https://github.com/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/languages/top/esrrhs/pingtunnel">](https://github.com/esrrhs/pingtunnel)
-[![Go Report Card](https://goreportcard.com/badge/github.com/esrrhs/pingtunnel)](https://goreportcard.com/report/github.com/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/v/release/esrrhs/pingtunnel">](https://github.com/esrrhs/pingtunnel/releases)
 [<img src="https://img.shields.io/github/downloads/esrrhs/pingtunnel/total">](https://github.com/esrrhs/pingtunnel/releases)
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
@@ -16,7 +15,7 @@ Pingtunnel is a tool that sends TCP/UDP traffic over ICMP.
 
 ## Usage & Detailed Documentation
 
-> 📖 **完整使用文档请参阅 [USAGE.md](USAGE.md)**：包含全部命令行参数列表、配置文件模式（`-c config.json`）、各场景代理设置（SOCKS5全局、GeoIP分流、TCP端口穿透、UDP转发、二级上游代理、端到端AES/ChaCha20加密）等。
+> 📖 **For detailed documentation, see [USAGE.md](USAGE.md)**: includes complete command-line parameters, configuration file usage (`-c config.json`), and setup guides for various proxy scenarios (global SOCKS5 proxy, GeoIP routing, TCP port forwarding, UDP forwarding, forward proxy, end-to-end AES/ChaCha20 encryption, etc.).
 
 ### Quick Start
 
@@ -66,7 +65,7 @@ sudo ./pingtunnel -c server.json
 ./pingtunnel -c client.json
 ```
 
-See [USAGE.md](USAGE.md#2-配置文件使用-config-file-mode) for JSON configuration templates and rules.
+See [USAGE.md](USAGE.md) for JSON configuration templates and rules.
 
 ### Use Android Client
 
