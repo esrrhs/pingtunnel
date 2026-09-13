@@ -19,6 +19,7 @@ func TestLoadConfig(t *testing.T) {
 		"encrypt": "aes128",
 		"encrypt_key": "secretkey",
 		"tcp_bs": 2097152,
+		"congestion": "bb",
 		"loglevel": "debug"
 	}`
 
@@ -51,6 +52,9 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if cfg.TCPBufferSize != 2097152 {
 		t.Errorf("expected tcp_bs 2097152, got %d", cfg.TCPBufferSize)
+	}
+	if cfg.Congestion != "bb" {
+		t.Errorf("expected congestion bb, got %s", cfg.Congestion)
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("expected loglevel debug, got %s", cfg.LogLevel)

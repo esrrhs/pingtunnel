@@ -138,6 +138,9 @@ Usage:
     -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
               The data file in sock5 filter mode, the default reading of the current directory GeoLite2-Country.mmdb
 
+    -congestion 拥塞控制算法，默认bb（带宽自适应算法，防止大流量打满网络断网），设为空表示不开启
+              Congestion control algorithm, default is 'bb', empty string means disabled
+
     -c        从指定json配置文件读取参数，命令行参数可覆盖配置文件
               Read parameters from the specified json config file, command line parameters take precedence
 `
@@ -175,6 +178,7 @@ func main() {
 	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
 	s5filter := flag.String("s5filter", "", "sock5 filter")
 	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
+	congestion := flag.String("congestion", "bb", "congestion control algorithm: bb or empty")
 	configFile := flag.String("c", "", "path to json config file")
 	flag.Usage = func() {
 		fmt.Print(usage)
@@ -283,6 +287,9 @@ func main() {
 		if !setFlags["s5ftfile"] && cfg.Sock5FilterFile != "" {
 			*s5ftfile = cfg.Sock5FilterFile
 		}
+		if !setFlags["congestion"] && cfg.Congestion != "" {
+			*congestion = cfg.Congestion
+		}
 	}
 
 	if *t != "client" && *t != "server" {
@@ -356,7 +363,7 @@ func main() {
 			loggo.Info("Forward proxy configured: %s", *forward)
 		}
 
-		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig, forwardConfig)
+		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig, forwardConfig, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -411,7 +418,7 @@ func main() {
 
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key, *icmpListen,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig, *sock5_user, *sock5_pass)
+			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig, *sock5_user, *sock5_pass, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
