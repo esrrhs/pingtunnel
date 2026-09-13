@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig) (*Server, error) {
+func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig, congestion string) (*Server, error) {
 	s := &Server{
 		icmpAddr:         icmpAddr,
 		exit:             false,
@@ -24,6 +24,7 @@ func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxp
 		connecttmeout:    connecttmeout,
 		cryptoConfig:     cryptoConfig,
 		forwardConfig:    forwardConfig,
+		congestion:       congestion,
 	}
 
 	if maxprocessthread > 0 {
@@ -46,6 +47,7 @@ type Server struct {
 	connecttmeout    int
 	cryptoConfig     *CryptoConfig
 	forwardConfig    *ForwardConfig
+	congestion       string
 
 	icmpAddr string
 
@@ -218,6 +220,9 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 		fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, (int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress),
 			(int)(packet.my.TcpmodeStat))
+		if p.congestion == "bb" {
+			fm.SetCongestion(&network.BBCongestion{})
+		}
 
 		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
 			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode), activity: make(chan struct{}, 1)}
@@ -529,7 +534,7 @@ mainLoop:
 		diffsend := now.Sub(conn.activeSendTime)
 		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
 		tcpdiffsend := now.Sub(tcpActiveSendTime)
-		if diffrecv > time.Second*(time.Duration(conn.timeout)) || diffsend > time.Second*(time.Duration(conn.timeout)) ||
+		if (diffrecv > time.Second*(time.Duration(conn.timeout)) && diffsend > time.Second*(time.Duration(conn.timeout))) ||
 			(tcpdiffrecv > time.Second*(time.Duration(conn.timeout)) && tcpdiffsend > time.Second*(time.Duration(conn.timeout))) {
 			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
@@ -699,7 +704,7 @@ func (p *Server) checkTimeoutConn() {
 		}
 		diffrecv := now.Sub(conn.activeRecvTime)
 		diffsend := now.Sub(conn.activeSendTime)
-		if diffrecv > time.Second*(time.Duration(conn.timeout)) || diffsend > time.Second*(time.Duration(conn.timeout)) {
+		if diffrecv > time.Second*(time.Duration(conn.timeout)) && diffsend > time.Second*(time.Duration(conn.timeout)) {
 			conn.close = true
 		}
 	}
