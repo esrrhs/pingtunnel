@@ -143,6 +143,9 @@ Usage:
 
     -c        从指定json配置文件读取参数，命令行参数可覆盖配置文件
               Read parameters from the specified json config file, command line parameters take precedence
+
+    -v, -version 打印版本及编译构建信息
+              Print version and build information
 `
 
 func main() {
@@ -180,11 +183,18 @@ func main() {
 	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
 	congestion := flag.String("congestion", "bb", "congestion control algorithm: bb or empty")
 	configFile := flag.String("c", "", "path to json config file")
+	showVersion := flag.Bool("v", false, "show version and build info")
+	showVersionLong := flag.Bool("version", false, "show version and build info")
 	flag.Usage = func() {
 		fmt.Print(usage)
 	}
 
 	flag.Parse()
+
+	if *showVersion || *showVersionLong {
+		fmt.Println("pingtunnel " + pingtunnel.GetVersionInfo())
+		return
+	}
 
 	// Track which flags were explicitly set via command line
 	setFlags := make(map[string]bool)
@@ -347,7 +357,7 @@ func main() {
 		NoLogFile: *nolog > 0,
 		NoPrint:   *noprint > 0,
 	})
-	loggo.Info("start...")
+	loggo.Info("start pingtunnel (%s)...", pingtunnel.GetVersionInfo())
 	loggo.Info("key %d", *key)
 
 	if *t == "server" {
