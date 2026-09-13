@@ -46,6 +46,7 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
 | `-noprint` | `0` | Set to `1` to suppress console output |
 | `-loglevel` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
 | `-profile` | `0` | Performance profiling (pprof) listening port (`0` to disable) |
+| `-v`, `-version` | `false` | Print version and build information |
 
 ### Client Flags
 
@@ -69,6 +70,7 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
 | `-tcp_gz` | `0` | Enable compression when packet size exceeds this threshold (bytes); `0` to disable |
 | `-tcp_stat`| `0` | Set to `1` to periodically output TCP flow control statistics |
 | `-timeout` | `60` | Connection idle timeout in seconds before release |
+| `-v`, `-version` | `false` | Print version and build information |
 
 ---
 
