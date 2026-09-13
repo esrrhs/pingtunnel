@@ -86,6 +86,12 @@ rm pack -rf
 rm pack.zip -f
 mkdir pack
 
+BUILD_TIME="${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+GIT_COMMIT="${GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
+GIT_BRANCH="${GIT_BRANCH:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")}"
+
+LDFLAGS="-s -w -X 'github.com/esrrhs/pingtunnel.BuildTime=${BUILD_TIME}' -X 'github.com/esrrhs/pingtunnel.GitCommit=${GIT_COMMIT}' -X 'github.com/esrrhs/pingtunnel.GitBranch=${GIT_BRANCH}'"
+
 for line in $build_list; do
   os=$(echo "$line" | awk -F"/" '{print $1}')
   arch=$(echo "$line" | awk -F"/" '{print $2}')
@@ -102,9 +108,9 @@ for line in $build_list; do
       echo "os="$os" arch="$arch" toolchain setup fail"
       exit 1
     }
-    CGO_ENABLED=1 GOOS=$os GOARCH=$arch CC="$ANDROID_CC" CXX="$ANDROID_CXX" go build -ldflags="-s -w"
+    CGO_ENABLED=1 GOOS=$os GOARCH=$arch CC="$ANDROID_CC" CXX="$ANDROID_CXX" go build -ldflags="${LDFLAGS}"
   else
-    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w"
+    CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="${LDFLAGS}"
   fi
 
   if [ $? -ne 0 ]; then
