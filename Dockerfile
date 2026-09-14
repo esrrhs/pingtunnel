@@ -10,5 +10,4 @@ RUN cd cmd && go build -v -ldflags="-s -w -X 'github.com/esrrhs/pingtunnel.Build
 
 FROM debian:bookworm-slim
 COPY --from=build-env /app/pingtunnel .
-COPY GeoLite2-Country.mmdb .
 WORKDIR ./

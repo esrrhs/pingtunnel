@@ -15,11 +15,10 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
   - [Flag Precedence](#flag-precedence)
 - [3. Typical Proxy Scenarios](#3-typical-proxy-scenarios)
   - [Scenario 1: Global SOCKS5 Proxy](#scenario-1-global-socks5-proxy)
-  - [Scenario 2: GeoIP Split Routing (Domestic / International Bypass)](#scenario-2-geoip-split-routing-domestic--international-bypass)
-  - [Scenario 3: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)](#scenario-3-specific-remote-tcp-port-forwarding-eg-ssh--rdp)
-  - [Scenario 4: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)](#scenario-4-specific-udp-traffic-forwarding-eg-dns--gaming)
-  - [Scenario 5: Upstream Forward Proxy](#scenario-5-upstream-forward-proxy)
-  - [Scenario 6: End-to-End High-Strength Encryption](#scenario-6-end-to-end-high-strength-encryption)
+  - [Scenario 2: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)](#scenario-2-specific-remote-tcp-port-forwarding-eg-ssh--rdp)
+  - [Scenario 3: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)](#scenario-3-specific-udp-traffic-forwarding-eg-dns--gaming)
+  - [Scenario 4: Upstream Forward Proxy](#scenario-4-upstream-forward-proxy)
+  - [Scenario 5: End-to-End High-Strength Encryption](#scenario-5-end-to-end-high-strength-encryption)
 - [4. Docker and Daemon Execution](#4-docker-and-daemon-execution)
 
 ---
@@ -60,8 +59,6 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
 | `-sock5` | `0` | Set to `1` to enable local SOCKS5 proxy mode (automatically enables TCP) |
 | `-s5user` | `""` | Local SOCKS5 username authentication (optional) |
 | `-s5pass` | `""` | Local SOCKS5 password authentication (optional) |
-| `-s5filter`| `""` | SOCKS5 split routing country code (e.g. `CN` to connect directly without tunneling) |
-| `-s5ftfile`| `GeoLite2-Country.mmdb` | GeoIP database file path for split routing |
 | `-congestion` | `bb` | Congestion control algorithm; default `bb` (bandwidth-adaptive algorithm similar to BBR to prevent bufferbloat / disconnections during heavy downloads). Pass empty string `""` to disable |
 | `-tcp` | `0` | Whether to forward in TCP mode (`0` for UDP service, `1` for TCP) |
 | `-tcp_bs` | `1048576` (1MB)| TCP sliding window send/receive buffer size |
@@ -163,19 +160,7 @@ Useful when client networks block outbound TCP/UDP traffic but allow ICMP (Ping)
 
 ---
 
-### Scenario 2: GeoIP Split Routing (Domestic / International Bypass)
-Allows domestic destination IPs to connect directly without tunneling, while routing foreign IPs through the ICMP tunnel.
-
-1. **Ensure `GeoLite2-Country.mmdb` is placed in the working directory.**
-2. **Start Client**:
-   ```bash
-   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -sock5 1 -key 123456 -s5filter CN
-   ```
-3. **Behavior**: Direct connection is used for domestic (CN) addresses without consuming tunnel bandwidth; foreign destinations are routed through the tunnel.
-
----
-
-### Scenario 3: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)
+### Scenario 2: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)
 Useful when exposing a service inside the server's private network (e.g. `192.168.1.100:22` or `:3389`).
 
 1. **Start Server**:
@@ -194,7 +179,7 @@ Useful when exposing a service inside the server's private network (e.g. `192.16
 
 ---
 
-### Scenario 4: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)
+### Scenario 3: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)
 Useful when local networks restrict direct outbound UDP port 53 (DNS) or throttle game UDP traffic.
 
 1. **Start Client (forwards local UDP 5353 to remote 8.8.8.8:53)**:
@@ -208,7 +193,7 @@ Useful when local networks restrict direct outbound UDP port 53 (DNS) or throttl
 
 ---
 
-### Scenario 5: Upstream Forward Proxy
+### Scenario 4: Upstream Forward Proxy
 Useful when the Pingtunnel server cannot directly reach external internet services and needs an enterprise egress proxy (SOCKS5 / HTTP Proxy).
 
 1. **Configure `-forward` on Server**:
@@ -225,7 +210,7 @@ Useful when the Pingtunnel server cannot directly reach external internet servic
 
 ---
 
-### Scenario 6: End-to-End High-Strength Encryption
+### Scenario 5: End-to-End High-Strength Encryption
 By default, traffic uses numeric key verification. In sensitive network environments, AEAD encryption (`aes128`, `aes256`, `chacha20`) can be enabled.
 
 1. **Server**:

@@ -15,7 +15,7 @@ Pingtunnel is a tool that sends TCP/UDP traffic over ICMP.
 
 ## Usage & Detailed Documentation
 
-> 📖 **For detailed documentation, see [USAGE.md](USAGE.md)**: includes complete command-line parameters, configuration file usage (`-c config.json`), and setup guides for various proxy scenarios (global SOCKS5 proxy, GeoIP routing, TCP port forwarding, UDP forwarding, forward proxy, end-to-end AES/ChaCha20 encryption, etc.).
+> 📖 **For detailed documentation, see [USAGE.md](USAGE.md)**: includes complete command-line parameters, configuration file usage (`-c config.json`), and setup guides for various proxy scenarios (global SOCKS5 proxy, TCP port forwarding, UDP forwarding, forward proxy, end-to-end AES/ChaCha20 encryption, etc.).
 
 ### Quick Start
 

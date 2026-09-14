@@ -118,7 +118,7 @@ func TestCongestionControlAndTimeoutSimulation(t *testing.T) {
 	}
 
 	c, err := NewClient(":4455", "127.0.0.1", "127.0.0.1:80", 60, 0, "0.0.0.0",
-		1, 1024*1024, 20000, 400, 0, 0, 0, 0, nil, nil, "", "", "bb")
+		1, 1024*1024, 20000, 400, 0, 0, 0, 0, nil, "", "", "bb")
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}
