@@ -36,8 +36,6 @@ type Config struct {
 	Profile          int    `json:"profile,omitempty"`
 	ConnectTimeout   int    `json:"conntt,omitempty"`
 	Forward          string `json:"forward,omitempty"`
-	Sock5Filter      string `json:"s5filter,omitempty"`
-	Sock5FilterFile  string `json:"s5ftfile,omitempty"`
 }
 
 // LoadConfig reads and unmarshals a Config JSON file.

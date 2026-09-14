@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
-	"github.com/esrrhs/gohome/thirdparty"
 	"github.com/esrrhs/pingtunnel"
-	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"strconv"
@@ -58,58 +56,49 @@ Usage:
     -maxprt   server最大处理线程数，默认100
               max process thread in server, default 100
 
-    -maxprb   server最大处理线程buffer数，默认1000
+    -maxprb   server最大处理线程buffer，默认1000
               max process thread's buffer in server, default 1000
 
-    -conntt   server发起连接到目标地址的超时时间，默认1000ms
-              The timeout period for the server to initiate a connection to the destination address. The default is 1000ms.
+    -conntt   server与目标服务连接的超时时间，默认1000ms
+              the connect call's timeout, default 1000ms
 
-    -forward  通过指定的代理转发TCP流量，支持socks5和http代理，如 socks5://localhost:2080 或 http://localhost:8080
-              Forward TCP traffic through the specified proxy. Supports socks5 and http proxies, e.g. socks5://localhost:2080 or http://localhost:8080
+    -forward  设置前置/上游二级代理，支持socks5://host:port或http://host:port
+              Forward TCP traffic through an upstream proxy (socks5://host:port or http://host:port)
 
 客户端参数client param:
 
-    -l        本地的地址，发到这个端口的流量将转发到服务器
-              Local address, traffic sent to this port will be forwarded to the server
+    -l        本地侦听地址
+              listen addr, default :4455
 
-    -s        服务器的地址，流量将通过隧道转发到这个服务器
-              The address of the server, the traffic will be forwarded to this server through the tunnel
+    -s        服务器地址，侦听此地址上的ICMP流量
+              server addr
 
-    -t        远端服务器转发的目的地址，流量将转发到这个地址
-              Destination address forwarded by the remote server, traffic will be forwarded to this address
+    -t        目标地址，服务端向此地址转发流量
+              target addr
 
-    -icmp_l   本地地址，侦听此地址上的ICMP流量，默认为0.0.0.0
-              Local address, listen for ICMP traffic on this address, defaults to 0.0.0.0
+    -timeout  本地连接超时时间，默认60s
+              conn timeout, default 60s
 
-    -timeout  本地记录连接超时的时间，单位是秒，默认60s
-              The time when the local record connection timed out, in seconds, 60 seconds by default
-
-    -key      设置的密码，默认0
+    -key      设置的密码，默认0, 参数为int类型，范围从0-2147483647，不可夹杂字母特殊符号
               Set password, default 0
 
-    -encrypt  加密模式，支持aes128, aes256, chacha20
-              Encryption mode: aes128, aes256, chacha20
+    -tcp      设置是否按tcp模式转发，默认0为udp模式，1为tcp模式
+              Set whether to forward in tcp mode, default 0 is udp mode, 1 is tcp mode
 
-    -encrypt-key 加密密钥，支持base64编码或密码短语
-              Encryption key, supports base64 encoded key or passphrase
+    -tcp_bs   tcp模式发送接收缓冲区大小，默认1MB
+              tcp mode buffer size, default 1MB
 
-    -tcp      设置是否转发tcp，默认0
-              Set the switch to forward tcp, the default is 0
+    -tcp_mw   tcp模式最大窗口，默认20000
+              tcp mode max win, default 20000
 
-    -tcp_bs   tcp的发送接收缓冲区大小，默认1MB
-              Tcp send and receive buffer size, default 1MB
+    -tcp_rst  tcp模式超时重传时间，默认400ms
+              tcp mode resend time ms, default 400ms
 
-    -tcp_mw   tcp的最大窗口，默认20000
-              The maximum window of tcp, the default is 20000
+    -tcp_gz   tcp模式数据大于指定大小启用压缩，默认0表示不压缩
+              tcp data gz, default 0 is off
 
-    -tcp_rst  tcp的超时发送时间，默认400ms
-              Tcp timeout resend time, default 400ms
-
-    -tcp_gz   当数据包超过这个大小，tcp将压缩数据，0表示不压缩，默认0
-              Tcp will compress data when the packet exceeds this size, 0 means no compression, default 0
-
-    -tcp_stat 打印tcp的监控，默认0
-              Print tcp connection statistic, default 0 is off
+    -tcp_stat 打印tcp统计信息，默认0不打印
+              print tcp stat, default 0 is off
 
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
@@ -120,23 +109,17 @@ Usage:
     -loglevel 日志文件等级，默认info
               log level, default is info
 
-    -sock5    开启sock5转发，默认0
-              Turn on sock5 forwarding, default 0 is off
+    -sock5    开启sock5转发，隐藏参数-tcp 1
+              sock5 mode, implicitly open tcp, so no target server is needed
 
-    -s5user   sock5用户名，默认为空不需要认证
+    -s5user   sock5身份认证用户名，默认空无密码
               sock5 username, default is empty and no authentication is required
 
-    -s5pass   sock5密码，默认为空不需要认证
+    -s5pass   sock5身份认证密码，默认空无密码
               sock5 password, default is empty and no authentication is required
 
     -profile  在指定端口开启性能检测，默认0不开启
               Enable performance detection on the specified port. The default 0 is not enabled.
-
-    -s5filter sock5模式设置转发过滤，默认全转发，设置CN代表CN地区的直连不转发
-              Set the forwarding filter in the sock5 mode. The default is full forwarding. For example, setting the CN indicates that the Chinese address is not forwarded.
-
-    -s5ftfile sock5模式转发过滤的数据文件，默认读取当前目录的GeoLite2-Country.mmdb
-              The data file in sock5 filter mode, the default reading of the current directory GeoLite2-Country.mmdb
 
     -congestion 拥塞控制算法，默认bb（带宽自适应算法，防止大流量打满网络断网），设为空表示不开启
               Congestion control algorithm, default is 'bb', empty string means disabled
@@ -179,8 +162,6 @@ func main() {
 	profile := flag.Int("profile", 0, "open profile")
 	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
 	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
-	s5filter := flag.String("s5filter", "", "sock5 filter")
-	s5ftfile := flag.String("s5ftfile", "GeoLite2-Country.mmdb", "sock5 filter file")
 	congestion := flag.String("congestion", "bb", "congestion control algorithm: bb or empty")
 	configFile := flag.String("c", "", "path to json config file")
 	showVersion := flag.Bool("v", false, "show version and build info")
@@ -291,12 +272,6 @@ func main() {
 		if !setFlags["forward"] && cfg.Forward != "" {
 			*forward = cfg.Forward
 		}
-		if !setFlags["s5filter"] && cfg.Sock5Filter != "" {
-			*s5filter = cfg.Sock5Filter
-		}
-		if !setFlags["s5ftfile"] && cfg.Sock5FilterFile != "" {
-			*s5ftfile = cfg.Sock5FilterFile
-		}
 		if !setFlags["congestion"] && cfg.Congestion != "" {
 			*congestion = cfg.Congestion
 		}
@@ -399,36 +374,9 @@ func main() {
 			*tcpmode_stat = 0
 		}
 
-		if len(*s5filter) > 0 {
-			err := thirdparty.LoadGeoip2(*s5ftfile)
-			if err != nil {
-				loggo.Error("Load Sock5 ip file ERROR: %s", err.Error())
-				return
-			}
-		}
-		filter := func(addr string) bool {
-			if len(*s5filter) <= 0 {
-				return true
-			}
-
-			taddr, err := net.ResolveTCPAddr("tcp", addr)
-			if err != nil {
-				return false
-			}
-
-			ret, err := thirdparty.GetGeoipCountryIsoCode(taddr.IP.String())
-			if err != nil {
-				return false
-			}
-			if len(ret) <= 0 {
-				return false
-			}
-			return ret != *s5filter
-		}
-
 		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key, *icmpListen,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, &filter, cryptoConfig, *sock5_user, *sock5_pass, *congestion)
+			*tcpmode_stat, *open_sock5, *maxconn, cryptoConfig, *sock5_user, *sock5_pass, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
