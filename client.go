@@ -6,7 +6,6 @@ import (
 	"github.com/esrrhs/gohome/network"
 	"golang.org/x/net/icmp"
 	"google.golang.org/protobuf/proto"
-	"io"
 	"math"
 	"math/rand"
 	"net"
@@ -23,7 +22,7 @@ const (
 
 func NewClient(addr string, server string, target string, timeout int, key int, icmpAddr string,
 	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int, open_sock5 int, maxconn int, sock5_filter *func(addr string) bool, cryptoConfig *CryptoConfig,
+	tcpmode_stat int, open_sock5 int, maxconn int, cryptoConfig *CryptoConfig,
 	sock5_user string, sock5_pass string, congestion string) (*Client, error) {
 
 	var ipaddr *net.UDPAddr
@@ -70,7 +69,6 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		open_sock5:            open_sock5,
 		maxconn:               maxconn,
 		pongTime:              now,
-		sock5_filter:          sock5_filter,
 		sock5_user:            sock5_user,
 		sock5_pass:            sock5_pass,
 		cryptoConfig:          cryptoConfig,
@@ -103,7 +101,6 @@ type Client struct {
 	tcpmode_stat          int
 
 	open_sock5   int
-	sock5_filter *func(addr string) bool
 	sock5_user   string
 	sock5_pass   string
 	cryptoConfig *CryptoConfig
@@ -937,16 +934,7 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 		}
 
 		loggo.Info("accept new sock5 tcp conn: %s", req.Address)
-
-		if p.sock5_filter == nil {
-			p.AcceptTcpConn(conn, req.Address)
-		} else {
-			if (*p.sock5_filter)(req.Address) {
-				p.AcceptTcpConn(conn, req.Address)
-				return
-			}
-			p.AcceptDirectTcpConn(conn, req.Address)
-		}
+		p.AcceptTcpConn(conn, req.Address)
 	case socks5CmdUDPAssociate:
 		p.AcceptSock5UDPConn(conn, req.Address)
 	default:
@@ -1188,44 +1176,4 @@ func (p *Client) remoteError(uuid string) {
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
 		0, p.cryptoConfig)
-}
-
-func (p *Client) AcceptDirectTcpConn(conn *net.TCPConn, targetAddr string) {
-
-	defer common.CrashLog()
-
-	p.workResultLock.Add(1)
-	defer p.workResultLock.Done()
-
-	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
-
-	loggo.Info("client accept new direct local tcp %s %s", tcpsrcaddr.String(), targetAddr)
-
-	tcpaddrTarget, err := net.ResolveTCPAddr("tcp", targetAddr)
-	if err != nil {
-		loggo.Info("direct local tcp ResolveTCPAddr fail: %s %s", targetAddr, err.Error())
-		return
-	}
-
-	targetconn, err := net.DialTCP("tcp", nil, tcpaddrTarget)
-	if err != nil {
-		loggo.Info("direct local tcp DialTCP fail: %s %s", targetAddr, err.Error())
-		return
-	}
-
-	go p.transfer(conn, targetconn, conn.RemoteAddr().String(), targetconn.RemoteAddr().String())
-	go p.transfer(targetconn, conn, targetconn.RemoteAddr().String(), conn.RemoteAddr().String())
-
-	loggo.Info("client accept new direct local tcp ok %s %s", tcpsrcaddr.String(), targetAddr)
-}
-
-func (p *Client) transfer(destination io.WriteCloser, source io.ReadCloser, dst string, src string) {
-
-	defer common.CrashLog()
-
-	defer destination.Close()
-	defer source.Close()
-	loggo.Info("client begin transfer from %s -> %s", src, dst)
-	io.Copy(destination, source)
-	loggo.Info("client end transfer from %s -> %s", src, dst)
 }
