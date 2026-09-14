@@ -18,7 +18,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.25
+          go-version: 1.26
 
       - name: Build
         run: |
@@ -94,7 +94,7 @@ jobs:
         if: steps.check_version.outputs.should_release == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: 1.25
+          go-version: 1.26
 
       - name: Set up Android SDK
         if: steps.check_version.outputs.should_release == 'true'
