@@ -3,7 +3,7 @@ module github.com/esrrhs/pingtunnel
 go 1.26.0
 
 require (
-	github.com/esrrhs/gohome v0.0.0-20260919145331-036124786531
+	github.com/esrrhs/gohome v0.0.0-20261024072020-1170d06f44ad
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
 	google.golang.org/protobuf v1.36.12
@@ -22,4 +22,5 @@ require (
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/xtaci/kcp-go v5.4.20+incompatible // indirect
 	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )

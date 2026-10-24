@@ -4,8 +4,8 @@ import (
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
-	"golang.org/x/net/icmp"
 	"google.golang.org/protobuf/proto"
+	"io"
 	"math"
 	"math/rand"
 	"net"
@@ -117,7 +117,7 @@ type Client struct {
 
 	icmpAddr string
 
-	conn          *icmp.PacketConn
+	conn          icmpPacketConn
 	listenConn    *net.UDPConn
 	tcplistenConn *net.TCPListener
 
@@ -130,6 +130,10 @@ type Client struct {
 	recvPacketSize         uint64
 	localAddrToConnMapSize int
 	localIdToConnMapSize   int
+
+	// connCount tracks the conn maps exactly (insert/delete); the maxconn
+	// gates read it live, unlike the once-per-second showNet snapshot.
+	connCount atomic.Int64
 
 	recvcontrol chan int
 
@@ -277,7 +281,7 @@ func (p *Client) maybeRefreshServerAddr(now time.Time) {
 
 func (p *Client) Run() error {
 
-	conn, err := listenICMP(p.icmpAddr)
+	conn, err := icmpListen(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
@@ -308,7 +312,7 @@ func (p *Client) Run() error {
 
 	recv := make(chan *Packet, 10000)
 	p.recvcontrol = make(chan int, 1)
-	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv, p.cryptoConfig)
+	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 
 	go func() {
 		defer common.CrashLog()
@@ -407,8 +411,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
 
-	if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
-		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.localIdToConnMapSize, tcpsrcaddr.String())
+	if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.connCount.Load(), tcpsrcaddr.String())
 		return
 	}
 
@@ -442,7 +446,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			f := e.Value.(*network.Frame)
 			mb, _ := clientConn.fm.MarshalFrame(f)
 			p.sequence++
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat,
 				p.timeout, p.cryptoConfig)
@@ -474,9 +478,11 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvUnix := atomic.Int64{}
-	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
-	tcpActiveSendTime := common.GetNowUpdateInSecond()
+	// readEOF closes when the local app half-closes its write side: the conn
+	// stays open for the remaining server->app data until the remote closes
+	// or the inactivity gate fires. Real read errors still tear the conn down
+	// via readErr.
+	readEOF := make(chan struct{})
 	readErr := make(chan error, 1)
 	stopRead := make(chan struct{})
 
@@ -507,6 +513,15 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				if ok && nerr.Timeout() {
 					continue
 				}
+				if err == io.EOF {
+					// The app half-closed its write side (or closed after
+					// reading everything): tell the server and keep the recv
+					// direction open until the remote closes.
+					clientConn.fm.CloseSend()
+					notifyActivity(clientConn.activity)
+					close(readEOF)
+					return
+				}
 				select {
 				case readErr <- err:
 				default:
@@ -518,12 +533,12 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			}
 
 			clientConn.fm.WriteSendBuffer(bytes[:n])
-			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 			p.touchActivity()
 			notifyActivity(clientConn.activity)
 		}
 	}()
 
+	halfClosed := false
 	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
 
 mainLoop:
@@ -536,16 +551,21 @@ mainLoop:
 		sendlist := clientConn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			clientConn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
+				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+					// Only real payload counts as conn activity: heartbeat
+					// and ACK frames keep the tunnel alive without keeping
+					// an idle conn alive.
+					clientConn.activeSendTime = now
+				}
 				mb, err := clientConn.fm.MarshalFrame(f)
 				if err != nil {
 					loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
 					continue
 				}
 				p.sequence++
-				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+				sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 					SEND_PROTO, RECV_PROTO, p.key,
 					p.tcpmode, 0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
@@ -570,7 +590,6 @@ mainLoop:
 			}
 			if n > 0 {
 				clientConn.fm.SkipRecvBuffer(n)
-				tcpActiveSendTime = now
 				p.touchActivity()
 			}
 		}
@@ -582,15 +601,29 @@ mainLoop:
 				clientConn.fm.Close()
 				break mainLoop
 			}
+		case <-readEOF:
+			// The app half-closed or closed: stop reading, keep relaying the
+			// server->app direction until the remote closes or the conn goes
+			// inactive.
+			if !halfClosed {
+				halfClosed = true
+				loggo.Info("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+			}
 		default:
 		}
 
-		diffrecv := now.Sub(clientConn.activeRecvTime)
-		diffsend := now.Sub(clientConn.activeSendTime)
-		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
-		tcpdiffsend := now.Sub(tcpActiveSendTime)
-		if (diffrecv > time.Second*(time.Duration(p.timeout)) && diffsend > time.Second*(time.Duration(p.timeout))) ||
-			(tcpdiffrecv > time.Second*(time.Duration(p.timeout)) && tcpdiffsend > time.Second*(time.Duration(p.timeout))) {
+		// The conn is dead only when no real payload flowed in either
+		// direction for the whole timeout window and nothing is waiting to be
+		// delivered: a slow reader is backpressure, not idleness.
+		idleRecv := now.Sub(clientConn.activeRecvTime) > time.Second*(time.Duration(p.timeout))
+		idleSend := now.Sub(clientConn.activeSendTime) > time.Second*(time.Duration(p.timeout))
+		// A conn with unacknowledged frames in flight or undelivered bytes is
+		// under backpressure, not idle: the peer (or the local app) is slow,
+		// and closing here would cut the transfer short.
+		// The peer's heartbeat proves the tunnel is stalled on backpressure
+		// (its send window is full), not dead: never reap while it beats.
+		hbFresh := time.Since(time.Unix(0, clientConn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(p.timeout))
+		if idleRecv && idleSend && !hbFresh && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			clientConn.fm.Close()
 			break
@@ -613,6 +646,11 @@ mainLoop:
 					clientConn.fm.Close()
 					break mainLoop
 				}
+			case <-readEOF:
+				if !halfClosed {
+					halfClosed = true
+					loggo.Info("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+				}
 			case <-time.After(wait):
 			}
 		} else {
@@ -634,7 +672,7 @@ mainLoop:
 			f := e.Value.(*network.Frame)
 			mb, _ := clientConn.fm.MarshalFrame(f)
 			p.sequence++
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, 0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
@@ -642,14 +680,12 @@ mainLoop:
 			p.sendPacketSize += (uint64)(len(mb))
 		}
 
-		nodatarecv := true
 		if clientConn.fm.GetRecvBufferSize() > 0 {
 			rr := clientConn.fm.GetRecvReadLineBuffer()
 			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
 			n, _ := conn.Write(rr)
 			if n > 0 {
 				clientConn.fm.SkipRecvBuffer(n)
-				nodatarecv = false
 			}
 		}
 
@@ -660,8 +696,12 @@ mainLoop:
 		}
 
 		remoteclosed := clientConn.fm.IsRemoteClosed()
-		if remoteclosed && nodatarecv {
+		if remoteclosed && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.CloseFlushed() {
 			loggo.Info("remote conn had closed %s %s", clientConn.id, clientConn.tcpaddr.String())
+			break
+		}
+		if halfClosed && clientConn.fm.IsRemoteSendClosed() && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.CloseFlushed() {
+			loggo.Info("both sides send-closed %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 
@@ -701,8 +741,8 @@ func (p *Client) Accept() error {
 		now := common.GetNowUpdateInSecond()
 		clientConn := p.getClientConnByAddr(srcaddr.String())
 		if clientConn == nil {
-			if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
-				loggo.Info("too many connections %d, client accept new local udp fail %s", p.localIdToConnMapSize, srcaddr.String())
+			if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+				loggo.Info("too many connections %d, client accept new local udp fail %s", p.connCount.Load(), srcaddr.String())
 				continue
 			}
 			uuid := common.UniqueId()
@@ -712,7 +752,7 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeSendTime = now
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
+		sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
 			SEND_PROTO, RECV_PROTO, p.key,
 			clientConn.tcpmode, 0, 0, 0, 0, 0,
 			p.timeout, p.cryptoConfig)
@@ -727,6 +767,12 @@ func (p *Client) Accept() error {
 }
 
 func (p *Client) processPacket(packet *Packet) {
+
+	// The kernel echoes our own echo requests back as replies with the
+	// original payload; a client only consumes genuine replies.
+	if packet.icmpType != RECV_PROTO {
+		return
+	}
 
 	if packet.my.Rproto >= 0 {
 		return
@@ -754,6 +800,13 @@ func (p *Client) processPacket(packet *Packet) {
 	if packet.my.Type == (int32)(MyMsg_KICK) {
 		clientConn := p.getClientConnById(packet.my.Id)
 		if clientConn != nil {
+			if clientConn.fm.IsRemoteClosed() && clientConn.fm.GetRecvBufferSize() > 0 {
+				// The remote already confirmed this conn and the tail is
+				// still being delivered to the local app: a KICK for a stale
+				// retransmit must not cut that delivery short.
+				loggo.Info("ignore kick, delivering tail %s", packet.my.Id)
+				return
+			}
 			p.close(clientConn)
 			loggo.Info("remote kick local %s", packet.my.Id)
 		}
@@ -770,7 +823,6 @@ func (p *Client) processPacket(packet *Packet) {
 	}
 
 	now := common.GetNowUpdateInSecond()
-	clientConn.activeRecvTime = now
 
 	if clientConn.tcpmode > 0 {
 		f := &network.Frame{}
@@ -779,10 +831,17 @@ func (p *Client) processPacket(packet *Packet) {
 			loggo.Error("Unmarshal tcp Error %s", err)
 			return
 		}
+		if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+			// Only payload frames count as conn activity; ACK/HB frames must
+			// not keep an idle conn alive.
+			clientConn.activeRecvTime = now
+		}
 
 		clientConn.fm.OnRecvFrame(f)
 		notifyActivity(clientConn.activity)
 	} else {
+		clientConn.activeRecvTime = now
+
 		if packet.my.Data == nil {
 			return
 		}
@@ -828,6 +887,7 @@ func (p *Client) close(clientConn *ClientConn) {
 	if clientConn.addrKey != "" {
 		p.localAddrToConnMap.Delete(clientConn.addrKey)
 	}
+	p.connCount.Add(-1)
 }
 
 func (p *Client) checkTimeoutConn() {
@@ -870,7 +930,7 @@ func (p *Client) checkTimeoutConn() {
 func (p *Client) ping() {
 	now := time.Now()
 	b, _ := now.MarshalBinary()
-	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
+	sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
 		0, p.cryptoConfig)
@@ -900,6 +960,11 @@ func (p *Client) showNet() {
 	p.recvPacketSize = 0
 }
 
+// socks5HandshakeTimeout bounds the SOCKS5 method negotiation and request
+// read: a conn that connects and stalls would otherwise pin its goroutine and
+// fd forever, and block Client.Stop. Package-level so tests can shorten it.
+var socks5HandshakeTimeout = time.Minute
+
 func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 
 	defer common.CrashLog()
@@ -907,6 +972,7 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
+	_ = conn.SetDeadline(time.Now().Add(socks5HandshakeTimeout))
 	var err error = nil
 	if err = network.Sock5HandshakeBy(conn, p.sock5_user, p.sock5_pass); err != nil {
 		loggo.Error("socks handshake: %s", err)
@@ -920,6 +986,7 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 		conn.Close()
 		return
 	}
+	_ = conn.SetDeadline(time.Time{})
 
 	switch req.Command {
 	case socks5CmdConnect:
@@ -1050,8 +1117,8 @@ func (p *Client) recvSock5UDP(relayConn *net.UDPConn, expectedIP net.IP, expecte
 		connKey := p.sock5UDPConnKey(relayConn, srcaddr, targetAddr)
 		clientConn := p.getClientConnByAddr(connKey)
 		if clientConn == nil {
-			if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
-				loggo.Info("too many connections %d, client accept new sock5 udp fail %s", p.localIdToConnMapSize, srcaddr.String())
+			if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+				loggo.Info("too many connections %d, client accept new sock5 udp fail %s", p.connCount.Load(), srcaddr.String())
 				continue
 			}
 			uuid := common.UniqueId()
@@ -1072,7 +1139,7 @@ func (p *Client) recvSock5UDP(relayConn *net.UDPConn, expectedIP net.IP, expecte
 
 		clientConn.activeSendTime = now
 
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), payload,
+		sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), payload,
 			SEND_PROTO, RECV_PROTO, p.key,
 			0, 0, 0, 0, 0, 0,
 			p.timeout, p.cryptoConfig)
@@ -1153,6 +1220,7 @@ func (p *Client) addClientConn(uuid string, addr string, clientConn *ClientConn)
 	clientConn.addrKey = addr
 	p.localAddrToConnMap.Store(addr, clientConn)
 	p.localIdToConnMap.Store(uuid, clientConn)
+	p.connCount.Add(1)
 }
 
 func (p *Client) getClientConnByAddr(addr string) *ClientConn {
@@ -1172,7 +1240,7 @@ func (p *Client) getClientConnById(uuid string) *ClientConn {
 }
 
 func (p *Client) remoteError(uuid string) {
-	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
+	sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
 		0, p.cryptoConfig)

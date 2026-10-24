@@ -37,6 +37,28 @@ jobs:
       - name: Test
         run: go test -v ./...
 
+  # The build job above runs the e2e suite unprivileged (in-process fake
+  # underlay). This job runs the same suite over real raw ICMP sockets as
+  # root, covering the kernel path the fake cannot: raw-socket behavior and
+  # the kernel's automatic echo replies. REQUIRE_REAL_ICMP makes the suite
+  # fail loudly instead of silently falling back to the fake.
+  e2e-icmp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26
+
+      - name: Build e2e binary
+        run: go test -c -o /tmp/pingtunnel-e2e.test .
+
+      - name: Run e2e suite over real ICMP (root)
+        run: sudo env PINGTUNNEL_E2E_REQUIRE_REAL_ICMP=1 /tmp/pingtunnel-e2e.test -test.run TestE2E -test.v -test.timeout 20m
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: build
