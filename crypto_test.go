@@ -58,7 +58,8 @@ func TestPasswordPairInterop(t *testing.T) {
 		t.Fatalf("roundtrip mismatch")
 	}
 
-	if DeriveAuthCode(password) != DeriveAuthCode(password) {
+	authCode := DeriveAuthCode(password)
+	if authCode != DeriveAuthCode(password) {
 		t.Fatalf("auth codes diverged")
 	}
 }
