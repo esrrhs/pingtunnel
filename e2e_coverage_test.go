@@ -430,15 +430,16 @@ func TestE2E_Resilience_ShortSoak(t *testing.T) {
 	defer p.Close()
 
 	baseG := runtime.NumGoroutine()
-	// 8 workers keeps the in-process underlay within a load real ICMP
-	// deployments can reach; heavier settings turn into synthetic overload
-	// where the tunnel's load-shedding (dropped packets under queue pressure)
-	// dominates the result. The gates below target wedging/corruption/leaks.
+	// 8 workers with a per-iteration pause caps the conn rate (~350/s): each
+	// churned conn leaves TIME_WAIT sockets behind and exceeding the host's
+	// ephemeral-port range pollutes every test running after this one. The
+	// gates below target wedging/corruption/leaks, not conn rate.
 	const (
-		workers  = 8
-		duration = 10 * time.Second
-		msgSize  = 2048
-		minOK    = 16
+		workers   = 8
+		duration  = 10 * time.Second
+		msgSize   = 2048
+		iterPause = 20 * time.Millisecond
+		minOK     = 16
 	)
 	deadline := time.Now().Add(duration)
 	var okN, failN, exhaustedN, integrityN atomic.Int64
@@ -458,6 +459,7 @@ func TestE2E_Resilience_ShortSoak(t *testing.T) {
 			fillPattern(payload, byte(id+3))
 			want := sha256.Sum256(payload)
 			for time.Now().Before(deadline) {
+				time.Sleep(iterPause)
 				c, exhausted, err := dialResourceRetry(p.clientAddr, 30*time.Second)
 				if err != nil {
 					if exhausted {
@@ -482,11 +484,11 @@ func TestE2E_Resilience_ShortSoak(t *testing.T) {
 						recordErr("read: " + rerr.Error())
 					}
 					c.Close()
-					// The server blacklists a target for 5s after one failed
-					// dial (connErrorMap); under macOS TIME_WAIT pressure a
-					// transient dial failure then KICKs every conn for the
-					// blacklist window. Back off past the TTL so the soak
-					// measures the steady state, not the blackout.
+					// The server still blacklists a target for 5s when the
+					// target itself looks down (refused/unreachable); a hit
+					// here KICKs every conn dialled during the window. Back
+					// off past the TTL so the soak measures the steady state
+					// instead of the blackout.
 					time.Sleep(6 * time.Second)
 					continue
 				}
@@ -552,8 +554,8 @@ func TestE2E_Resilience_ServerMaxConn(t *testing.T) {
 	defer conn1.Close()
 	echoRoundTrip(t, conn1, []byte("conn-one-ok"), 15*time.Second)
 
-	// The server refreshes its conn count once per second; wait for the tick
-	// so the counter reflects conn1 before the second conn arrives.
+	// Give the server's close phase (~1s tail after a conn is closed) time to
+	// settle so the probe conn from startPair is fully gone before conn1.
 	time.Sleep(2 * time.Second)
 
 	conn2, err := waitForPort(p.clientAddr, 5*time.Second)

@@ -100,6 +100,12 @@ func TestE2E_ShortConnChurnIntegrity(t *testing.T) {
 		workers  = 16
 		duration = 8 * time.Second
 		msgSize  = 4096
+		// iterPause caps the conn rate (~500/s): each churned conn leaves a
+		// couple of TIME_WAIT sockets behind, and exceeding the host's
+		// ephemeral-port range turns into dial failures that pollute every
+		// test running after this one. The gates below (integrity, fail rate,
+		// liveness) do not depend on the conn rate.
+		iterPause = 25 * time.Millisecond
 		// minOK is a liveness gate ("proxy still serving"), NOT a throughput
 		// SLO: frame-mode conn setup takes several ICMP round trips, so on a
 		// contended host the same workload completes fewer echoes. A wedged
@@ -126,6 +132,7 @@ func TestE2E_ShortConnChurnIntegrity(t *testing.T) {
 			fillPattern(payload, byte(id))
 			want := sha256.Sum256(payload)
 			for time.Now().Before(deadline) {
+				time.Sleep(iterPause)
 				conn, exhausted, err := dialResourceRetry(p.clientAddr, 30*time.Second)
 				if err != nil {
 					if exhausted {
