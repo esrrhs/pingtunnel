@@ -1,14 +1,17 @@
 package pingtunnel
 
 import (
+	"errors"
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"github.com/esrrhs/gohome/thread"
 	"google.golang.org/protobuf/proto"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -60,6 +63,10 @@ type Server struct {
 	sendPacketSize   uint64
 	recvPacketSize   uint64
 	localConnMapSize int
+
+	// connCount tracks localConnMap exactly (insert/delete); the maxconn
+	// gate reads it live, unlike the once-per-second showNet snapshot.
+	connCount atomic.Int64
 
 	processtp   *thread.ThreadPool
 	recvcontrol chan int
@@ -180,8 +187,8 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 	loggo.Info("start add new connect  %s %s", id, packet.my.Target)
 
-	if p.maxconn > 0 && p.localConnMapSize >= p.maxconn {
-		loggo.Info("too many connections %d, server connected target fail %s", p.localConnMapSize, packet.my.Target)
+	if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+		loggo.Info("too many connections %d, server connected target fail %s", p.connCount.Load(), packet.my.Target)
 		p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
 		return nil
 	}
@@ -206,12 +213,18 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		if p.forwardConfig != nil {
 			c, err = DialThroughProxy(p.forwardConfig, addr, time.Millisecond*time.Duration(p.connecttmeout))
 		} else {
-			c, err = net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(p.connecttmeout))
+			c, err = dialTCPTarget(addr, p.connecttmeout)
 		}
 		if err != nil {
 			loggo.Error("Error listening for tcp packets: %s %s", id, err.Error())
 			p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
-			p.addConnError(addr)
+			// Blacklist the target only when the target itself looks down;
+			// local resource pressure (ephemeral-port/TIME_WAIT exhaustion on
+			// a busy host) is transient and not the target's fault, so it
+			// must not take the target offline for the blacklist window.
+			if !isLocalDialErr(err) {
+				p.addConnError(addr)
+			}
 			return nil
 		}
 		// For proxy connections, parse target address; for direct connections, get from remote addr
@@ -296,6 +309,40 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 		return localConn
 	}
+}
+
+// isLocalDialErr reports dial failures caused by local host resource
+// pressure (ephemeral-port/TIME_WAIT exhaustion, fd limits) rather than by
+// the target. These are transient and retryable.
+func isLocalDialErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.EADDRNOTAVAIL, syscall.EADDRINUSE,
+			syscall.EAGAIN, syscall.EMFILE, syscall.ENFILE:
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "can't assign requested address") ||
+		strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "too many open files")
+}
+
+// dialTCPTarget dials the tunnel target, retrying briefly on local resource
+// errors: each tunnel conn gets exactly one server-side dial, so a transient
+// local failure would otherwise tear the conn down even though the target is
+// healthy.
+func dialTCPTarget(addr string, timeoutms int) (net.Conn, error) {
+	c, err := net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(timeoutms))
+	for attempt := 0; err != nil && attempt < 2 && isLocalDialErr(err); attempt++ {
+		time.Sleep(100 * time.Millisecond)
+		c, err = net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(timeoutms))
+	}
+	return c, err
 }
 
 func (p *Server) processDataPacket(packet *Packet) {
@@ -752,11 +799,7 @@ func sameUDPAddr(a *net.UDPAddr, b *net.UDPAddr) bool {
 }
 
 func (p *Server) showNet() {
-	p.localConnMapSize = 0
-	p.localConnMap.Range(func(key, value interface{}) bool {
-		p.localConnMapSize++
-		return true
-	})
+	p.localConnMapSize = int(p.connCount.Load())
 	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %dConnections",
 		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localConnMapSize)
 	p.sendPacket = 0
@@ -767,6 +810,7 @@ func (p *Server) showNet() {
 
 func (p *Server) addServerConn(uuid string, serverConn *ServerConn) {
 	p.localConnMap.Store(uuid, serverConn)
+	p.connCount.Add(1)
 }
 
 func (p *Server) getServerConnById(uuid string) *ServerConn {
@@ -778,7 +822,9 @@ func (p *Server) getServerConnById(uuid string) *ServerConn {
 }
 
 func (p *Server) deleteServerConn(uuid string) {
-	p.localConnMap.Delete(uuid)
+	if _, ok := p.localConnMap.LoadAndDelete(uuid); ok {
+		p.connCount.Add(-1)
+	}
 }
 
 func (p *Server) remoteError(echoId int, echoSeq int, uuid string, rprpto int, src *net.IPAddr) {
