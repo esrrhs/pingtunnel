@@ -501,7 +501,11 @@ func TestE2E_Resilience_ShortSoak(t *testing.T) {
 		}(w)
 	}
 	wg.Wait()
-	time.Sleep(500 * time.Millisecond)
+	// Close-phase goroutines (client + server side) drain asynchronously; on a
+	// fast loopback run thousands of short conns finish right at the deadline
+	// and their teardown outlives the workers. Give them a bounded window to
+	// unwind instead of sampling once.
+	waitGoroutinesNear(baseG, 200, 10*time.Second)
 	afterG := runtime.NumGoroutine()
 	ok, fail := okN.Load(), failN.Load()
 	exhausted, integrity := exhaustedN.Load(), integrityN.Load()
