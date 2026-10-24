@@ -13,22 +13,22 @@ import (
 )
 
 var usage = `
-    通过伪造ping，把tcp/udp/sock5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
-    By forging ping, the tcp/udp/sock5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
+    通过伪造ping，把tcp/udp/socks5流量通过远程服务器转发到目的服务器上。用于突破某些运营商封锁TCP/UDP流量。
+    By forging ping, the tcp/udp/socks5 traffic is forwarded to the destination server through the remote server. Used to break certain operators to block TCP/UDP traffic.
 
 Usage:
 
     // server
-    pingtunnel -type server
+    pingtunnel -type server -password SECRET
 
     // client, Forward udp
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -password SECRET
 
     // client, Forward tcp
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -tcp 1
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -tcp 1 -password SECRET
 
-    // client, Forward sock5, implicitly open tcp, so no target server is needed
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -sock5 1
+    // client, Forward socks5, implicitly open tcp, so no target server is needed
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -socks5 -password SECRET
 
     -type     服务器或者客户端
               client or server
@@ -38,8 +38,11 @@ Usage:
     -icmp_l   本地地址，侦听此地址上的ICMP流量，默认为0.0.0.0
               Local address, listen for ICMP traffic on this address, defaults to 0.0.0.0
 
-    -key      设置的纯数字密码，默认0, 参数为int类型，范围从0-2147483647，不可夹杂字母特殊符号
-              Set password, default 0
+    -password 共享密钥，认证+加密一体，必须两侧一致，最少8个字符
+              Shared secret for authentication and encryption, must match on both sides, min 8 characters
+
+    -encrypt  加密算法覆盖：chacha20（默认）、aes256、aes128。流量始终加密
+              Encryption algorithm override: chacha20 (default), aes256, aes128. Traffic is always encrypted
 
     -nolog    不写日志文件，只打印标准输出，默认0
               Do not write log files, only print standard output, default 0 is off
@@ -79,8 +82,11 @@ Usage:
     -timeout  本地连接超时时间，默认60s
               conn timeout, default 60s
 
-    -key      设置的密码，默认0, 参数为int类型，范围从0-2147483647，不可夹杂字母特殊符号
-              Set password, default 0
+    -password 共享密钥，认证+加密一体，必须两侧一致，最少8个字符
+              Shared secret for authentication and encryption, must match on both sides, min 8 characters
+
+    -encrypt  加密算法覆盖：chacha20（默认）、aes256、aes128。流量始终加密
+              Encryption algorithm override: chacha20 (default), aes256, aes128. Traffic is always encrypted
 
     -tcp      设置是否按tcp模式转发，默认0为udp模式，1为tcp模式
               Set whether to forward in tcp mode, default 0 is udp mode, 1 is tcp mode
@@ -109,8 +115,8 @@ Usage:
     -loglevel 日志文件等级，默认info
               log level, default is info
 
-    -sock5    开启sock5转发，隐藏参数-tcp 1
-              sock5 mode, implicitly open tcp, so no target server is needed
+    -socks5   开启socks5转发，隐藏参数-tcp 1
+              socks5 mode, implicitly open tcp, so no target server is needed
 
     -s5user   sock5身份认证用户名，默认空无密码
               sock5 username, default is empty and no authentication is required
@@ -141,9 +147,8 @@ func main() {
 	server := flag.String("s", "", "server addr")
 	icmpListen := flag.String("icmp_l", "0.0.0.0", "listen address for ICMP traffic")
 	timeout := flag.Int("timeout", 60, "conn timeout")
-	key := flag.Int("key", 0, "key")
-	encryption := flag.String("encrypt", "", "encryption mode: aes128, aes256, chacha20")
-	encryptionKey := flag.String("encrypt-key", "", "encryption key (base64 or passphrase)")
+	password := flag.String("password", "", "shared secret for authentication and encryption (required, min 8 characters)")
+	encryption := flag.String("encrypt", "", "encryption algorithm override: chacha20 (default), aes256, aes128")
 	tcpmode := flag.Int("tcp", 0, "tcp mode")
 	tcpmode_buffersize := flag.Int("tcp_bs", 1*1024*1024, "tcp mode buffer size")
 	tcpmode_maxwin := flag.Int("tcp_mw", 20000, "tcp mode max win")
@@ -153,7 +158,7 @@ func main() {
 	noprint := flag.Int("noprint", 0, "print stdout")
 	tcpmode_stat := flag.Int("tcp_stat", 0, "print tcp stat")
 	loglevel := flag.String("loglevel", "info", "log level")
-	open_sock5 := flag.Int("sock5", 0, "sock5 mode")
+	socks5 := flag.Bool("socks5", false, "socks5 proxy mode")
 	sock5_user := flag.String("s5user", "", "sock5 username")
 	sock5_pass := flag.String("s5pass", "", "sock5 password")
 	maxconn := flag.Int("maxconn", 0, "max num of connections")
@@ -209,14 +214,11 @@ func main() {
 		if !setFlags["timeout"] && cfg.Timeout != 0 {
 			*timeout = cfg.Timeout
 		}
-		if !setFlags["key"] && cfg.Key != 0 {
-			*key = cfg.Key
+		if !setFlags["password"] && cfg.Password != "" {
+			*password = cfg.Password
 		}
 		if !setFlags["encrypt"] && cfg.Encrypt != "" {
 			*encryption = cfg.Encrypt
-		}
-		if !setFlags["encrypt-key"] && cfg.EncryptKey != "" {
-			*encryptionKey = cfg.EncryptKey
 		}
 		if !setFlags["tcp"] && cfg.TCPMode != 0 {
 			*tcpmode = cfg.TCPMode
@@ -245,8 +247,8 @@ func main() {
 		if !setFlags["loglevel"] && cfg.LogLevel != "" {
 			*loglevel = cfg.LogLevel
 		}
-		if !setFlags["sock5"] && cfg.Sock5 != 0 {
-			*open_sock5 = cfg.Sock5
+		if !setFlags["socks5"] && cfg.Socks5 {
+			*socks5 = true
 		}
 		if !setFlags["s5user"] && cfg.Sock5User != "" {
 			*sock5_user = cfg.Sock5User
@@ -286,11 +288,11 @@ func main() {
 			flag.Usage()
 			return
 		}
-		if *open_sock5 == 0 && len(*target) == 0 {
+		if !*socks5 && len(*target) == 0 {
 			flag.Usage()
 			return
 		}
-		if *open_sock5 != 0 {
+		if *socks5 {
 			*tcpmode = 1
 		}
 	}
@@ -299,26 +301,32 @@ func main() {
 		return
 	}
 
-	// Validate encryption parameters
-	encryptionMode, err := pingtunnel.ParseEncryptionMode(*encryption)
-	if err != nil {
-		fmt.Printf("Invalid encryption mode: %v\n", err)
+	// Validate the shared secret and derive both the authentication code and
+	// the encryption key from it. Everything sent over the wire is encrypted.
+	if err := pingtunnel.ValidatePassword(*password); err != nil {
+		fmt.Printf("Invalid password: %v\n", err)
 		return
 	}
+	authCode := pingtunnel.DeriveAuthCode(*password)
 
-	if encryptionMode != pingtunnel.NoEncryption && *encryptionKey == "" {
-		fmt.Println("Encryption key is required when encryption mode is specified")
-		return
-	}
-
-	// Create crypto configuration
-	var cryptoConfig *pingtunnel.CryptoConfig
-	if encryptionMode != pingtunnel.NoEncryption {
-		cryptoConfig, err = pingtunnel.NewCryptoConfig(encryptionMode, *encryptionKey)
+	encryptionMode := pingtunnel.CHACHA20
+	if *encryption != "" {
+		mode, err := pingtunnel.ParseEncryptionMode(*encryption)
 		if err != nil {
-			fmt.Printf("Failed to create crypto config: %v\n", err)
+			fmt.Printf("Invalid encryption mode: %v\n", err)
 			return
 		}
+		if mode == pingtunnel.NoEncryption {
+			fmt.Println("Encryption cannot be disabled in v3: traffic is always encrypted")
+			return
+		}
+		encryptionMode = mode
+	}
+
+	cryptoConfig, err := pingtunnel.NewCryptoConfig(encryptionMode, *password)
+	if err != nil {
+		fmt.Printf("Failed to create crypto config: %v\n", err)
+		return
 	}
 
 	level := loggo.LEVEL_INFO
@@ -333,7 +341,7 @@ func main() {
 		NoPrint:   *noprint > 0,
 	})
 	loggo.Info("start pingtunnel (%s)...", pingtunnel.GetVersionInfo())
-	loggo.Info("key %d", *key)
+	loggo.Info("auth code derived from -password; encryption %s", encryptionMode)
 
 	if *t == "server" {
 		// Parse forward proxy configuration
@@ -348,7 +356,7 @@ func main() {
 			loggo.Info("Forward proxy configured: %s", *forward)
 		}
 
-		s, err := pingtunnel.NewServer(*icmpListen, *key, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig, forwardConfig, *congestion)
+		s, err := pingtunnel.NewServer(*icmpListen, authCode, *maxconn, *max_process_thread, *max_process_buffer, *conntt, cryptoConfig, forwardConfig, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return
@@ -374,9 +382,13 @@ func main() {
 			*tcpmode_stat = 0
 		}
 
-		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, *key, *icmpListen,
+		sock5Int := 0
+		if *socks5 {
+			sock5Int = 1
+		}
+		c, err := pingtunnel.NewClient(*listen, *server, *target, *timeout, authCode, *icmpListen,
 			*tcpmode, *tcpmode_buffersize, *tcpmode_maxwin, *tcpmode_resend_timems, *tcpmode_compress,
-			*tcpmode_stat, *open_sock5, *maxconn, cryptoConfig, *sock5_user, *sock5_pass, *congestion)
+			*tcpmode_stat, sock5Int, *maxconn, cryptoConfig, *sock5_user, *sock5_pass, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
 			return

@@ -25,7 +25,7 @@ Pingtunnel is a tool that sends TCP/UDP traffic over ICMP.
 - Download the release package from [releases](https://github.com/esrrhs/pingtunnel/releases) (e.g. `pingtunnel_linux64.zip`), unzip and execute with **root** privileges:
 
 ```bash
-sudo ./pingtunnel -type server -key 123456
+sudo ./pingtunnel -type server -password SECRET
 ```
 
 - (Optional) Disable system default ICMP echo response:
@@ -40,17 +40,17 @@ Run with **administrator** privileges:
 
 - **SOCKS5 Proxy Mode**:
 ```bash
-pingtunnel -type client -l :4455 -s www.yourserver.com -sock5 1 -key 123456
+pingtunnel -type client -l :4455 -s www.yourserver.com -socks5 -password SECRET
 ```
 
 - **Forward TCP (e.g. SSH/Web)**:
 ```bash
-pingtunnel -type client -l :4455 -s www.yourserver.com -t 192.168.1.100:22 -tcp 1 -key 123456
+pingtunnel -type client -l :4455 -s www.yourserver.com -t 192.168.1.100:22 -tcp 1 -password SECRET
 ```
 
 - **Forward UDP (e.g. DNS)**:
 ```bash
-pingtunnel -type client -l :4455 -s www.yourserver.com -t 8.8.8.8:53 -key 123456
+pingtunnel -type client -l :4455 -s www.yourserver.com -t 8.8.8.8:53 -password SECRET
 ```
 
 #### 3. Config File Mode (`-c`)
@@ -81,11 +81,11 @@ You can also start pingtunnel directly with Docker:
 
 - **Server**:
 ```bash
-docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+docker run --name pingtunnel-server -d --privileged --network host --restart=always esrrhs/pingtunnel ./pingtunnel -type server -password SECRET
 ```
 
 - **Client**:
 ```bash
-docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -sock5 1 -key 123456
+docker run --name pingtunnel-client -d --restart=always -p 1080:1080 esrrhs/pingtunnel ./pingtunnel -type client -l :1080 -s www.yourserver.com -socks5 -password SECRET
 ```
 

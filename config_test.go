@@ -3,29 +3,31 @@ package pingtunnel
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestLoadConfig(t *testing.T) {
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.json")
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	return path
+}
 
-	jsonContent := `{
+func TestLoadConfig(t *testing.T) {
+	configPath := writeConfig(t, `{
 		"type": "client",
 		"listen": ":4455",
 		"server": "1.2.3.4",
-		"sock5": 1,
-		"key": 123456,
-		"encrypt": "aes128",
-		"encrypt_key": "secretkey",
+		"socks5": true,
+		"password": "correct-horse-battery",
+		"encrypt": "aes256",
 		"tcp_bs": 2097152,
 		"congestion": "bb",
 		"loglevel": "debug"
-	}`
-
-	if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
+	}`)
 
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
@@ -41,14 +43,14 @@ func TestLoadConfig(t *testing.T) {
 	if cfg.Server != "1.2.3.4" {
 		t.Errorf("expected server 1.2.3.4, got %s", cfg.Server)
 	}
-	if cfg.Sock5 != 1 {
-		t.Errorf("expected sock5 1, got %d", cfg.Sock5)
+	if !cfg.Socks5 {
+		t.Errorf("expected socks5 true, got %v", cfg.Socks5)
 	}
-	if cfg.Key != 123456 {
-		t.Errorf("expected key 123456, got %d", cfg.Key)
+	if cfg.Password != "correct-horse-battery" {
+		t.Errorf("expected password, got %s", cfg.Password)
 	}
-	if cfg.Encrypt != "aes128" {
-		t.Errorf("expected encrypt aes128, got %s", cfg.Encrypt)
+	if cfg.Encrypt != "aes256" {
+		t.Errorf("expected encrypt aes256, got %s", cfg.Encrypt)
 	}
 	if cfg.TCPBufferSize != 2097152 {
 		t.Errorf("expected tcp_bs 2097152, got %d", cfg.TCPBufferSize)
@@ -61,6 +63,25 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_RejectsLegacyFields(t *testing.T) {
+	cases := map[string]string{
+		"key":         `"key": 123456`,
+		"encrypt_key": `"encrypt_key": "secret"`,
+		"sock5":       `"sock5": 1`,
+	}
+	for field, snippet := range cases {
+		jsonContent := `{"type": "client", ` + snippet + `}`
+		configPath := writeConfig(t, jsonContent)
+		_, err := LoadConfig(configPath)
+		if err == nil {
+			t.Fatalf("legacy field %q accepted", field)
+		}
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("error for %q should mention the field, got: %v", field, err)
+		}
+	}
+}
+
 func TestLoadConfig_NonExistent(t *testing.T) {
 	_, err := LoadConfig("non_existent_file.json")
 	if err == nil {
@@ -69,12 +90,7 @@ func TestLoadConfig_NonExistent(t *testing.T) {
 }
 
 func TestLoadConfig_InvalidJSON(t *testing.T) {
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "invalid.json")
-	if err := os.WriteFile(configPath, []byte(`{invalid`), 0644); err != nil {
-		t.Fatalf("WriteFile failed: %v", err)
-	}
-
+	configPath := writeConfig(t, `{invalid`)
 	_, err := LoadConfig(configPath)
 	if err == nil {
 		t.Fatalf("expected error for invalid json, got nil")
