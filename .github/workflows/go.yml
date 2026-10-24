@@ -57,7 +57,7 @@ jobs:
         run: go test -c -o /tmp/pingtunnel-e2e.test .
 
       - name: Run e2e suite over real ICMP (root)
-        run: sudo env PINGTUNNEL_E2E_REQUIRE_REAL_ICMP=1 /tmp/pingtunnel-e2e.test -test.run TestE2E -test.v -test.timeout 20m
+        run: sudo env PINGTUNNEL_E2E_REQUIRE_REAL_ICMP=1 PINGTUNNEL_E2E_LOGLEVEL=info /tmp/pingtunnel-e2e.test -test.run TestE2E -test.v -test.timeout 20m
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
