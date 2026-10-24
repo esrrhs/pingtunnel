@@ -95,6 +95,7 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmpPacketConn, r
 			continue
 		}
 
+		icmpType := int(bytes[0])
 		echoId := int(binary.BigEndian.Uint16(bytes[4:6]))
 		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
 
@@ -124,15 +125,17 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmpPacketConn, r
 
 		recv <- &Packet{my: my,
 			src:    icmpSrcToIPAddr(srcaddr),
-			echoId: echoId, echoSeq: echoSeq}
+			echoId: echoId, echoSeq: echoSeq,
+			icmpType: icmpType}
 	}
 }
 
 type Packet struct {
-	my      *MyMsg
-	src     *net.IPAddr
-	echoId  int
-	echoSeq int
+	my       *MyMsg
+	src      *net.IPAddr
+	echoId   int
+	echoSeq  int
+	icmpType int // ICMP type byte of the received datagram
 }
 
 const (
