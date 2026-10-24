@@ -13,7 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, target string,
+func sendICMP(id int, sequence int, conn icmpPacketConn, server *net.IPAddr, target string,
 	connId string, msgType uint32, data []byte, sproto int, rproto int, key int,
 	tcpmode int, tcpmode_buffer_size int, tcpmode_maxwin int, tcpmode_resend_time int, tcpmode_compress int, tcpmode_stat int,
 	timeout int, cryptoConfig *CryptoConfig) {
@@ -71,7 +71,7 @@ func sendICMP(id int, sequence int, conn icmp.PacketConn, server *net.IPAddr, ta
 	conn.WriteTo(bytes, icmpDstAddr(server))
 }
 
-func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, recv chan<- *Packet, cryptoConfig *CryptoConfig) {
+func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmpPacketConn, recv chan<- *Packet, cryptoConfig *CryptoConfig) {
 
 	defer common.CrashLog()
 
@@ -95,6 +95,7 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, 
 			continue
 		}
 
+		icmpType := int(bytes[0])
 		echoId := int(binary.BigEndian.Uint16(bytes[4:6]))
 		echoSeq := int(binary.BigEndian.Uint16(bytes[6:8]))
 
@@ -124,18 +125,34 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmp.PacketConn, 
 
 		recv <- &Packet{my: my,
 			src:    icmpSrcToIPAddr(srcaddr),
-			echoId: echoId, echoSeq: echoSeq}
+			echoId: echoId, echoSeq: echoSeq,
+			icmpType: icmpType}
 	}
 }
 
 type Packet struct {
-	my      *MyMsg
-	src     *net.IPAddr
-	echoId  int
-	echoSeq int
+	my       *MyMsg
+	src      *net.IPAddr
+	echoId   int
+	echoSeq  int
+	icmpType int // ICMP type byte of the received datagram
 }
 
 const (
 	FRAME_MAX_SIZE int = 888
 	FRAME_MAX_ID   int = 1000000
 )
+
+// icmpPacketConn is the underlay the client and server exchange MyMsg packets
+// over. *icmp.PacketConn implements it; tests may substitute an in-memory
+// transport so the full tunnel runs unprivileged.
+type icmpPacketConn interface {
+	WriteTo(b []byte, dst net.Addr) (int, error)
+	ReadFrom(b []byte) (int, net.Addr, error)
+	SetReadDeadline(t time.Time) error
+	Close() error
+}
+
+// icmpListen obtains the ICMP underlay conn. Package-level so tests can swap
+// it for a fake; production always uses listenICMP.
+var icmpListen = func(addr string) (icmpPacketConn, error) { return listenICMP(addr) }

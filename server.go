@@ -1,15 +1,17 @@
 package pingtunnel
 
 import (
+	"errors"
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"github.com/esrrhs/gohome/thread"
-	"golang.org/x/net/icmp"
 	"google.golang.org/protobuf/proto"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -51,7 +53,7 @@ type Server struct {
 
 	icmpAddr string
 
-	conn *icmp.PacketConn
+	conn icmpPacketConn
 
 	localConnMap sync.Map
 	connErrorMap sync.Map
@@ -61,6 +63,16 @@ type Server struct {
 	sendPacketSize   uint64
 	recvPacketSize   uint64
 	localConnMapSize int
+
+	// connCount tracks localConnMap exactly (insert/delete); the maxconn
+	// gate reads it live, unlike the once-per-second showNet snapshot.
+	connCount atomic.Int64
+
+	// recentlyClosed remembers conn ids deleted in the last few seconds:
+	// late retransmits for them must be dropped silently instead of
+	// answering with a KICK, which would tear down the client's tail
+	// delivery.
+	recentlyClosed sync.Map
 
 	processtp   *thread.ThreadPool
 	recvcontrol chan int
@@ -90,7 +102,7 @@ type ServerConn struct {
 
 func (p *Server) Run() error {
 
-	conn, err := listenICMP(p.icmpAddr)
+	conn, err := icmpListen(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
@@ -99,7 +111,7 @@ func (p *Server) Run() error {
 
 	recv := make(chan *Packet, 10000)
 	p.recvcontrol = make(chan int, 1)
-	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv, p.cryptoConfig)
+	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 
 	go func() {
 		defer common.CrashLog()
@@ -144,6 +156,14 @@ func (p *Server) Stop() {
 
 func (p *Server) processPacket(packet *Packet) {
 
+	// The kernel echoes every client echo request back as a reply to the
+	// client; a raw socket on this host sees that reply too. Only genuine
+	// requests (ICMP echo request) are processed — handling the kernel's
+	// reply would double-process payloads and hit nil conns.
+	if packet.icmpType != SEND_PROTO {
+		return
+	}
+
 	if packet.my.Key != (int32)(p.key) {
 		return
 	}
@@ -152,7 +172,7 @@ func (p *Server) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.my.Data)
 		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
-		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
+		sendICMP(packet.echoId, packet.echoSeq, p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
@@ -179,10 +199,20 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 	now := common.GetNowUpdateInSecond()
 
+	if t, ok := p.recentlyClosed.Load(id); ok {
+		if now.Sub(t.(time.Time)) < 5*time.Second {
+			// A late retransmit for a conn this server already closed: the
+			// client is still draining its tail. Stay silent — a KICK here
+			// would abort that delivery.
+			return nil
+		}
+		p.recentlyClosed.Delete(id)
+	}
+
 	loggo.Info("start add new connect  %s %s", id, packet.my.Target)
 
-	if p.maxconn > 0 && p.localConnMapSize >= p.maxconn {
-		loggo.Info("too many connections %d, server connected target fail %s", p.localConnMapSize, packet.my.Target)
+	if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+		loggo.Info("too many connections %d, server connected target fail %s", p.connCount.Load(), packet.my.Target)
 		p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
 		return nil
 	}
@@ -194,6 +224,12 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		return nil
 	}
 
+	if packet.my.Tcpmode > 0 && ((int)(packet.my.TcpmodeMaxwin) <= 0 || (int)(packet.my.TcpmodeMaxwin) >= FRAME_MAX_ID) {
+		loggo.Info("invalid tcpmode window %d in packet, drop conn %s %s", packet.my.TcpmodeMaxwin, id, addr)
+		p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
+		return nil
+	}
+
 	if packet.my.Tcpmode > 0 {
 
 		var c net.Conn
@@ -201,12 +237,18 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		if p.forwardConfig != nil {
 			c, err = DialThroughProxy(p.forwardConfig, addr, time.Millisecond*time.Duration(p.connecttmeout))
 		} else {
-			c, err = net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(p.connecttmeout))
+			c, err = dialTCPTarget(addr, p.connecttmeout)
 		}
 		if err != nil {
 			loggo.Error("Error listening for tcp packets: %s %s", id, err.Error())
 			p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
-			p.addConnError(addr)
+			// Blacklist the target only when the target itself looks down;
+			// local resource pressure (ephemeral-port/TIME_WAIT exhaustion on
+			// a busy host) is transient and not the target's fault, so it
+			// must not take the target offline for the blacklist window.
+			if !isLocalDialErr(err) {
+				p.addConnError(addr)
+			}
 			return nil
 		}
 		// For proxy connections, parse target address; for direct connections, get from remote addr
@@ -293,6 +335,40 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 	}
 }
 
+// isLocalDialErr reports dial failures caused by local host resource
+// pressure (ephemeral-port/TIME_WAIT exhaustion, fd limits) rather than by
+// the target. These are transient and retryable.
+func isLocalDialErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		switch errno {
+		case syscall.EADDRNOTAVAIL, syscall.EADDRINUSE,
+			syscall.EAGAIN, syscall.EMFILE, syscall.ENFILE:
+			return true
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "can't assign requested address") ||
+		strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "too many open files")
+}
+
+// dialTCPTarget dials the tunnel target, retrying briefly on local resource
+// errors: each tunnel conn gets exactly one server-side dial, so a transient
+// local failure would otherwise tear the conn down even though the target is
+// healthy.
+func dialTCPTarget(addr string, timeoutms int) (net.Conn, error) {
+	c, err := net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(timeoutms))
+	for attempt := 0; err != nil && attempt < 2 && isLocalDialErr(err); attempt++ {
+		time.Sleep(100 * time.Millisecond)
+		c, err = net.DialTimeout("tcp", addr, time.Millisecond*time.Duration(timeoutms))
+	}
+	return c, err
+}
+
 func (p *Server) processDataPacket(packet *Packet) {
 
 	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
@@ -308,7 +384,6 @@ func (p *Server) processDataPacket(packet *Packet) {
 		}
 	}
 
-	localConn.activeRecvTime = now
 	localConn.echoId = packet.echoId
 	localConn.echoSeq = packet.echoSeq
 
@@ -321,11 +396,17 @@ func (p *Server) processDataPacket(packet *Packet) {
 				loggo.Error("Unmarshal tcp Error %s", err)
 				return
 			}
+			if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+				// Only payload frames count as conn activity; ACK/HB frames
+				// must not keep an idle conn alive.
+				localConn.activeRecvTime = now
+			}
 
 			localConn.fm.OnRecvFrame(f)
 			notifyActivity(localConn.activity)
 
 		} else {
+			localConn.activeRecvTime = now
 			if packet.my.Data == nil {
 				return
 			}
@@ -390,7 +471,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
-			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key, 0,
 				0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
@@ -423,9 +504,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvUnix := atomic.Int64{}
-	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
-	tcpActiveSendTime := common.GetNowUpdateInSecond()
 	readErr := make(chan error, 1)
 	stopRead := make(chan struct{})
 
@@ -467,12 +545,13 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			}
 
 			conn.fm.WriteSendBuffer(bytes[:n])
-			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 			notifyActivity(conn.activity)
 		}
 	}()
 
 	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
+
+	halfClosedPropagated := false
 
 mainLoop:
 	for !p.exit && !conn.exit {
@@ -481,18 +560,35 @@ mainLoop:
 
 		conn.fm.Update()
 
+		if !halfClosedPropagated && conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 {
+			// The client half-closed its side and every buffered byte of it
+			// has been written to the target: propagate the EOF now — a
+			// CloseWrite issued earlier would put the FIN ahead of data
+			// still sitting in the recv buffer.
+			halfClosedPropagated = true
+			if tc, ok := conn.tcpconn.(*net.TCPConn); ok {
+				_ = tc.CloseWrite()
+			}
+			loggo.Info("client half-closed conn %s %s", conn.id, conn.tcpaddrTarget.String())
+		}
+
 		sendlist := conn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			conn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
+				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+					// Only real payload counts as conn activity: heartbeat
+					// and ACK frames keep the tunnel alive without keeping
+					// an idle conn alive.
+					conn.activeSendTime = now
+				}
 				mb, err := conn.fm.MarshalFrame(f)
 				if err != nil {
 					loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 					continue
 				}
-				sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 					conn.rproto, -1, p.key, 0,
 					0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
@@ -516,7 +612,6 @@ mainLoop:
 			}
 			if n > 0 {
 				conn.fm.SkipRecvBuffer(n)
-				tcpActiveSendTime = now
 			}
 		}
 
@@ -530,12 +625,19 @@ mainLoop:
 		default:
 		}
 
-		diffrecv := now.Sub(conn.activeRecvTime)
-		diffsend := now.Sub(conn.activeSendTime)
-		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
-		tcpdiffsend := now.Sub(tcpActiveSendTime)
-		if (diffrecv > time.Second*(time.Duration(conn.timeout)) && diffsend > time.Second*(time.Duration(conn.timeout))) ||
-			(tcpdiffrecv > time.Second*(time.Duration(conn.timeout)) && tcpdiffsend > time.Second*(time.Duration(conn.timeout))) {
+		// The conn is dead only when no real payload flowed in either
+		// direction for the whole timeout window and nothing is waiting to be
+		// delivered: a slow reader (on either side) is backpressure, not
+		// idleness.
+		idleRecv := now.Sub(conn.activeRecvTime) > time.Second*(time.Duration(conn.timeout))
+		idleSend := now.Sub(conn.activeSendTime) > time.Second*(time.Duration(conn.timeout))
+		// A conn with unacknowledged frames in flight or undelivered bytes is
+		// under backpressure, not idle: the peer (or the target) is slow, and
+		// closing here would cut the transfer short.
+		// The peer's heartbeat proves the tunnel is stalled on backpressure
+		// (its send window is full), not dead: never reap while it beats.
+		hbFresh := time.Since(time.Unix(0, conn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(conn.timeout))
+		if idleRecv && idleSend && !hbFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
 			break
@@ -578,7 +680,7 @@ mainLoop:
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
-			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key, 0,
 				0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
@@ -586,14 +688,12 @@ mainLoop:
 			p.sendPacketSize += (uint64)(len(mb))
 		}
 
-		nodatarecv := true
 		if conn.fm.GetRecvBufferSize() > 0 {
 			rr := conn.fm.GetRecvReadLineBuffer()
 			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
 			n, _ := conn.tcpconn.Write(rr)
 			if n > 0 {
 				conn.fm.SkipRecvBuffer(n)
-				nodatarecv = false
 			}
 		}
 
@@ -604,8 +704,12 @@ mainLoop:
 		}
 
 		remoteclosed := conn.fm.IsRemoteClosed()
-		if remoteclosed && nodatarecv {
+		if remoteclosed && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
 			loggo.Info("remote conn had closed %s %s", conn.id, conn.tcpaddrTarget.String())
+			break
+		}
+		if conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
+			loggo.Info("client half-closed and flushed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 
@@ -627,7 +731,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.udpTargetString(), conn.id, conn.conn.LocalAddr().String())
 
-	bytes := make([]byte, 2000)
+	bytes := make([]byte, 65535)
 
 	for !p.exit {
 
@@ -664,7 +768,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			payload = parsedPayload
 		}
 
-		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
+		sendICMP(conn.echoId, conn.echoSeq, p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
 			conn.rproto, -1, p.key, 0,
 			0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
@@ -747,11 +851,7 @@ func sameUDPAddr(a *net.UDPAddr, b *net.UDPAddr) bool {
 }
 
 func (p *Server) showNet() {
-	p.localConnMapSize = 0
-	p.localConnMap.Range(func(key, value interface{}) bool {
-		p.localConnMapSize++
-		return true
-	})
+	p.localConnMapSize = int(p.connCount.Load())
 	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %dConnections",
 		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localConnMapSize)
 	p.sendPacket = 0
@@ -762,6 +862,7 @@ func (p *Server) showNet() {
 
 func (p *Server) addServerConn(uuid string, serverConn *ServerConn) {
 	p.localConnMap.Store(uuid, serverConn)
+	p.connCount.Add(1)
 }
 
 func (p *Server) getServerConnById(uuid string) *ServerConn {
@@ -773,11 +874,14 @@ func (p *Server) getServerConnById(uuid string) *ServerConn {
 }
 
 func (p *Server) deleteServerConn(uuid string) {
-	p.localConnMap.Delete(uuid)
+	if _, ok := p.localConnMap.LoadAndDelete(uuid); ok {
+		p.connCount.Add(-1)
+		p.recentlyClosed.Store(uuid, time.Now())
+	}
 }
 
 func (p *Server) remoteError(echoId int, echoSeq int, uuid string, rprpto int, src *net.IPAddr) {
-	sendICMP(echoId, echoSeq, *p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
+	sendICMP(echoId, echoSeq, p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		rprpto, -1, p.key,
 		0, 0, 0, 0, 0, 0, 0,
 		p.cryptoConfig)
@@ -813,4 +917,11 @@ func (p *Server) updateConnError() {
 			p.connErrorMap.Delete(id)
 		}
 	}
+
+	p.recentlyClosed.Range(func(key, value interface{}) bool {
+		if now.Sub(value.(time.Time)) > time.Second*10 {
+			p.recentlyClosed.Delete(key)
+		}
+		return true
+	})
 }
