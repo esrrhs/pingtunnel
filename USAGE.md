@@ -32,9 +32,8 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
 | `-type` | `""` | Operating role, must be `server` or `client` |
 | `-c` | `""` | Path to JSON config file (CLI flags override config values) |
 | `-icmp_l` | `0.0.0.0` | Local network interface IP to listen for ICMP traffic |
-| `-key` | `0` | Numeric key / authentication code (`0` - `2147483647`), must match client |
-| `-encrypt` | `""` | Encryption algorithm: `aes128`, `aes256`, or `chacha20` (empty means disabled) |
-| `-encrypt-key` | `""` | Encryption key (passphrase or base64 string), must match client |
+| `-password` | — | Shared secret for authentication and encryption, min 8 characters, must match client |
+| `-encrypt` | `""` | Encryption algorithm override: `chacha20` (default), `aes256`, or `aes128`. Traffic is always encrypted |
 | `-maxconn` | `0` | Maximum concurrent connections limit (`0` for unlimited) |
 | `-maxprt` | `100` | Maximum packet processing worker goroutines on server |
 | `-maxprb` | `1000` | Input buffer size for server packet processing workers |
@@ -56,7 +55,7 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
 | `-l` | `""` | Local listen address and port (e.g. `:4455` or `127.0.0.1:1080`) |
 | `-s` | `""` | Remote Pingtunnel server IP or domain name |
 | `-t` | `""` | Destination target address (e.g. `1.1.1.1:53` or internal IP `10.0.0.5:22`; can be omitted when `sock5` is enabled) |
-| `-sock5` | `0` | Set to `1` to enable local SOCKS5 proxy mode (automatically enables TCP) |
+| `-socks5` | `false` | Enable local SOCKS5 proxy mode (automatically enables TCP) |
 | `-s5user` | `""` | Local SOCKS5 username authentication (optional) |
 | `-s5pass` | `""` | Local SOCKS5 password authentication (optional) |
 | `-congestion` | `bb` | Congestion control algorithm; default `bb` (bandwidth-adaptive algorithm similar to BBR to prevent bufferbloat / disconnections during heavy downloads). Pass empty string `""` to disable |
@@ -89,9 +88,8 @@ pingtunnel -c ./client.json
 ```json
 {
   "type": "server",
-  "key": 888888,
-  "encrypt": "aes128",
-  "encrypt_key": "MySecureSecretKey",
+  "password": "MySecureSecretKey",
+  "encrypt": "chacha20",
   "icmp_listen": "0.0.0.0",
   "maxconn": 500,
   "loglevel": "info",
@@ -108,9 +106,8 @@ pingtunnel -c ./client.json
   "listen": ":1080",
   "server": "your-server-ip.com",
   "sock5": 1,
-  "key": 888888,
-  "encrypt": "aes128",
-  "encrypt_key": "MySecureSecretKey",
+  "password": "MySecureSecretKey",
+  "encrypt": "chacha20",
   "s5user": "myuser",
   "s5pass": "mypass",
   "loglevel": "info"
@@ -125,7 +122,7 @@ pingtunnel -c ./client.json
   "server": "your-server-ip.com",
   "target": "10.0.0.5:22",
   "tcp": 1,
-  "key": 888888
+  "password": "SECRET"
 }
 ```
 
@@ -146,11 +143,11 @@ Useful when client networks block outbound TCP/UDP traffic but allow ICMP (Ping)
 
 1. **Start Server**:
    ```bash
-   sudo ./pingtunnel -type server -key 123456
+   sudo ./pingtunnel -type server -password SECRET
    ```
 2. **Start Client**:
    ```bash
-   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -sock5 1 -key 123456
+   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -socks5 -password SECRET
    ```
 3. **Configure Proxy**:
    * Configure SOCKS5 proxy in your browser, SwitchyOmega, or operating system:
@@ -165,11 +162,11 @@ Useful when exposing a service inside the server's private network (e.g. `192.16
 
 1. **Start Server**:
    ```bash
-   sudo ./pingtunnel -type server -key 123456
+   sudo ./pingtunnel -type server -password SECRET
    ```
 2. **Start Client (maps remote private port 22 to local port 2222)**:
    ```bash
-   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -tcp 1 -key 123456
+   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -tcp 1 -password SECRET
    ```
 3. **Connect**:
    ```bash
@@ -184,7 +181,7 @@ Useful when local networks restrict direct outbound UDP port 53 (DNS) or throttl
 
 1. **Start Client (forwards local UDP 5353 to remote 8.8.8.8:53)**:
    ```bash
-   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -key 123456
+   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -password SECRET
    ```
 2. **Test DNS Resolution**:
    ```bash
@@ -198,30 +195,31 @@ Useful when the Pingtunnel server cannot directly reach external internet servic
 
 1. **Configure `-forward` on Server**:
    ```bash
-   sudo ./pingtunnel -type server -key 123456 -forward "socks5://127.0.0.1:2080"
+   sudo ./pingtunnel -type server -password SECRET -forward "socks5://127.0.0.1:2080"
    # Or with an HTTP proxy:
-   # sudo ./pingtunnel -type server -key 123456 -forward "http://proxy.corp.internal:8080"
+   # sudo ./pingtunnel -type server -password SECRET -forward "http://proxy.corp.internal:8080"
    ```
 2. **Start Client normally**:
    ```bash
-   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -sock5 1 -key 123456
+   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -socks5 -password SECRET
    ```
 3. Upon receiving encapsulated requests via ICMP, the server relays traffic through `127.0.0.1:2080`.
 
 ---
 
 ### Scenario 5: End-to-End High-Strength Encryption
-By default, traffic uses numeric key verification. In sensitive network environments, AEAD encryption (`aes128`, `aes256`, `chacha20`) can be enabled.
+Since v3 every packet is authenticated and encrypted end-to-end (ChaCha20-Poly1305 by default). A single shared secret covers both:
 
 1. **Server**:
    ```bash
-   sudo ./pingtunnel -type server -key 123456 -encrypt chacha20 -encrypt-key "P@ssw0rdCustomSecret!"
+   sudo ./pingtunnel -type server -password "P@ssw0rdCustomSecret!"
    ```
 2. **Client**:
    ```bash
-   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -sock5 1 -key 123456 -encrypt chacha20 -encrypt-key "P@ssw0rdCustomSecret!"
+   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -socks5 -password "P@ssw0rdCustomSecret!"
    ```
-3. The Protobuf payload inside ICMP packets is encrypted using ChaCha20-Poly1305 to resist deep packet inspection (DPI).
+3. The Protobuf payload inside ICMP packets is encrypted using ChaCha20-Poly1305 (default; `aes256`/`aes128` via `-encrypt`) to resist deep packet inspection (DPI).
+4. Use `-encrypt` only to switch algorithms; it cannot disable encryption.
 
 ---
 
@@ -233,7 +231,7 @@ docker run -d --name pingtunnel-server \
   --restart=always \
   --privileged \
   --network host \
-  esrrhs/pingtunnel ./pingtunnel -type server -key 123456
+  esrrhs/pingtunnel ./pingtunnel -type server -password SECRET
 ```
 
 ### Running with Mounted Config File
