@@ -25,7 +25,8 @@ func TestDeriveAuthCode(t *testing.T) {
 	if code != DeriveAuthCode("correct-horse-battery") {
 		t.Fatalf("auth code is not deterministic")
 	}
-	if code == DeriveAuthCode("other-password") {
+	other := DeriveAuthCode("other-password")
+	if code == other {
 		t.Fatalf("different passwords derived the same auth code")
 	}
 }
