@@ -130,6 +130,10 @@ type Client struct {
 	localAddrToConnMapSize int
 	localIdToConnMapSize   int
 
+	// connCount tracks the conn maps exactly (insert/delete); the maxconn
+	// gates read it live, unlike the once-per-second showNet snapshot.
+	connCount atomic.Int64
+
 	recvcontrol chan int
 
 	pongTime             time.Time
@@ -406,8 +410,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	tcpsrcaddr := conn.RemoteAddr().(*net.TCPAddr)
 
-	if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
-		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.localIdToConnMapSize, tcpsrcaddr.String())
+	if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.connCount.Load(), tcpsrcaddr.String())
 		return
 	}
 
@@ -700,8 +704,8 @@ func (p *Client) Accept() error {
 		now := common.GetNowUpdateInSecond()
 		clientConn := p.getClientConnByAddr(srcaddr.String())
 		if clientConn == nil {
-			if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
-				loggo.Info("too many connections %d, client accept new local udp fail %s", p.localIdToConnMapSize, srcaddr.String())
+			if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+				loggo.Info("too many connections %d, client accept new local udp fail %s", p.connCount.Load(), srcaddr.String())
 				continue
 			}
 			uuid := common.UniqueId()
@@ -827,6 +831,7 @@ func (p *Client) close(clientConn *ClientConn) {
 	if clientConn.addrKey != "" {
 		p.localAddrToConnMap.Delete(clientConn.addrKey)
 	}
+	p.connCount.Add(-1)
 }
 
 func (p *Client) checkTimeoutConn() {
@@ -1056,8 +1061,8 @@ func (p *Client) recvSock5UDP(relayConn *net.UDPConn, expectedIP net.IP, expecte
 		connKey := p.sock5UDPConnKey(relayConn, srcaddr, targetAddr)
 		clientConn := p.getClientConnByAddr(connKey)
 		if clientConn == nil {
-			if p.maxconn > 0 && p.localIdToConnMapSize >= p.maxconn {
-				loggo.Info("too many connections %d, client accept new sock5 udp fail %s", p.localIdToConnMapSize, srcaddr.String())
+			if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
+				loggo.Info("too many connections %d, client accept new sock5 udp fail %s", p.connCount.Load(), srcaddr.String())
 				continue
 			}
 			uuid := common.UniqueId()
@@ -1159,6 +1164,7 @@ func (p *Client) addClientConn(uuid string, addr string, clientConn *ClientConn)
 	clientConn.addrKey = addr
 	p.localAddrToConnMap.Store(addr, clientConn)
 	p.localIdToConnMap.Store(uuid, clientConn)
+	p.connCount.Add(1)
 }
 
 func (p *Client) getClientConnByAddr(addr string) *ClientConn {
