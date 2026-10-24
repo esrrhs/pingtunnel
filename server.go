@@ -5,7 +5,6 @@ import (
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"github.com/esrrhs/gohome/thread"
-	"golang.org/x/net/icmp"
 	"google.golang.org/protobuf/proto"
 	"net"
 	"sync"
@@ -51,7 +50,7 @@ type Server struct {
 
 	icmpAddr string
 
-	conn *icmp.PacketConn
+	conn icmpPacketConn
 
 	localConnMap sync.Map
 	connErrorMap sync.Map
@@ -90,7 +89,7 @@ type ServerConn struct {
 
 func (p *Server) Run() error {
 
-	conn, err := listenICMP(p.icmpAddr)
+	conn, err := icmpListen(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
@@ -99,7 +98,7 @@ func (p *Server) Run() error {
 
 	recv := make(chan *Packet, 10000)
 	p.recvcontrol = make(chan int, 1)
-	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv, p.cryptoConfig)
+	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 
 	go func() {
 		defer common.CrashLog()
@@ -152,7 +151,7 @@ func (p *Server) processPacket(packet *Packet) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.my.Data)
 		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
-		sendICMP(packet.echoId, packet.echoSeq, *p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
+		sendICMP(packet.echoId, packet.echoSeq, p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
@@ -190,6 +189,12 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 	addr := packet.my.Target
 	if p.isConnError(addr) {
 		loggo.Info("addr connect Error before: %s %s", id, addr)
+		p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
+		return nil
+	}
+
+	if packet.my.Tcpmode > 0 && ((int)(packet.my.TcpmodeMaxwin) <= 0 || (int)(packet.my.TcpmodeMaxwin) >= FRAME_MAX_ID) {
+		loggo.Info("invalid tcpmode window %d in packet, drop conn %s %s", packet.my.TcpmodeMaxwin, id, addr)
 		p.remoteError(packet.echoId, packet.echoSeq, id, (int)(packet.my.Rproto), packet.src)
 		return nil
 	}
@@ -390,7 +395,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
-			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key, 0,
 				0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
@@ -492,7 +497,7 @@ mainLoop:
 					loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 					continue
 				}
-				sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 					conn.rproto, -1, p.key, 0,
 					0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
@@ -578,7 +583,7 @@ mainLoop:
 		for e := sendlist.Front(); e != nil; e = e.Next() {
 			f := e.Value.(*network.Frame)
 			mb, _ := conn.fm.MarshalFrame(f)
-			sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 				conn.rproto, -1, p.key, 0,
 				0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
@@ -627,7 +632,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 	loggo.Info("server waiting target response %s -> %s %s", conn.udpTargetString(), conn.id, conn.conn.LocalAddr().String())
 
-	bytes := make([]byte, 2000)
+	bytes := make([]byte, 65535)
 
 	for !p.exit {
 
@@ -664,7 +669,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			payload = parsedPayload
 		}
 
-		sendICMP(conn.echoId, conn.echoSeq, *p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
+		sendICMP(conn.echoId, conn.echoSeq, p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
 			conn.rproto, -1, p.key, 0,
 			0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
@@ -777,7 +782,7 @@ func (p *Server) deleteServerConn(uuid string) {
 }
 
 func (p *Server) remoteError(echoId int, echoSeq int, uuid string, rprpto int, src *net.IPAddr) {
-	sendICMP(echoId, echoSeq, *p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
+	sendICMP(echoId, echoSeq, p.conn, src, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		rprpto, -1, p.key,
 		0, 0, 0, 0, 0, 0, 0,
 		p.cryptoConfig)

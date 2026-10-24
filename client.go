@@ -4,7 +4,6 @@ import (
 	"github.com/esrrhs/gohome/common"
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
-	"golang.org/x/net/icmp"
 	"google.golang.org/protobuf/proto"
 	"math"
 	"math/rand"
@@ -117,7 +116,7 @@ type Client struct {
 
 	icmpAddr string
 
-	conn          *icmp.PacketConn
+	conn          icmpPacketConn
 	listenConn    *net.UDPConn
 	tcplistenConn *net.TCPListener
 
@@ -277,7 +276,7 @@ func (p *Client) maybeRefreshServerAddr(now time.Time) {
 
 func (p *Client) Run() error {
 
-	conn, err := listenICMP(p.icmpAddr)
+	conn, err := icmpListen(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err
@@ -308,7 +307,7 @@ func (p *Client) Run() error {
 
 	recv := make(chan *Packet, 10000)
 	p.recvcontrol = make(chan int, 1)
-	go recvICMP(&p.workResultLock, &p.exit, *p.conn, recv, p.cryptoConfig)
+	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 
 	go func() {
 		defer common.CrashLog()
@@ -442,7 +441,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			f := e.Value.(*network.Frame)
 			mb, _ := clientConn.fm.MarshalFrame(f)
 			p.sequence++
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat,
 				p.timeout, p.cryptoConfig)
@@ -545,7 +544,7 @@ mainLoop:
 					continue
 				}
 				p.sequence++
-				sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+				sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 					SEND_PROTO, RECV_PROTO, p.key,
 					p.tcpmode, 0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
@@ -634,7 +633,7 @@ mainLoop:
 			f := e.Value.(*network.Frame)
 			mb, _ := clientConn.fm.MarshalFrame(f)
 			p.sequence++
-			sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
+			sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 				SEND_PROTO, RECV_PROTO, p.key,
 				p.tcpmode, 0, 0, 0, 0, 0,
 				0, p.cryptoConfig)
@@ -712,7 +711,7 @@ func (p *Client) Accept() error {
 		}
 
 		clientConn.activeSendTime = now
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
+		sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, p.targetAddr, clientConn.id, (uint32)(MyMsg_DATA), bytes[:n],
 			SEND_PROTO, RECV_PROTO, p.key,
 			clientConn.tcpmode, 0, 0, 0, 0, 0,
 			p.timeout, p.cryptoConfig)
@@ -870,7 +869,7 @@ func (p *Client) checkTimeoutConn() {
 func (p *Client) ping() {
 	now := time.Now()
 	b, _ := now.MarshalBinary()
-	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
+	sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, "", "", (uint32)(MyMsg_PING), b,
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
 		0, p.cryptoConfig)
@@ -900,6 +899,11 @@ func (p *Client) showNet() {
 	p.recvPacketSize = 0
 }
 
+// socks5HandshakeTimeout bounds the SOCKS5 method negotiation and request
+// read: a conn that connects and stalls would otherwise pin its goroutine and
+// fd forever, and block Client.Stop. Package-level so tests can shorten it.
+var socks5HandshakeTimeout = time.Minute
+
 func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 
 	defer common.CrashLog()
@@ -907,6 +911,7 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
+	_ = conn.SetDeadline(time.Now().Add(socks5HandshakeTimeout))
 	var err error = nil
 	if err = network.Sock5HandshakeBy(conn, p.sock5_user, p.sock5_pass); err != nil {
 		loggo.Error("socks handshake: %s", err)
@@ -920,6 +925,7 @@ func (p *Client) AcceptSock5Conn(conn *net.TCPConn) {
 		conn.Close()
 		return
 	}
+	_ = conn.SetDeadline(time.Time{})
 
 	switch req.Command {
 	case socks5CmdConnect:
@@ -1072,7 +1078,7 @@ func (p *Client) recvSock5UDP(relayConn *net.UDPConn, expectedIP net.IP, expecte
 
 		clientConn.activeSendTime = now
 
-		sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), payload,
+		sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), payload,
 			SEND_PROTO, RECV_PROTO, p.key,
 			0, 0, 0, 0, 0, 0,
 			p.timeout, p.cryptoConfig)
@@ -1172,7 +1178,7 @@ func (p *Client) getClientConnById(uuid string) *ClientConn {
 }
 
 func (p *Client) remoteError(uuid string) {
-	sendICMP(p.id, p.sequence, *p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
+	sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, "", uuid, (uint32)(MyMsg_KICK), []byte{},
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
 		0, p.cryptoConfig)
