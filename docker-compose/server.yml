@@ -5,4 +5,4 @@ services:
     image: esrrhs/pingtunnel:latest
     restart: always
     network_mode: host
-    command: "./pingtunnel -type server -key ${KEY}"
+    command: "./pingtunnel -type server -password ${PASSWORD}"
