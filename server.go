@@ -68,6 +68,12 @@ type Server struct {
 	// gate reads it live, unlike the once-per-second showNet snapshot.
 	connCount atomic.Int64
 
+	// recentlyClosed remembers conn ids deleted in the last few seconds:
+	// late retransmits for them must be dropped silently instead of
+	// answering with a KICK, which would tear down the client's tail
+	// delivery.
+	recentlyClosed sync.Map
+
 	processtp   *thread.ThreadPool
 	recvcontrol chan int
 }
@@ -184,6 +190,16 @@ func (p *Server) processPacket(packet *Packet) {
 func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn {
 
 	now := common.GetNowUpdateInSecond()
+
+	if t, ok := p.recentlyClosed.Load(id); ok {
+		if now.Sub(t.(time.Time)) < 5*time.Second {
+			// A late retransmit for a conn this server already closed: the
+			// client is still draining its tail. Stay silent — a KICK here
+			// would abort that delivery.
+			return nil
+		}
+		p.recentlyClosed.Delete(id)
+	}
 
 	loggo.Info("start add new connect  %s %s", id, packet.my.Target)
 
@@ -360,7 +376,6 @@ func (p *Server) processDataPacket(packet *Packet) {
 		}
 	}
 
-	localConn.activeRecvTime = now
 	localConn.echoId = packet.echoId
 	localConn.echoSeq = packet.echoSeq
 
@@ -373,11 +388,17 @@ func (p *Server) processDataPacket(packet *Packet) {
 				loggo.Error("Unmarshal tcp Error %s", err)
 				return
 			}
+			if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+				// Only payload frames count as conn activity; ACK/HB frames
+				// must not keep an idle conn alive.
+				localConn.activeRecvTime = now
+			}
 
 			localConn.fm.OnRecvFrame(f)
 			notifyActivity(localConn.activity)
 
 		} else {
+			localConn.activeRecvTime = now
 			if packet.my.Data == nil {
 				return
 			}
@@ -475,9 +496,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvUnix := atomic.Int64{}
-	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
-	tcpActiveSendTime := common.GetNowUpdateInSecond()
 	readErr := make(chan error, 1)
 	stopRead := make(chan struct{})
 
@@ -519,12 +537,13 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			}
 
 			conn.fm.WriteSendBuffer(bytes[:n])
-			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 			notifyActivity(conn.activity)
 		}
 	}()
 
 	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
+
+	halfClosedPropagated := false
 
 mainLoop:
 	for !p.exit && !conn.exit {
@@ -533,12 +552,29 @@ mainLoop:
 
 		conn.fm.Update()
 
+		if !halfClosedPropagated && conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 {
+			// The client half-closed its side and every buffered byte of it
+			// has been written to the target: propagate the EOF now — a
+			// CloseWrite issued earlier would put the FIN ahead of data
+			// still sitting in the recv buffer.
+			halfClosedPropagated = true
+			if tc, ok := conn.tcpconn.(*net.TCPConn); ok {
+				_ = tc.CloseWrite()
+			}
+			loggo.Info("client half-closed conn %s %s", conn.id, conn.tcpaddrTarget.String())
+		}
+
 		sendlist := conn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			conn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
+				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+					// Only real payload counts as conn activity: heartbeat
+					// and ACK frames keep the tunnel alive without keeping
+					// an idle conn alive.
+					conn.activeSendTime = now
+				}
 				mb, err := conn.fm.MarshalFrame(f)
 				if err != nil {
 					loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
@@ -568,7 +604,6 @@ mainLoop:
 			}
 			if n > 0 {
 				conn.fm.SkipRecvBuffer(n)
-				tcpActiveSendTime = now
 			}
 		}
 
@@ -582,12 +617,19 @@ mainLoop:
 		default:
 		}
 
-		diffrecv := now.Sub(conn.activeRecvTime)
-		diffsend := now.Sub(conn.activeSendTime)
-		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
-		tcpdiffsend := now.Sub(tcpActiveSendTime)
-		if (diffrecv > time.Second*(time.Duration(conn.timeout)) && diffsend > time.Second*(time.Duration(conn.timeout))) ||
-			(tcpdiffrecv > time.Second*(time.Duration(conn.timeout)) && tcpdiffsend > time.Second*(time.Duration(conn.timeout))) {
+		// The conn is dead only when no real payload flowed in either
+		// direction for the whole timeout window and nothing is waiting to be
+		// delivered: a slow reader (on either side) is backpressure, not
+		// idleness.
+		idleRecv := now.Sub(conn.activeRecvTime) > time.Second*(time.Duration(conn.timeout))
+		idleSend := now.Sub(conn.activeSendTime) > time.Second*(time.Duration(conn.timeout))
+		// A conn with unacknowledged frames in flight or undelivered bytes is
+		// under backpressure, not idle: the peer (or the target) is slow, and
+		// closing here would cut the transfer short.
+		// The peer's heartbeat proves the tunnel is stalled on backpressure
+		// (its send window is full), not dead: never reap while it beats.
+		hbFresh := time.Since(time.Unix(0, conn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(conn.timeout))
+		if idleRecv && idleSend && !hbFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
 			break
@@ -638,14 +680,12 @@ mainLoop:
 			p.sendPacketSize += (uint64)(len(mb))
 		}
 
-		nodatarecv := true
 		if conn.fm.GetRecvBufferSize() > 0 {
 			rr := conn.fm.GetRecvReadLineBuffer()
 			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
 			n, _ := conn.tcpconn.Write(rr)
 			if n > 0 {
 				conn.fm.SkipRecvBuffer(n)
-				nodatarecv = false
 			}
 		}
 
@@ -656,8 +696,12 @@ mainLoop:
 		}
 
 		remoteclosed := conn.fm.IsRemoteClosed()
-		if remoteclosed && nodatarecv {
+		if remoteclosed && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
 			loggo.Info("remote conn had closed %s %s", conn.id, conn.tcpaddrTarget.String())
+			break
+		}
+		if conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
+			loggo.Info("client half-closed and flushed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 
@@ -824,6 +868,7 @@ func (p *Server) getServerConnById(uuid string) *ServerConn {
 func (p *Server) deleteServerConn(uuid string) {
 	if _, ok := p.localConnMap.LoadAndDelete(uuid); ok {
 		p.connCount.Add(-1)
+		p.recentlyClosed.Store(uuid, time.Now())
 	}
 }
 
@@ -864,4 +909,11 @@ func (p *Server) updateConnError() {
 			p.connErrorMap.Delete(id)
 		}
 	}
+
+	p.recentlyClosed.Range(func(key, value interface{}) bool {
+		if now.Sub(value.(time.Time)) > time.Second*10 {
+			p.recentlyClosed.Delete(key)
+		}
+		return true
+	})
 }

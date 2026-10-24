@@ -5,6 +5,7 @@ import (
 	"github.com/esrrhs/gohome/loggo"
 	"github.com/esrrhs/gohome/network"
 	"google.golang.org/protobuf/proto"
+	"io"
 	"math"
 	"math/rand"
 	"net"
@@ -477,9 +478,11 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	bytes := make([]byte, 10240)
 
-	tcpActiveRecvUnix := atomic.Int64{}
-	tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
-	tcpActiveSendTime := common.GetNowUpdateInSecond()
+	// readEOF closes when the local app half-closes its write side: the conn
+	// stays open for the remaining server->app data until the remote closes
+	// or the inactivity gate fires. Real read errors still tear the conn down
+	// via readErr.
+	readEOF := make(chan struct{})
 	readErr := make(chan error, 1)
 	stopRead := make(chan struct{})
 
@@ -510,6 +513,15 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				if ok && nerr.Timeout() {
 					continue
 				}
+				if err == io.EOF {
+					// The app half-closed its write side (or closed after
+					// reading everything): tell the server and keep the recv
+					// direction open until the remote closes.
+					clientConn.fm.CloseSend()
+					notifyActivity(clientConn.activity)
+					close(readEOF)
+					return
+				}
 				select {
 				case readErr <- err:
 				default:
@@ -521,12 +533,12 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			}
 
 			clientConn.fm.WriteSendBuffer(bytes[:n])
-			tcpActiveRecvUnix.Store(common.GetNowUpdateInSecond().UnixNano())
 			p.touchActivity()
 			notifyActivity(clientConn.activity)
 		}
 	}()
 
+	halfClosed := false
 	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
 
 mainLoop:
@@ -539,9 +551,14 @@ mainLoop:
 		sendlist := clientConn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			clientConn.activeSendTime = now
 			for e := sendlist.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*network.Frame)
+				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+					// Only real payload counts as conn activity: heartbeat
+					// and ACK frames keep the tunnel alive without keeping
+					// an idle conn alive.
+					clientConn.activeSendTime = now
+				}
 				mb, err := clientConn.fm.MarshalFrame(f)
 				if err != nil {
 					loggo.Error("Error tcp Marshal %s %s %s", uuid, tcpsrcaddr.String(), err)
@@ -573,7 +590,6 @@ mainLoop:
 			}
 			if n > 0 {
 				clientConn.fm.SkipRecvBuffer(n)
-				tcpActiveSendTime = now
 				p.touchActivity()
 			}
 		}
@@ -585,15 +601,29 @@ mainLoop:
 				clientConn.fm.Close()
 				break mainLoop
 			}
+		case <-readEOF:
+			// The app half-closed or closed: stop reading, keep relaying the
+			// server->app direction until the remote closes or the conn goes
+			// inactive.
+			if !halfClosed {
+				halfClosed = true
+				loggo.Info("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+			}
 		default:
 		}
 
-		diffrecv := now.Sub(clientConn.activeRecvTime)
-		diffsend := now.Sub(clientConn.activeSendTime)
-		tcpdiffrecv := now.Sub(time.Unix(0, tcpActiveRecvUnix.Load()))
-		tcpdiffsend := now.Sub(tcpActiveSendTime)
-		if (diffrecv > time.Second*(time.Duration(p.timeout)) && diffsend > time.Second*(time.Duration(p.timeout))) ||
-			(tcpdiffrecv > time.Second*(time.Duration(p.timeout)) && tcpdiffsend > time.Second*(time.Duration(p.timeout))) {
+		// The conn is dead only when no real payload flowed in either
+		// direction for the whole timeout window and nothing is waiting to be
+		// delivered: a slow reader is backpressure, not idleness.
+		idleRecv := now.Sub(clientConn.activeRecvTime) > time.Second*(time.Duration(p.timeout))
+		idleSend := now.Sub(clientConn.activeSendTime) > time.Second*(time.Duration(p.timeout))
+		// A conn with unacknowledged frames in flight or undelivered bytes is
+		// under backpressure, not idle: the peer (or the local app) is slow,
+		// and closing here would cut the transfer short.
+		// The peer's heartbeat proves the tunnel is stalled on backpressure
+		// (its send window is full), not dead: never reap while it beats.
+		hbFresh := time.Since(time.Unix(0, clientConn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(p.timeout))
+		if idleRecv && idleSend && !hbFresh && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			clientConn.fm.Close()
 			break
@@ -615,6 +645,11 @@ mainLoop:
 					loggo.Info("Error read tcp %s %s %s", uuid, tcpsrcaddr.String(), err)
 					clientConn.fm.Close()
 					break mainLoop
+				}
+			case <-readEOF:
+				if !halfClosed {
+					halfClosed = true
+					loggo.Info("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 				}
 			case <-time.After(wait):
 			}
@@ -645,14 +680,12 @@ mainLoop:
 			p.sendPacketSize += (uint64)(len(mb))
 		}
 
-		nodatarecv := true
 		if clientConn.fm.GetRecvBufferSize() > 0 {
 			rr := clientConn.fm.GetRecvReadLineBuffer()
 			conn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
 			n, _ := conn.Write(rr)
 			if n > 0 {
 				clientConn.fm.SkipRecvBuffer(n)
-				nodatarecv = false
 			}
 		}
 
@@ -663,8 +696,12 @@ mainLoop:
 		}
 
 		remoteclosed := clientConn.fm.IsRemoteClosed()
-		if remoteclosed && nodatarecv {
+		if remoteclosed && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.CloseFlushed() {
 			loggo.Info("remote conn had closed %s %s", clientConn.id, clientConn.tcpaddr.String())
+			break
+		}
+		if halfClosed && clientConn.fm.IsRemoteSendClosed() && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.CloseFlushed() {
+			loggo.Info("both sides send-closed %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 
@@ -757,6 +794,13 @@ func (p *Client) processPacket(packet *Packet) {
 	if packet.my.Type == (int32)(MyMsg_KICK) {
 		clientConn := p.getClientConnById(packet.my.Id)
 		if clientConn != nil {
+			if clientConn.fm.IsRemoteClosed() && clientConn.fm.GetRecvBufferSize() > 0 {
+				// The remote already confirmed this conn and the tail is
+				// still being delivered to the local app: a KICK for a stale
+				// retransmit must not cut that delivery short.
+				loggo.Info("ignore kick, delivering tail %s", packet.my.Id)
+				return
+			}
 			p.close(clientConn)
 			loggo.Info("remote kick local %s", packet.my.Id)
 		}
@@ -773,7 +817,6 @@ func (p *Client) processPacket(packet *Packet) {
 	}
 
 	now := common.GetNowUpdateInSecond()
-	clientConn.activeRecvTime = now
 
 	if clientConn.tcpmode > 0 {
 		f := &network.Frame{}
@@ -782,10 +825,17 @@ func (p *Client) processPacket(packet *Packet) {
 			loggo.Error("Unmarshal tcp Error %s", err)
 			return
 		}
+		if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+			// Only payload frames count as conn activity; ACK/HB frames must
+			// not keep an idle conn alive.
+			clientConn.activeRecvTime = now
+		}
 
 		clientConn.fm.OnRecvFrame(f)
 		notifyActivity(clientConn.activity)
 	} else {
+		clientConn.activeRecvTime = now
+
 		if packet.my.Data == nil {
 			return
 		}
