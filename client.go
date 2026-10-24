@@ -768,6 +768,12 @@ func (p *Client) Accept() error {
 
 func (p *Client) processPacket(packet *Packet) {
 
+	// The kernel echoes our own echo requests back as replies with the
+	// original payload; a client only consumes genuine replies.
+	if packet.icmpType != RECV_PROTO {
+		return
+	}
+
 	if packet.my.Rproto >= 0 {
 		return
 	}

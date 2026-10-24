@@ -137,6 +137,24 @@ func (h *fakeICMPHubT) deliver(sender *fakeICMPEndpoint, b []byte) {
 	for _, t := range targets {
 		_, _ = sender.udp.WriteTo(b, t.LocalAddr())
 	}
+
+	// Simulate the kernel's automatic echo reply: for every outgoing echo
+	// request, all raw ICMP sockets on the host (the sender included) see the
+	// type=0 reply with the original payload. Real-ICMP behavior the fake
+	// must reproduce — servers see their clients' packets twice.
+	if len(b) > 0 && b[0] == 8 {
+		echo := append([]byte(nil), b...)
+		echo[0] = 0
+		h.mu.Lock()
+		all := make([]*net.UDPConn, 0, len(h.eps))
+		for _, e := range h.eps {
+			all = append(all, e.udp)
+		}
+		h.mu.Unlock()
+		for _, t := range all {
+			_, _ = sender.udp.WriteTo(echo, t.LocalAddr())
+		}
+	}
 }
 
 func (ep *fakeICMPEndpoint) WriteTo(b []byte, dst net.Addr) (int, error) {

@@ -156,6 +156,14 @@ func (p *Server) Stop() {
 
 func (p *Server) processPacket(packet *Packet) {
 
+	// The kernel echoes every client echo request back as a reply to the
+	// client; a raw socket on this host sees that reply too. Only genuine
+	// requests (ICMP echo request) are processed — handling the kernel's
+	// reply would double-process payloads and hit nil conns.
+	if packet.icmpType != SEND_PROTO {
+		return
+	}
+
 	if packet.my.Key != (int32)(p.key) {
 		return
 	}
