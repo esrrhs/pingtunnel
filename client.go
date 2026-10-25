@@ -489,7 +489,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	loggo.Info("client accept new local tcp %s %s", uuid, tcpsrcaddr.String())
 	p.touchActivity()
 
-	loggo.Info("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
+	loggo.Debug("start connect remote tcp %s %s", uuid, tcpsrcaddr.String())
 	clientConn.fm.Connect()
 	startConnectTime := common.GetNowUpdateInSecond()
 	connectWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
@@ -534,7 +534,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	}
 
 	if !clientConn.exit {
-		loggo.Info("connected remote tcp %s %s", uuid, tcpsrcaddr.String())
+		loggo.Debug("connected remote tcp %s %s", uuid, tcpsrcaddr.String())
 	}
 
 	bytes := make([]byte, 10240)
@@ -672,7 +672,7 @@ mainLoop:
 			// inactive.
 			if !halfClosed {
 				halfClosed = true
-				loggo.Info("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+				loggo.Debug("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			}
 		default:
 		}
@@ -689,7 +689,7 @@ mainLoop:
 			// The server abandoned this conn: hand over whatever arrived and
 			// close. Waiting for more data or a CLOSE frame would hang.
 			if clientConn.fm.GetRecvBufferSize() == 0 {
-				loggo.Info("tail delivered, closing kicked conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+				loggo.Debug("tail delivered, closing kicked conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 				clientConn.fm.Close()
 				break
 			}
@@ -704,13 +704,13 @@ mainLoop:
 		// make the inactivity timeout dead code.
 		congestionFresh := now.Sub(clientConn.peerCongestionTime) < time.Second*(time.Duration(p.timeout))
 		if idleRecv && idleSend && !congestionFresh && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.GetSendWinSize() == 0 {
-			loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+			loggo.Debug("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			clientConn.fm.Close()
 			break
 		}
 
 		if clientConn.fm.IsRemoteClosed() {
-			loggo.Info("closed by remote conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+			loggo.Debug("closed by remote conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			clientConn.fm.Close()
 			break
 		}
@@ -729,7 +729,7 @@ mainLoop:
 			case <-readEOF:
 				if !halfClosed {
 					halfClosed = true
-					loggo.Info("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+					loggo.Debug("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 				}
 			case <-time.After(wait):
 			}
@@ -790,18 +790,18 @@ mainLoop:
 
 		diffclose := now.Sub(startCloseTime)
 		if diffclose > time.Second*60 {
-			loggo.Info("close conn had timeout %s %s", clientConn.id, clientConn.tcpaddr.String())
+			loggo.Debug("close conn had timeout %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 
 		if clientConn.kicked.Load() && clientConn.fm.GetRecvBufferSize() == 0 {
-			loggo.Info("kicked conn tail delivered %s %s", clientConn.id, clientConn.tcpaddr.String())
+			loggo.Debug("kicked conn tail delivered %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 
 		remoteclosed := clientConn.fm.IsRemoteClosed()
 		if remoteclosed && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.CloseFlushed() {
-			loggo.Info("remote conn had closed %s %s", clientConn.id, clientConn.tcpaddr.String())
+			loggo.Debug("remote conn had closed %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 		halfFlushed := halfClosed && clientConn.fm.IsRemoteSendClosed() && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.CloseFlushed()
@@ -810,7 +810,7 @@ mainLoop:
 		} else if halfFlushSince.IsZero() {
 			halfFlushSince = time.Now()
 		} else if time.Since(halfFlushSince) >= closePeerFlushGrace {
-			loggo.Info("both sides send-closed %s %s", clientConn.id, clientConn.tcpaddr.String())
+			loggo.Debug("both sides send-closed %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 
@@ -909,7 +909,7 @@ func (p *Client) processPacket(packet *Packet) {
 		t.UnmarshalBinary(packet.my.Data)
 		now := time.Now()
 		d := now.Sub(t)
-		loggo.Info("pong from %s %s", packet.src.String(), d.String())
+		loggo.Debug("pong from %s %s", packet.src.String(), d.String())
 		p.rtt = d
 		p.pongTime = now
 		if packet.my.Id != "" {
@@ -1063,7 +1063,7 @@ func (p *Client) ping() {
 		SEND_PROTO, RECV_PROTO, p.key,
 		0, 0, 0, 0, 0, 0,
 		0, p.cryptoConfig)
-	loggo.Info("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
+	loggo.Debug("ping %s %s %d %d %d %d", p.addrServer, now.String(), p.sproto, p.rproto, p.id, p.sequence)
 	p.sequence++
 	if now.Sub(p.pongTime) > time.Second*3 {
 		p.rtt = 0
@@ -1081,7 +1081,7 @@ func (p *Client) showNet() {
 		p.localIdToConnMapSize++
 		return true
 	})
-	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %d/%dConnections",
+	loggo.Debug("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %d/%dConnections",
 		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localAddrToConnMapSize, p.localIdToConnMapSize)
 	p.sendPacket = 0
 	p.recvPacket = 0
