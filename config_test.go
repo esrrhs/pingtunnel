@@ -22,11 +22,13 @@ func TestLoadConfig(t *testing.T) {
 		"listen": ":4455",
 		"server": "1.2.3.4",
 		"socks5": true,
+		"udp": true,
 		"password": "correct-horse-battery",
 		"encrypt": "aes256",
-		"tcp_bs": 2097152,
 		"congestion": "bb",
-		"loglevel": "debug"
+		"loglevel": "debug",
+		"quiet": true,
+		"nolog": true
 	}`)
 
 	cfg, err := LoadConfig(configPath)
@@ -46,20 +48,26 @@ func TestLoadConfig(t *testing.T) {
 	if !cfg.Socks5 {
 		t.Errorf("expected socks5 true, got %v", cfg.Socks5)
 	}
+	if !cfg.UDP {
+		t.Errorf("expected udp true, got %v", cfg.UDP)
+	}
 	if cfg.Password != "correct-horse-battery" {
 		t.Errorf("expected password, got %s", cfg.Password)
 	}
 	if cfg.Encrypt != "aes256" {
 		t.Errorf("expected encrypt aes256, got %s", cfg.Encrypt)
 	}
-	if cfg.TCPBufferSize != 2097152 {
-		t.Errorf("expected tcp_bs 2097152, got %d", cfg.TCPBufferSize)
-	}
 	if cfg.Congestion != "bb" {
 		t.Errorf("expected congestion bb, got %s", cfg.Congestion)
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("expected loglevel debug, got %s", cfg.LogLevel)
+	}
+	if !cfg.Quiet {
+		t.Errorf("expected quiet true, got %v", cfg.Quiet)
+	}
+	if !cfg.NoLog {
+		t.Errorf("expected nolog true, got %v", cfg.NoLog)
 	}
 }
 
@@ -68,6 +76,15 @@ func TestLoadConfig_RejectsLegacyFields(t *testing.T) {
 		"key":         `"key": 123456`,
 		"encrypt_key": `"encrypt_key": "secret"`,
 		"sock5":       `"sock5": 1`,
+		"tcp":         `"tcp": 1`,
+		"tcp_bs":      `"tcp_bs": 1048576`,
+		"tcp_mw":      `"tcp_mw": 20000`,
+		"tcp_rst":     `"tcp_rst": 400`,
+		"tcp_gz":      `"tcp_gz": 1024`,
+		"tcp_stat":    `"tcp_stat": 1`,
+		"maxprt":      `"maxprt": 100`,
+		"maxprb":      `"maxprb": 1000`,
+		"noprint":     `"noprint": 1`,
 	}
 	for field, snippet := range cases {
 		jsonContent := `{"type": "client", ` + snippet + `}`
