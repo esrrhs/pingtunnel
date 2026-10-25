@@ -96,7 +96,7 @@ for line in $build_list; do
   os=$(echo "$line" | awk -F"/" '{print $1}')
   arch=$(echo "$line" | awk -F"/" '{print $2}')
   echo "os="$os" arch="$arch" start build"
-  if [ "$os" == "ios" ]; then
+  if [ "$os" == "ios" ] || [ "$os" == "plan9" ] || [ "$os" == "js" ]; then
     continue
   fi
   if [ "$arch" == "wasm" ]; then

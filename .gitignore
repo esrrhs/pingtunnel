@@ -17,3 +17,7 @@
 # Built packages
 cmd/pack/
 cmd/pack.zip
+
+# Runtime logs
+*.log
+*.stderr
