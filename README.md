@@ -91,13 +91,13 @@ echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
   ```bash
   ./pingtunnel -type client -l 127.0.0.1:1080 -s YOUR_SERVER_IP -socks5 -password "YourSecretPassword"
   ```
-- **TCP 端口转发（例如映射远程内网 192.168.1.100:22 到本地 2222）**：
+- **TCP 端口转发（默认模式，例如映射远程内网 192.168.1.100:22 到本地 2222）**：
   ```bash
-  ./pingtunnel -type client -l :2222 -s YOUR_SERVER_IP -t 192.168.1.100:22 -tcp 1 -password "YourSecretPassword"
+  ./pingtunnel -type client -l :2222 -s YOUR_SERVER_IP -t 192.168.1.100:22 -password "YourSecretPassword"
   ```
 - **UDP 转发（例如转发本地 5353 到公共 DNS 8.8.8.8:53）**：
   ```bash
-  ./pingtunnel -type client -l :5353 -s YOUR_SERVER_IP -t 8.8.8.8:53 -password "YourSecretPassword"
+  ./pingtunnel -type client -l :5353 -s YOUR_SERVER_IP -t 8.8.8.8:53 -udp -password "YourSecretPassword"
   ```
 
 ---
