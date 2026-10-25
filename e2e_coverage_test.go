@@ -240,7 +240,7 @@ func TestE2E_Lifecycle_ReconnectAfterClientRestart(t *testing.T) {
 
 	newAddr := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
 	c2, err := NewClient(newAddr, "127.0.0.1", p.echoAddr, opts.timeout, p.key, "127.0.0.1",
-		1, opts.tcpBS, opts.tcpMW, opts.tcpRST, opts.tcpGZ, 0, 0, 0, nil, "", "", opts.congestion)
+		false, false, 0, nil, "", "", opts.congestion)
 	if err != nil {
 		t.Fatalf("NewClient after restart: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestE2E_Lifecycle_ClosePropagationToTarget(t *testing.T) {
 	// Point the pair's fixed target at the counted echo server.
 	p.StopClient()
 	c, err := NewClient(p.clientAddr, "127.0.0.1", echoAddr, opts.timeout, p.key, "127.0.0.1",
-		1, opts.tcpBS, opts.tcpMW, opts.tcpRST, opts.tcpGZ, 0, 0, 0, nil, "", "", opts.congestion)
+		false, false, 0, nil, "", "", opts.congestion)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

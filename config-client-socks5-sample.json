@@ -5,7 +5,5 @@
   "socks5": true,
   "password": "YOUR_STRONG_PASSWORD_HERE",
   "encrypt": "chacha20",
-  "loglevel": "info",
-  "nolog": 0,
-  "noprint": 0
+  "loglevel": "info"
 }

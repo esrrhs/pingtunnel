@@ -176,7 +176,7 @@ func TestE2E_Lifecycle_IdleConnReaped(t *testing.T) {
 	// Point the pair's fixed target at the counted echo server.
 	p.StopClient()
 	c, err := NewClient(p.clientAddr, "127.0.0.1", echoAddr, opts.timeout, p.key, "127.0.0.1",
-		1, opts.tcpBS, opts.tcpMW, opts.tcpRST, opts.tcpGZ, 0, 0, 0, nil, "", "", opts.congestion)
+		false, false, 0, nil, "", "", opts.congestion)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -301,7 +301,11 @@ func TestE2E_Lifecycle_ServerRestartRecovery(t *testing.T) {
 	p.server = nil
 	time.Sleep(300 * time.Millisecond)
 
-	s2, err := NewServer("127.0.0.1", p.key, opts.serverMaxConn, opts.maxprt, 1000, opts.conntt, nil, nil, opts.congestion)
+	conntt := opts.conntt
+	if conntt <= 0 {
+		conntt = 5000
+	}
+	s2, err := NewServer("127.0.0.1", p.key, opts.serverMaxConn, conntt, nil, nil, opts.congestion)
 	if err != nil {
 		t.Fatalf("NewServer after restart: %v", err)
 	}
@@ -340,7 +344,7 @@ func TestE2E_Lifecycle_TwoClientsOneServer(t *testing.T) {
 
 	addr2 := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
 	c2, err := NewClient(addr2, "127.0.0.1", p.echoAddr, opts.timeout, p.key, "127.0.0.1",
-		1, opts.tcpBS, opts.tcpMW, opts.tcpRST, opts.tcpGZ, 0, 0, 0, nil, "", "", opts.congestion)
+		false, false, 0, nil, "", "", opts.congestion)
 	if err != nil {
 		t.Fatalf("NewClient second client: %v", err)
 	}
@@ -404,35 +408,6 @@ func TestE2E_Lifecycle_TwoClientsOneServer(t *testing.T) {
 			t.Fatalf("concurrent transfer failed: %v", err)
 		}
 	}
-}
-
-// TestE2E_Server_InlineProcessing: maxprt=0 disables the packet worker pool —
-// packets are processed inline on the recv loop. The full data path must work
-// the same way.
-func TestE2E_Server_InlineProcessing(t *testing.T) {
-	opts := basePairOpts()
-	opts.maxprt = 0
-	opts.timeout = 30
-	p := startPair(t, opts)
-	defer p.Close()
-
-	conn, err := waitForPort(p.clientAddr, 5*time.Second)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer conn.Close()
-	echoRoundTrip(t, conn, []byte("inline-processing-echo"), 15*time.Second)
-
-	payload := make([]byte, 256*1024)
-	fillPattern(payload, 55)
-	echoRoundTrip(t, conn, payload, 30*time.Second)
-
-	conn2, err := waitForPort(p.clientAddr, 5*time.Second)
-	if err != nil {
-		t.Fatalf("dial2: %v", err)
-	}
-	defer conn2.Close()
-	echoRoundTrip(t, conn2, []byte("inline-processing-second-conn"), 15*time.Second)
 }
 
 // TestE2E_Server_CongestionDisabled: congestion="" runs the FrameMgr without
