@@ -743,6 +743,23 @@ mainLoop:
 			}
 		}
 
+		// The close phase is a delivery engine in its own right: a burst
+		// target can EOF long before the tunnel drained it, and everything
+		// left is retransmitted from here for up to 60s. Keep signalling
+		// congestion while that runs, or the server reaps the conn as idle
+		// mid-tail (an unthrottled loopback target dies within ~50ms).
+		if clientConn.fm.GetRecvBufferSize() > 0 || clientConn.fm.GetSendWinSize() > 0 {
+			if now.Sub(clientConn.lastCongestionPing) >= time.Second {
+				clientConn.lastCongestionPing = now
+				tb, _ := time.Now().MarshalBinary()
+				p.sequence++
+				sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, "", clientConn.id, (uint32)(MyMsg_PING), tb,
+					SEND_PROTO, RECV_PROTO, p.key,
+					0, 0, 0, 0, 0, 0,
+					0, p.cryptoConfig)
+			}
+		}
+
 		diffclose := now.Sub(startCloseTime)
 		if diffclose > time.Second*60 {
 			loggo.Info("close conn had timeout %s %s", clientConn.id, clientConn.tcpaddr.String())
