@@ -77,7 +77,7 @@ func TestE2E_AuthFailure(t *testing.T) {
 	badKey := nextE2EKey()
 	badAddr := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
 	badClient, err := NewClient(badAddr, "127.0.0.1", p.echoAddr, 60, badKey, "127.0.0.1",
-		1, 1024*1024, 20000, 400, 0, 0, 0, 0, nil, "", "", "bb")
+		false, false, 0, nil, "", "", "bb")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
