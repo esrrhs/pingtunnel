@@ -21,9 +21,18 @@ const (
 )
 
 func NewClient(addr string, server string, target string, timeout int, key int, icmpAddr string,
-	tcpmode int, tcpmode_buffersize int, tcpmode_maxwin int, tcpmode_resend_timems int, tcpmode_compress int,
-	tcpmode_stat int, open_sock5 int, maxconn int, cryptoConfig *CryptoConfig,
+	udpMode bool, socks5 bool, maxconn int, cryptoConfig *CryptoConfig,
 	sock5_user string, sock5_pass string, congestion string) (*Client, error) {
+
+	tcpmode := 1
+	if udpMode {
+		tcpmode = 0
+	}
+	open_sock5 := 0
+	if socks5 {
+		open_sock5 = 1
+		tcpmode = 1
+	}
 
 	var ipaddr *net.UDPAddr
 	var tcpaddr *net.TCPAddr
@@ -50,7 +59,7 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 	c := &Client{
 		exit:                  false,
 		rtt:                   0,
-		id:                    rand.Intn(math.MaxInt16),
+		id:                    1 + rand.Intn(math.MaxUint16-1),
 		ipaddr:                ipaddr,
 		tcpaddr:               tcpaddr,
 		addr:                  addr,
@@ -61,11 +70,11 @@ func NewClient(addr string, server string, target string, timeout int, key int, 
 		timeout:               timeout,
 		key:                   key,
 		tcpmode:               tcpmode,
-		tcpmode_buffersize:    tcpmode_buffersize,
-		tcpmode_maxwin:        tcpmode_maxwin,
-		tcpmode_resend_timems: tcpmode_resend_timems,
-		tcpmode_compress:      tcpmode_compress,
-		tcpmode_stat:          tcpmode_stat,
+		tcpmode_buffersize:    DEFAULT_TCP_BUF,
+		tcpmode_maxwin:        DEFAULT_TCP_WIN,
+		tcpmode_resend_timems: DEFAULT_TCP_RESEND,
+		tcpmode_compress:      0,
+		tcpmode_stat:          0,
 		open_sock5:            open_sock5,
 		maxconn:               maxconn,
 		pongTime:              now,
@@ -311,7 +320,7 @@ func (p *Client) Run() error {
 		go p.Accept()
 	}
 
-	recv := make(chan *Packet, 10000)
+	recv := make(chan *Packet, PACKET_QUEUE_CAP)
 	p.recvcontrol = make(chan int, 1)
 	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 
