@@ -54,7 +54,7 @@ This guide provides detailed documentation on Pingtunnel command-line flags, JSO
 | `-c` | `""` | Path to JSON config file |
 | `-l` | `""` | Local listen address and port (e.g. `:4455` or `127.0.0.1:1080`) |
 | `-s` | `""` | Remote Pingtunnel server IP or domain name |
-| `-t` | `""` | Destination target address (e.g. `1.1.1.1:53` or internal IP `10.0.0.5:22`; can be omitted when `sock5` is enabled) |
+| `-t` | `""` | Destination target address (e.g. `1.1.1.1:53` or internal IP `10.0.0.5:22`; can be omitted when `socks5` is enabled) |
 | `-socks5` | `false` | Enable local SOCKS5 proxy mode (automatically enables TCP) |
 | `-s5user` | `""` | Local SOCKS5 username authentication (optional) |
 | `-s5pass` | `""` | Local SOCKS5 password authentication (optional) |
@@ -105,7 +105,7 @@ pingtunnel -c ./client.json
   "type": "client",
   "listen": ":1080",
   "server": "your-server-ip.com",
-  "sock5": 1,
+  "socks5": true,
   "password": "MySecureSecretKey",
   "encrypt": "chacha20",
   "s5user": "myuser",

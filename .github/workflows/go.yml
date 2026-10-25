@@ -61,7 +61,7 @@ jobs:
           set -o pipefail
           sudo env PINGTUNNEL_E2E_REQUIRE_REAL_ICMP=1 PINGTUNNEL_E2E_LOGLEVEL=info /tmp/pingtunnel-e2e.test -test.run TestE2E -test.v -test.timeout 20m 2>&1 | tee /tmp/e2e-icmp.log
       - name: Report failures
-        if: failure()
+        if: failure() && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
