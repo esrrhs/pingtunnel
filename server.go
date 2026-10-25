@@ -15,26 +15,24 @@ import (
 	"time"
 )
 
-func NewServer(icmpAddr string, key int, maxconn int, maxprocessthread int, maxprocessbuffer int, connecttmeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig, congestion string) (*Server, error) {
+func NewServer(icmpAddr string, key int, maxconn int, connecttimeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig, congestion string) (*Server, error) {
 	s := &Server{
 		icmpAddr:         icmpAddr,
 		exit:             false,
 		key:              key,
 		maxconn:          maxconn,
-		maxprocessthread: maxprocessthread,
-		maxprocessbuffer: maxprocessbuffer,
-		connecttmeout:    connecttmeout,
+		maxprocessthread: DEFAULT_SERVER_THREADS,
+		maxprocessbuffer: DEFAULT_SERVER_BUFFER,
+		connecttmeout:    connecttimeout,
 		cryptoConfig:     cryptoConfig,
 		forwardConfig:    forwardConfig,
 		congestion:       congestion,
 	}
 
-	if maxprocessthread > 0 {
-		s.processtp = thread.NewThreadPool(maxprocessthread, maxprocessbuffer, func(v interface{}) {
-			packet := v.(*Packet)
-			s.processDataPacket(packet)
-		})
-	}
+	s.processtp = thread.NewThreadPool(DEFAULT_SERVER_THREADS, DEFAULT_SERVER_BUFFER, func(v interface{}) {
+		packet := v.(*Packet)
+		s.processDataPacket(packet)
+	})
 
 	return s, nil
 }
@@ -109,7 +107,7 @@ func (p *Server) Run() error {
 	}
 	p.conn = conn
 
-	recv := make(chan *Packet, 10000)
+	recv := make(chan *Packet, PACKET_QUEUE_CAP)
 	p.recvcontrol = make(chan int, 1)
 	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 

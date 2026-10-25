@@ -63,20 +63,21 @@ sudo ./pingtunnel -c /etc/pingtunnel/server.json
 | `socks5` | bool | Client | `false` | `-socks5` | 是否开启本地 SOCKS5 代理服务（开启后自动启用 TCP 模式） |
 | `s5user` | string | Client | `""` | `-s5user` | 本地 SOCKS5 代理认证用户名（可选） |
 | `s5pass` | string | Client | `""` | `-s5pass` | 本地 SOCKS5 代理认证密码（可选） |
-| `tcp` | int | Client | `0` | `-tcp` | 是否按 TCP 模式转发（`1` 为 TCP，`0` 为 UDP，开启 socks5 时强制为 1） |
+| `tcp` | int | Client | `1` | `-tcp` | 是否按 TCP 模式转发（`1` 为 TCP，`0` 为 UDP，单端口转发默认启用 TCP） |
+| `udp` | bool | Client | `false`| `-udp` | 开启 UDP 转发模式（优先级高于默认的 TCP 模式） |
 | `icmp_listen`| string | 双端 | `"0.0.0.0"` | `-icmp_l` | 本地用于收发 ICMP 报文的网络接口 IP |
 | `timeout` | int | Client | `60` | `-timeout` | 连接空闲超时释放时间（秒） |
 | `congestion` | string | 双端 | `"bb"` | `-congestion` | 拥塞控制算法：`"bb"`（带宽自适应算法，防打满断流）或 `""`（禁用） |
 | `forward` | string | Server | `""` | `-forward` | 服务端上游中继代理（如 `"socks5://127.0.0.1:2080"` 或 `"http://proxy:8080"`） |
 | `maxconn` | int | 双端 | `0` | `-maxconn` | 最大允许并发连接数（`0` 表示不限） |
-| `maxprt` | int | Server | `100` | `-maxprt` | 服务端报文并行处理的工作协程数 |
-| `maxprb` | int | Server | `1000` | `-maxprb` | 服务端报文处理队列缓冲区大小 |
-| `conntt` | int | Server | `1000` | `-conntt` | 服务端向目标 target 发起连接的超时毫秒数 |
-| `tcp_bs` | int | Client | `1048576` | `-tcp_bs` | TCP 模式滑动窗口收发缓冲区大小（字节），默认 1MB |
-| `tcp_mw` | int | Client | `20000` | `-tcp_mw` | TCP 模式最大发送窗口（帧数） |
-| `tcp_rst` | int | Client | `400` | `-tcp_rst` | TCP 帧重传检测周期（毫秒） |
-| `tcp_gz` | int | Client | `0` | `-tcp_gz` | 数据包超过指定大小（字节）时自动启用 Gzip 压缩，`0` 为禁用 |
-| `tcp_stat` | int | Client | `0` | `-tcp_stat` | 是否定期在日志中打印 TCP 流控与发包统计（`1` 开启，`0` 关闭） |
+| `maxprt` | int | Server | `100` | `-maxprt` | (高级/内部) 服务端报文并行处理的工作协程数 |
+| `maxprb` | int | Server | `1000` | `-maxprb` | (高级/内部) 服务端报文处理队列缓冲区大小 |
+| `conntt` | int | Server | `3000` | `-conntt` | 服务端向目标 target 发起连接的超时毫秒数 |
+| `tcp_bs` | int | Client | `1048576` | `-tcp_bs` | (高级/内部) TCP 模式滑动窗口收发缓冲区大小（字节），默认 1MB |
+| `tcp_mw` | int | Client | `20000` | `-tcp_mw` | (高级/内部) TCP 模式最大发送窗口（帧数） |
+| `tcp_rst` | int | Client | `400` | `-tcp_rst` | (高级/内部) TCP 帧重传检测周期（毫秒） |
+| `tcp_gz` | int | Client | `0` | `-tcp_gz` | (高级/内部) 数据包超过指定大小（字节）时自动启用 Gzip 压缩，`0` 为禁用 |
+| `tcp_stat` | int | Client | `0` | `-tcp_stat` | (高级/内部) 是否定期在日志中打印 TCP 流控与发包统计（`1` 开启，`0` 关闭） |
 | `nolog` | int | 双端 | `0` | `-nolog` | 是否禁止写日志文件（`1` 表示只打印到标准输出） |
 | `noprint` | int | 双端 | `0` | `-noprint` | 是否禁止向控制台标准输出打印日志（`1` 开启静默） |
 | `loglevel` | string | 双端 | `"info"` | `-loglevel` | 日志打印等级（`"debug"`, `"info"`, `"warn"`, `"error"`） |
@@ -171,7 +172,7 @@ sudo ./pingtunnel -type server [OPTIONS]
 | `-maxconn` | `0` | 最大并发连接数限制（`0` 不限） |
 | `-maxprt` | `100` | 服务端报文分发处理的工作协程数 |
 | `-maxprb` | `1000` | 报文处理缓冲区大小 |
-| `-conntt` | `1000` | 向目的 target 建联超时时间（毫秒） |
+| `-conntt` | `3000` | 向目的 target 建联超时时间（毫秒） |
 | `-nolog` | `0` | 设为 `1` 时不写入日志文件 |
 | `-noprint` | `0` | 设为 `1` 时静默控制台标准输出 |
 | `-loglevel` | `info` | 日志等级：`debug`, `info`, `warn`, `error` |
@@ -193,7 +194,8 @@ sudo ./pingtunnel -type server [OPTIONS]
 | `-password` | — | **必填**：与服务端一致的认证及加密密钥（最少 8 字符） |
 | `-socks5` | `false` | 布尔开关，开启本地 SOCKS5 代理服务（自动启用 TCP） |
 | `-t` | `""` | 转发的目的目标地址（非 socks5 模式必填，如 `8.8.8.8:53` 或 `10.0.0.5:22`） |
-| `-tcp` | `0` | 转发模式：`0` 为 UDP 模式，`1` 为 TCP 模式 |
+| `-udp` | `false` | 转发模式：开启 UDP 转发（默认是 TCP 转发） |
+| `-tcp` | `1` | (兼容选项) 转发模式：`1` 为 TCP 模式，`0` 为 UDP 模式 |
 | `-s5user` | `""` | 本地 SOCKS5 用户名（可选） |
 | `-s5pass` | `""` | 本地 SOCKS5 密码（可选） |
 | `-encrypt` | `"chacha20"` | 加密算法重载：`chacha20`（默认）、`aes256`、`aes128` |
@@ -234,9 +236,9 @@ sudo ./pingtunnel -type server [OPTIONS]
    ```bash
    sudo ./pingtunnel -type server -password "MyPassword999"
    ```
-2. **客户端将本地 2222 端口绑定映射至远端内网 192.168.1.100:22**：
+2. **客户端将本地 2222 端口绑定映射至远端内网 192.168.1.100:22（默认 TCP 转发）**：
    ```bash
-   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -tcp 1 -password "MyPassword999"
+   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -password "MyPassword999"
    ```
 3. **连接验证**：
    ```bash
@@ -250,7 +252,7 @@ sudo ./pingtunnel -type server [OPTIONS]
 
 1. **客户端将本地 5353 的 UDP 流量穿透至远端由服务器转发给 8.8.8.8:53**：
    ```bash
-   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -password "MyPassword999"
+   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -udp -password "MyPassword999"
    ```
 2. **测试 DNS 解析**：
    ```bash
