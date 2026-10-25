@@ -1,94 +1,99 @@
-# Pingtunnel Usage and Configuration Guide
+# Pingtunnel 完整使用与参数调优指南 (Usage and Configuration Guide)
 
-This guide provides detailed documentation on Pingtunnel command-line flags, JSON configuration file (`-c`) usage, and proxy setup recipes for typical network scenarios.
-
----
-
-## Table of Contents
-
-- [1. Command-Line Flags](#1-command-line-flags)
-  - [Server Flags](#server-flags)
-  - [Client Flags](#client-flags)
-- [2. Config File Mode](#2-config-file-mode)
-  - [Server Config Example](#server-config-example)
-  - [Client Config Example](#client-config-example)
-  - [Flag Precedence](#flag-precedence)
-- [3. Typical Proxy Scenarios](#3-typical-proxy-scenarios)
-  - [Scenario 1: Global SOCKS5 Proxy](#scenario-1-global-socks5-proxy)
-  - [Scenario 2: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)](#scenario-2-specific-remote-tcp-port-forwarding-eg-ssh--rdp)
-  - [Scenario 3: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)](#scenario-3-specific-udp-traffic-forwarding-eg-dns--gaming)
-  - [Scenario 4: Upstream Forward Proxy](#scenario-4-upstream-forward-proxy)
-  - [Scenario 5: End-to-End High-Strength Encryption](#scenario-5-end-to-end-high-strength-encryption)
-- [4. Docker and Daemon Execution](#4-docker-and-daemon-execution)
+本文档提供 Pingtunnel 最新的配置文件格式、命令行参数详解、典型网络代理场景实操以及性能调优指南。
 
 ---
 
-## 1. Command-Line Flags
+## 目录 (Table of Contents)
 
-### Server Flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `-type` | `""` | Operating role, must be `server` or `client` |
-| `-c` | `""` | Path to JSON config file (CLI flags override config values) |
-| `-icmp_l` | `0.0.0.0` | Local network interface IP to listen for ICMP traffic |
-| `-password` | — | Shared secret for authentication and encryption, min 8 characters, must match client |
-| `-encrypt` | `""` | Encryption algorithm override: `chacha20` (default), `aes256`, or `aes128`. Traffic is always encrypted |
-| `-maxconn` | `0` | Maximum concurrent connections limit (`0` for unlimited) |
-| `-maxprt` | `100` | Maximum packet processing worker goroutines on server |
-| `-maxprb` | `1000` | Input buffer size for server packet processing workers |
-| `-conntt` | `1000` | Connect timeout to destination address in milliseconds |
-| `-forward` | `""` | Upstream forward proxy, supports `socks5://host:port` or `http://host:port` |
-| `-congestion` | `bb` | Congestion control algorithm; default `bb` (bandwidth-adaptive algorithm similar to BBR to prevent bufferbloat / disconnections during heavy downloads). Pass empty string `""` to disable |
-| `-nolog` | `0` | Set to `1` to disable writing to log files (console only) |
-| `-noprint` | `0` | Set to `1` to suppress console output |
-| `-loglevel` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
-| `-profile` | `0` | Performance profiling (pprof) listening port (`0` to disable) |
-| `-v`, `-version` | `false` | Print version and build information |
-
-### Client Flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `-type` | `""` | Operating role, specified as `client` |
-| `-c` | `""` | Path to JSON config file |
-| `-l` | `""` | Local listen address and port (e.g. `:4455` or `127.0.0.1:1080`) |
-| `-s` | `""` | Remote Pingtunnel server IP or domain name |
-| `-t` | `""` | Destination target address (e.g. `1.1.1.1:53` or internal IP `10.0.0.5:22`; can be omitted when `socks5` is enabled) |
-| `-socks5` | `false` | Enable local SOCKS5 proxy mode (automatically enables TCP) |
-| `-s5user` | `""` | Local SOCKS5 username authentication (optional) |
-| `-s5pass` | `""` | Local SOCKS5 password authentication (optional) |
-| `-congestion` | `bb` | Congestion control algorithm; default `bb` (bandwidth-adaptive algorithm similar to BBR to prevent bufferbloat / disconnections during heavy downloads). Pass empty string `""` to disable |
-| `-tcp` | `0` | Whether to forward in TCP mode (`0` for UDP service, `1` for TCP) |
-| `-tcp_bs` | `1048576` (1MB)| TCP sliding window send/receive buffer size |
-| `-tcp_mw` | `20000` | Maximum TCP window size |
-| `-tcp_rst` | `400` | TCP retransmission timeout in milliseconds |
-| `-tcp_gz` | `0` | Enable compression when packet size exceeds this threshold (bytes); `0` to disable |
-| `-tcp_stat`| `0` | Set to `1` to periodically output TCP flow control statistics |
-| `-timeout` | `60` | Connection idle timeout in seconds before release |
-| `-v`, `-version` | `false` | Print version and build information |
+- [1. 配置文件模式 (Config File Mode)](#1-配置文件模式-config-file-mode)
+  - [使用方式](#使用方式)
+  - [JSON 配置字段完整对照表](#json-配置字段完整对照表)
+  - [多场景配置模板](#多场景配置模板)
+  - [参数覆盖优先级规则](#参数覆盖优先级规则)
+- [2. 命令行参数参考 (CLI Flags Reference)](#2-命令行参数参考-cli-flags-reference)
+  - [服务端参数 (Server Flags)](#服务端参数-server-flags)
+  - [客户端参数 (Client Flags)](#客户端参数-client-flags)
+- [3. 典型实战拓扑与场景 (Typical Scenarios)](#3-典型实战拓扑与场景-typical-scenarios)
+  - [场景 1：SOCKS5 全局代理（科学上网/浏览器穿透）](#场景-1socks5-全局代理科学上网浏览器穿透)
+  - [场景 2：远程内网特定 TCP 端口穿透（SSH / 远程桌面 / Web）](#场景-2远程内网特定-tcp-端口穿透ssh--远程桌面--web)
+  - [场景 3：特定 UDP 端口转发（DNS 53 / 游戏防丢包）](#场景-3特定-udp-端口转发dns-53--游戏防丢包)
+  - [场景 4：服务端上游中继代理 (Forward Proxy)](#场景-4服务端上游中继代理-forward-proxy)
+  - [场景 5：全流量 AEAD 强加密机制](#场景-5全流量-aead-强加密机制)
+- [4. 高级性能调优与排错 (Tuning & Troubleshooting)](#4-高级性能调优与排错-tuning--troubleshooting)
+  - [拥塞控制与流控 (BBR-like Congestion Control)](#拥塞控制与流控-bbr-like-congestion-control)
+  - [系统底层 ICMP 权限与内核回显响应优化](#系统底层-icmp-权限与内核回显响应优化)
+- [5. Docker 与后台运行部署](#5-docker-与后台运行部署)
 
 ---
 
-## 2. Config File Mode
+## 1. 配置文件模式 (Config File Mode)
 
-Pingtunnel supports `-c <config.json>` to load settings from a file instead of passing long command-line arguments.
+Pingtunnel 原生支持通过 JSON 配置文件启动，便于持久化维护和系统服务管理（如 systemd）。
 
-### Running with Config File
+### 使用方式
+
+你可以通过以下任一方式加载配置文件：
+
 ```bash
-# Server
-sudo pingtunnel -c /etc/pingtunnel/server.json
+# 方式 A：直接作为首个参数传入（最简）
+sudo ./pingtunnel config-server.json
+./pingtunnel config-client.json
 
-# Client
-pingtunnel -c ./client.json
+# 方式 B：通过 -c 或 -config 参数指定
+sudo ./pingtunnel -c /etc/pingtunnel/server.json
+./pingtunnel -config ./client.json
+
+# 方式 C：缺省自动加载（当前目录下存在 config.json 且未指定 -type 时自动生效）
+./pingtunnel
 ```
 
-### Server Config Example
-`server.json`:
+---
+
+### JSON 配置字段完整对照表
+
+| JSON 字段名 | 类型 | 适用角色 | 默认值 | 对应 CLI 参数 | 说明 |
+|---|---|---|---|---|---|
+| `type` | string | 双端 | `""` | `-type` | 节点类型，必须为 `"server"` 或 `"client"` |
+| `password` | string | 双端 | — | `-password` | **核心必填**：认证与加密共享密钥，最小 8 字符，双端必须一致 |
+| `encrypt` | string | 双端 | `"chacha20"` | `-encrypt` | 加密算法重载：`"chacha20"`（默认）、`"aes256"`、`"aes128"` |
+| `listen` | string | Client | `""` | `-l` | 客户端本地侦听地址，如 `":1080"` 或 `"127.0.0.1:4455"` |
+| `server` | string | Client | `""` | `-s` | 远端 Pingtunnel 服务端 IP 地址或域名 |
+| `target` | string | Client | `""` | `-t` | 穿透转发的目标地址（如 `"192.168.1.100:22"`），SOCKS5 模式下可省略 |
+| `socks5` | bool | Client | `false` | `-socks5` | 是否开启本地 SOCKS5 代理服务（开启后自动启用 TCP 模式） |
+| `s5user` | string | Client | `""` | `-s5user` | 本地 SOCKS5 代理认证用户名（可选） |
+| `s5pass` | string | Client | `""` | `-s5pass` | 本地 SOCKS5 代理认证密码（可选） |
+| `tcp` | int | Client | `0` | `-tcp` | 是否按 TCP 模式转发（`1` 为 TCP，`0` 为 UDP，开启 socks5 时强制为 1） |
+| `icmp_listen`| string | 双端 | `"0.0.0.0"` | `-icmp_l` | 本地用于收发 ICMP 报文的网络接口 IP |
+| `timeout` | int | Client | `60` | `-timeout` | 连接空闲超时释放时间（秒） |
+| `congestion` | string | 双端 | `"bb"` | `-congestion` | 拥塞控制算法：`"bb"`（带宽自适应算法，防打满断流）或 `""`（禁用） |
+| `forward` | string | Server | `""` | `-forward` | 服务端上游中继代理（如 `"socks5://127.0.0.1:2080"` 或 `"http://proxy:8080"`） |
+| `maxconn` | int | 双端 | `0` | `-maxconn` | 最大允许并发连接数（`0` 表示不限） |
+| `maxprt` | int | Server | `100` | `-maxprt` | 服务端报文并行处理的工作协程数 |
+| `maxprb` | int | Server | `1000` | `-maxprb` | 服务端报文处理队列缓冲区大小 |
+| `conntt` | int | Server | `1000` | `-conntt` | 服务端向目标 target 发起连接的超时毫秒数 |
+| `tcp_bs` | int | Client | `1048576` | `-tcp_bs` | TCP 模式滑动窗口收发缓冲区大小（字节），默认 1MB |
+| `tcp_mw` | int | Client | `20000` | `-tcp_mw` | TCP 模式最大发送窗口（帧数） |
+| `tcp_rst` | int | Client | `400` | `-tcp_rst` | TCP 帧重传检测周期（毫秒） |
+| `tcp_gz` | int | Client | `0` | `-tcp_gz` | 数据包超过指定大小（字节）时自动启用 Gzip 压缩，`0` 为禁用 |
+| `tcp_stat` | int | Client | `0` | `-tcp_stat` | 是否定期在日志中打印 TCP 流控与发包统计（`1` 开启，`0` 关闭） |
+| `nolog` | int | 双端 | `0` | `-nolog` | 是否禁止写日志文件（`1` 表示只打印到标准输出） |
+| `noprint` | int | 双端 | `0` | `-noprint` | 是否禁止向控制台标准输出打印日志（`1` 开启静默） |
+| `loglevel` | string | 双端 | `"info"` | `-loglevel` | 日志打印等级（`"debug"`, `"info"`, `"warn"`, `"error"`） |
+| `profile` | int | 双端 | `0` | `-profile` | Go pprof 性能分析侦听端口（`0` 为禁用） |
+
+> 💡 **版本迁移提示 (Migration Notes)**：
+> 旧版本中的 `"key"`、`"encrypt_key"` 以及 `"sock5"` 字段已在 v3 中废弃。若配置文件中依然包含这些字段，程序会直接报错并提示修正，防止旧配置静默失效。
+
+---
+
+### 多场景配置模板
+
+#### 1. 服务端标准配置 (`config-server.json`)
 ```json
 {
   "type": "server",
-  "password": "MySecureSecretKey",
+  "password": "YourSecureSecretPassword123!",
   "encrypt": "chacha20",
   "icmp_listen": "0.0.0.0",
   "maxconn": 500,
@@ -97,150 +102,251 @@ pingtunnel -c ./client.json
 }
 ```
 
-### Client Config Example
-
-#### 1. SOCKS5 Proxy Client (`client-socks5.json`):
+#### 2. SOCKS5 代理客户端配置 (`config-client-socks5.json`)
 ```json
 {
   "type": "client",
-  "listen": ":1080",
+  "listen": "127.0.0.1:1080",
   "server": "your-server-ip.com",
   "socks5": true,
-  "password": "MySecureSecretKey",
+  "password": "YourSecureSecretPassword123!",
   "encrypt": "chacha20",
-  "s5user": "myuser",
-  "s5pass": "mypass",
   "loglevel": "info"
 }
 ```
 
-#### 2. TCP Port Forwarding Client (`client-tcp.json`):
+#### 3. 带用户鉴权的 SOCKS5 客户端配置
+```json
+{
+  "type": "client",
+  "listen": "127.0.0.1:1080",
+  "server": "your-server-ip.com",
+  "socks5": true,
+  "s5user": "admin",
+  "s5pass": "mySecretS5Password",
+  "password": "YourSecureSecretPassword123!"
+}
+```
+
+#### 4. 远程内网 TCP 端口穿透客户端配置 (`config-client-tcp.json`)
 ```json
 {
   "type": "client",
   "listen": ":2222",
   "server": "your-server-ip.com",
-  "target": "10.0.0.5:22",
+  "target": "192.168.1.100:22",
   "tcp": 1,
-  "password": "SECRET"
+  "password": "YourSecureSecretPassword123!"
 }
 ```
 
-### Flag Precedence
-**Command-line arguments take precedence over matching keys in the configuration file.** For example:
+---
+
+### 参数覆盖优先级规则
+**命令行显式指定的参数始终拥有最高优先级，会自动覆盖配置文件中的同名项。**
 ```bash
-pingtunnel -c client.json -loglevel debug
+# 例如：采用 client.json 的所有参数，但临时将 loglevel 提升为 debug
+./pingtunnel client.json -loglevel debug
 ```
-This applies all options from `client.json` while overriding `loglevel` to `debug`.
 
 ---
 
+## 2. 命令行参数参考 (CLI Flags Reference)
 
-## 3. Typical Proxy Scenarios
+### 服务端参数 (Server Flags)
 
-### Scenario 1: Global SOCKS5 Proxy
-Useful when client networks block outbound TCP/UDP traffic but allow ICMP (Ping) Echo packets.
+```bash
+sudo ./pingtunnel -type server [OPTIONS]
+```
 
-1. **Start Server**:
-   ```bash
-   sudo ./pingtunnel -type server -password SECRET
-   ```
-2. **Start Client**:
-   ```bash
-   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -socks5 -password SECRET
-   ```
-3. **Configure Proxy**:
-   * Configure SOCKS5 proxy in your browser, SwitchyOmega, or operating system:
-     * **Host**: `127.0.0.1`
-     * **Port**: `1080`
-   * TCP web requests and media streams will be encapsulated into ICMP Echo packets and relayed by the server.
+| 参数 | 默认值 | 作用说明 |
+|---|---|---|
+| `-type` | `""` | 必须指定为 `server` |
+| `-password` | — | **必填**：与客户端一致的认证及加密密钥（最少 8 字符） |
+| `-encrypt` | `"chacha20"` | 加密算法重载：`chacha20`（默认）、`aes256`、`aes128` |
+| `-c`, `-config` | `""` | 指定读取的 JSON 配置文件路径 |
+| `-icmp_l` | `0.0.0.0` | 侦听 ICMP 报文的网卡地址 |
+| `-forward` | `""` | 上游二级代理，支持 `socks5://host:port` 或 `http://host:port` |
+| `-congestion`| `bb` | 拥塞控制算法，默认 `bb`，传空字符串 `""` 禁用 |
+| `-maxconn` | `0` | 最大并发连接数限制（`0` 不限） |
+| `-maxprt` | `100` | 服务端报文分发处理的工作协程数 |
+| `-maxprb` | `1000` | 报文处理缓冲区大小 |
+| `-conntt` | `1000` | 向目的 target 建联超时时间（毫秒） |
+| `-nolog` | `0` | 设为 `1` 时不写入日志文件 |
+| `-noprint` | `0` | 设为 `1` 时静默控制台标准输出 |
+| `-loglevel` | `info` | 日志等级：`debug`, `info`, `warn`, `error` |
+| `-v`, `-version` | `false`| 打印版本号及 Git 构建信息 |
 
 ---
 
-### Scenario 2: Specific Remote TCP Port Forwarding (e.g. SSH / RDP)
-Useful when exposing a service inside the server's private network (e.g. `192.168.1.100:22` or `:3389`).
+### 客户端参数 (Client Flags)
 
-1. **Start Server**:
+```bash
+./pingtunnel -type client [OPTIONS]
+```
+
+| 参数 | 默认值 | 作用说明 |
+|---|---|---|
+| `-type` | `""` | 必须指定为 `client` |
+| `-s` | `""` | 远端 Pingtunnel 服务端 IP 或域名 |
+| `-l` | `""` | 本地服务侦听地址与端口（如 `127.0.0.1:1080` 或 `:4455`） |
+| `-password` | — | **必填**：与服务端一致的认证及加密密钥（最少 8 字符） |
+| `-socks5` | `false` | 布尔开关，开启本地 SOCKS5 代理服务（自动启用 TCP） |
+| `-t` | `""` | 转发的目的目标地址（非 socks5 模式必填，如 `8.8.8.8:53` 或 `10.0.0.5:22`） |
+| `-tcp` | `0` | 转发模式：`0` 为 UDP 模式，`1` 为 TCP 模式 |
+| `-s5user` | `""` | 本地 SOCKS5 用户名（可选） |
+| `-s5pass` | `""` | 本地 SOCKS5 密码（可选） |
+| `-encrypt` | `"chacha20"` | 加密算法重载：`chacha20`（默认）、`aes256`、`aes128` |
+| `-timeout` | `60` | 本地连接空闲超时释放时间（秒） |
+| `-congestion`| `bb` | 拥塞控制算法，默认 `bb`，传空字符串 `""` 禁用 |
+| `-tcp_bs` | `1048576` | TCP 滑动窗口接收/发送缓冲大小（字节），默认 1MB |
+| `-tcp_mw` | `20000` | TCP 最大滑动窗口大小 |
+| `-tcp_rst` | `400` | TCP 丢包重传超时时间（毫秒） |
+| `-tcp_gz` | `0` | 超过指定字节数开启 Gzip 压缩，`0` 禁用 |
+| `-tcp_stat` | `0` | 设为 `1` 定期打印 TCP 统计性能数据 |
+
+---
+
+## 3. 典型实战拓扑与场景 (Typical Scenarios)
+
+### 场景 1：SOCKS5 全局代理（科学上网/浏览器穿透）
+**痛点**：客户端所处局域网封锁所有非标准端口的 TCP/UDP 连接，但允许 Ping。
+
+1. **服务端启动**：
    ```bash
-   sudo ./pingtunnel -type server -password SECRET
+   sudo ./pingtunnel -type server -password "MyPassword999"
    ```
-2. **Start Client (maps remote private port 22 to local port 2222)**:
+2. **客户端启动**：
    ```bash
-   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -tcp 1 -password SECRET
+   ./pingtunnel -type client -l 127.0.0.1:1080 -s <SERVER_IP> -socks5 -password "MyPassword999"
    ```
-3. **Connect**:
+3. **终端或应用使用**：
+   ```bash
+   curl -x socks5h://127.0.0.1:1080 https://www.google.com
+   ```
+
+---
+
+### 场景 2：远程内网特定 TCP 端口穿透（SSH / 远程桌面 / Web）
+**痛点**：目标服务器内网中有台内网主机 `192.168.1.100` 开设了 SSH（端口 22），需要从外部安全直连。
+
+1. **服务端启动**：
+   ```bash
+   sudo ./pingtunnel -type server -password "MyPassword999"
+   ```
+2. **客户端将本地 2222 端口绑定映射至远端内网 192.168.1.100:22**：
+   ```bash
+   ./pingtunnel -type client -l :2222 -s <SERVER_IP> -t 192.168.1.100:22 -tcp 1 -password "MyPassword999"
+   ```
+3. **连接验证**：
    ```bash
    ssh -p 2222 user@127.0.0.1
    ```
-   Traffic is encapsulated over ICMP to the server, which forwards it to `192.168.1.100:22`.
 
 ---
 
-### Scenario 3: Specific UDP Traffic Forwarding (e.g. DNS / Gaming)
-Useful when local networks restrict direct outbound UDP port 53 (DNS) or throttle game UDP traffic.
+### 场景 3：特定 UDP 端口转发（DNS 53 / 游戏防丢包）
+**痛点**：本地出网 DNS 请求被劫持污染，或游戏 UDP 端口被 ISP 深度检测限速。
 
-1. **Start Client (forwards local UDP 5353 to remote 8.8.8.8:53)**:
+1. **客户端将本地 5353 的 UDP 流量穿透至远端由服务器转发给 8.8.8.8:53**：
    ```bash
-   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -password SECRET
+   ./pingtunnel -type client -l :5353 -s <SERVER_IP> -t 8.8.8.8:53 -password "MyPassword999"
    ```
-2. **Test DNS Resolution**:
+2. **测试 DNS 解析**：
    ```bash
    dig @127.0.0.1 -p 5353 google.com
    ```
 
 ---
 
-### Scenario 4: Upstream Forward Proxy
-Useful when the Pingtunnel server cannot directly reach external internet services and needs an enterprise egress proxy (SOCKS5 / HTTP Proxy).
+### 场景 4：服务端上游中继代理 (Forward Proxy)
+**痛点**：Pingtunnel 服务端本身无法直接访问某些目标站点，需要借助企业外部 HTTP 代理或另一台 SOCKS5 服务器转发。
 
-1. **Configure `-forward` on Server**:
+1. **服务端配置 `-forward`**：
    ```bash
-   sudo ./pingtunnel -type server -password SECRET -forward "socks5://127.0.0.1:2080"
-   # Or with an HTTP proxy:
-   # sudo ./pingtunnel -type server -password SECRET -forward "http://proxy.corp.internal:8080"
+   sudo ./pingtunnel -type server -password "MyPassword999" -forward "socks5://127.0.0.1:2080"
+   # 或 HTTP 代理:
+   # sudo ./pingtunnel -type server -password "MyPassword999" -forward "http://proxy.corp.internal:8080"
    ```
-2. **Start Client normally**:
-   ```bash
-   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -socks5 -password SECRET
-   ```
-3. Upon receiving encapsulated requests via ICMP, the server relays traffic through `127.0.0.1:2080`.
+2. **客户端正常使用**：
+   客户端发出的所有流量经由 ICMP 解包后，服务端自动送入 `127.0.0.1:2080` 代理转发。
 
 ---
 
-### Scenario 5: End-to-End High-Strength Encryption
-Since v3 every packet is authenticated and encrypted end-to-end (ChaCha20-Poly1305 by default). A single shared secret covers both:
-
-1. **Server**:
-   ```bash
-   sudo ./pingtunnel -type server -password "P@ssw0rdCustomSecret!"
-   ```
-2. **Client**:
-   ```bash
-   ./pingtunnel -type client -l :1080 -s <SERVER_IP> -socks5 -password "P@ssw0rdCustomSecret!"
-   ```
-3. The Protobuf payload inside ICMP packets is encrypted using ChaCha20-Poly1305 (default; `aes256`/`aes128` via `-encrypt`) to resist deep packet inspection (DPI).
-4. Use `-encrypt` only to switch algorithms; it cannot disable encryption.
+### 场景 5：全流量 AEAD 强加密机制
+- 自 v3 起，所有流经 ICMP Payload 的业务报文强制进行全程端到端加密与防篡改校验。
+- 默认采用现代高性能 AEAD 算法 **ChaCha20-Poly1305**（对移动设备与无硬件 AES 加速环境极友好）。
+- 若平台具备硬件 AES 指令集（AES-NI），可重载为 AES：
+  ```bash
+  # 服务端与客户端保持一致
+  ./pingtunnel -type server -password "MySecret" -encrypt aes256
+  ./pingtunnel -type client -l :1080 -s <IP> -socks5 -password "MySecret" -encrypt aes256
+  ```
 
 ---
 
-## 4. Docker and Daemon Execution
+## 4. 高级性能调优与排错 (Tuning & Troubleshooting)
 
-### Server Docker Run (Slim Image, Recommended)
-```bash
-docker run -d --name pingtunnel-server \
-  --restart=always \
-  --privileged \
-  --network host \
-  esrrhs/pingtunnel ./pingtunnel -type server -password SECRET
+### 拥塞控制与流控 (BBR-like Congestion Control)
+在高吞吐下载（如几十兆/秒的流量）或长距离国际链路中，弱网丢包极易诱发 TCP 缓冲区堆积（Bufferbloat）导致隧道断连。
+- Pingtunnel 默认开启 `-congestion bb` 自适应拥塞控制算法，根据往返延迟 RTT 动态调整发送节奏。
+- 若网络延迟极低且极度稳定（如内网环境），可传入 `-congestion ""` 关闭流控以榨干单核吞吐。
+
+### 系统底层 ICMP 权限与内核回显响应优化
+1. **Linux 避免内核冲突**：
+   Linux 系统内核默认会在收到 ICMP Echo Request 时自动应答 Echo Reply，可能会干扰部分复杂环境下的连接流控。建议在服务端临时或永久关闭系统默认回显：
+   ```bash
+   # 临时关闭
+   echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
+
+   # 永久关闭（写入 sysctl.conf）
+   echo "net.ipv4.icmp_echo_ignore_all = 1" >> /etc/sysctl.conf && sysctl -p
+   ```
+2. **免 root 运行（Linux Capabilities）**：
+   如果不想使用 `sudo` 运行服务端或客户端，可赋予二进制文件 `CAP_NET_RAW` 权限：
+   ```bash
+   sudo setcap cap_net_raw+ep ./pingtunnel
+   ./pingtunnel -type server -password "SECRET"
+   ```
+
+---
+
+## 5. Docker 与后台运行部署
+
+### Docker Compose 一键编排示例
+
+服务端 `docker-compose.yml`：
+```yaml
+services:
+  pingtunnel:
+    image: esrrhs/pingtunnel:latest
+    container_name: pingtunnel-server
+    restart: always
+    network_mode: host
+    privileged: true
+    command: ["./pingtunnel", "-type", "server", "-password", "MyCustomPassword123"]
 ```
 
-### Running with Mounted Config File
-```bash
-docker run -d --name pingtunnel-server \
-  --restart=always \
-  --privileged \
-  --network host \
-  -v /etc/pingtunnel/server.json:/app/server.json:ro \
-  esrrhs/pingtunnel ./pingtunnel -c /app/server.json
-```
+### Systemd 服务守护进程配置 (`/etc/systemd/system/pingtunnel.service`)
+```ini
+[Unit]
+Description=Pingtunnel ICMP Tunnel Service
+After=network.target
 
+[Service]
+Type=simple
+WorkingDirectory=/etc/pingtunnel
+ExecStart=/usr/local/bin/pingtunnel /etc/pingtunnel/server.json
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+启停命令：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pingtunnel
+sudo systemctl status pingtunnel
+```

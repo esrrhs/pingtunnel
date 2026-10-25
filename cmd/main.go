@@ -8,6 +8,7 @@ import (
 	"github.com/esrrhs/pingtunnel"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"strconv"
 	"time"
 )
@@ -18,17 +19,23 @@ var usage = `
 
 Usage:
 
+    // 1. 配置文件模式 Config file mode (推荐 / Recommended)
+    pingtunnel -c config.json
+    pingtunnel -config config.json
+    pingtunnel config.json
+
+    // 2. 命令行模式 CLI mode
     // server
     pingtunnel -type server -password SECRET
 
-    // client, Forward udp
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -password SECRET
+    // client, Forward socks5
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -socks5 -password SECRET
 
     // client, Forward tcp
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t SERVER_IP:4455 -tcp 1 -password SECRET
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t TARGET_IP:TARGET_PORT -tcp 1 -password SECRET
 
-    // client, Forward socks5, implicitly open tcp, so no target server is needed
-    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -socks5 -password SECRET
+    // client, Forward udp
+    pingtunnel -type client -l LOCAL_IP:4455 -s SERVER_IP -t TARGET_IP:TARGET_PORT -password SECRET
 
     -type     服务器或者客户端
               client or server
@@ -130,8 +137,8 @@ Usage:
     -congestion 拥塞控制算法，默认bb（带宽自适应算法，防止大流量打满网络断网），设为空表示不开启
               Congestion control algorithm, default is 'bb', empty string means disabled
 
-    -c        从指定json配置文件读取参数，命令行参数可覆盖配置文件
-              Read parameters from the specified json config file, command line parameters take precedence
+    -c, -config 从指定json配置文件读取参数（也可直接作为首个参数：pingtunnel config.json），命令行参数可覆盖配置文件
+              Read parameters from json config file (or pass as first arg: pingtunnel config.json), CLI flags take precedence
 
     -v, -version 打印版本及编译构建信息
               Print version and build information
@@ -168,7 +175,9 @@ func main() {
 	conntt := flag.Int("conntt", 1000, "the connect call's timeout")
 	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
 	congestion := flag.String("congestion", "bb", "congestion control algorithm: bb or empty")
-	configFile := flag.String("c", "", "path to json config file")
+	var configFile string
+	flag.StringVar(&configFile, "c", "", "path to json config file")
+	flag.StringVar(&configFile, "config", "", "path to json config file")
 	showVersion := flag.Bool("v", false, "show version and build info")
 	showVersionLong := flag.Bool("version", false, "show version and build info")
 	flag.Usage = func() {
@@ -188,11 +197,27 @@ func main() {
 		setFlags[f.Name] = true
 	})
 
+	// Positional argument support: pingtunnel <config.json>
+	if configFile == "" && flag.NArg() > 0 {
+		arg0 := flag.Arg(0)
+		if _, err := os.Stat(arg0); err == nil {
+			configFile = arg0
+		}
+	}
+
+	// Auto-detect default config.json if no config or type was specified
+	if configFile == "" && !setFlags["type"] && *t == "" {
+		if _, err := os.Stat("config.json"); err == nil {
+			configFile = "config.json"
+			fmt.Println("Auto-loading default config file: config.json")
+		}
+	}
+
 	// Load configuration file if specified
-	if *configFile != "" {
-		cfg, err := pingtunnel.LoadConfig(*configFile)
+	if configFile != "" {
+		cfg, err := pingtunnel.LoadConfig(configFile)
 		if err != nil {
-			fmt.Printf("Failed to load config file: %v\n", err)
+			fmt.Printf("Failed to load config file (%s): %v\n", configFile, err)
 			return
 		}
 

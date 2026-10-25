@@ -1,0 +1,10 @@
+{
+  "type": "client",
+  "listen": ":2222",
+  "server": "YOUR_SERVER_IP",
+  "target": "192.168.1.100:22",
+  "tcp": 1,
+  "password": "YOUR_STRONG_PASSWORD_HERE",
+  "encrypt": "chacha20",
+  "loglevel": "info"
+}
