@@ -1,0 +1,11 @@
+{
+  "type": "client",
+  "listen": "127.0.0.1:1080",
+  "server": "YOUR_SERVER_IP",
+  "socks5": true,
+  "password": "YOUR_STRONG_PASSWORD_HERE",
+  "encrypt": "chacha20",
+  "loglevel": "info",
+  "nolog": 0,
+  "noprint": 0
+}

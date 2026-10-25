@@ -1,0 +1,10 @@
+{
+  "type": "server",
+  "password": "YOUR_STRONG_PASSWORD_HERE",
+  "encrypt": "chacha20",
+  "icmp_listen": "0.0.0.0",
+  "maxconn": 0,
+  "loglevel": "info",
+  "nolog": 0,
+  "noprint": 0
+}
