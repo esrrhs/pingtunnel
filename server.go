@@ -1,18 +1,20 @@
 package pingtunnel
 
 import (
+	"container/list"
 	"errors"
-	"github.com/esrrhs/gohome/common"
-	"github.com/esrrhs/gohome/loggo"
-	"github.com/esrrhs/gohome/network"
-	"github.com/esrrhs/gohome/thread"
-	"google.golang.org/protobuf/proto"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/esrrhs/gohome/common"
+	"github.com/esrrhs/gohome/loggo"
+	"github.com/esrrhs/gohome/network"
+	"github.com/esrrhs/gohome/thread"
+	"google.golang.org/protobuf/proto"
 )
 
 func NewServer(icmpAddr string, key int, maxconn int, connecttimeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig, congestion string) (*Server, error) {
@@ -27,6 +29,7 @@ func NewServer(icmpAddr string, key int, maxconn int, connecttimeout int, crypto
 		cryptoConfig:     cryptoConfig,
 		forwardConfig:    forwardConfig,
 		congestion:       congestion,
+		share:            newUnderlayShare(),
 	}
 
 	s.processtp = thread.NewThreadPool(DEFAULT_SERVER_THREADS, DEFAULT_SERVER_BUFFER, func(v interface{}) {
@@ -48,6 +51,7 @@ type Server struct {
 	cryptoConfig     *CryptoConfig
 	forwardConfig    *ForwardConfig
 	congestion       string
+	share            *underlayShare
 
 	icmpAddr string
 
@@ -96,6 +100,13 @@ type ServerConn struct {
 	echoId         int
 	echoSeq        int
 	activity       chan struct{}
+
+	// The client's buffers are one hop away and invisible here: a slow-reading
+	// client reports itself congested via out-of-band PINGs carrying this conn
+	// id, and only that (not the FrameMgr's unconditional keepalive HB) may
+	// exempt a conn from inactivity reaping.
+	peerCongestionTime time.Time
+	lastCongestionPing time.Time
 }
 
 func (p *Server) Run() error {
@@ -148,7 +159,9 @@ func (p *Server) Stop() {
 	p.exit = true
 	p.recvcontrol <- 1
 	p.workResultLock.Wait()
-	p.processtp.Stop()
+	if p.processtp != nil {
+		p.processtp.Stop()
+	}
 	p.conn.Close()
 }
 
@@ -174,6 +187,14 @@ func (p *Server) processPacket(packet *Packet) {
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
+		if packet.my.Id != "" {
+			// Congestion signal from the client: its recv buffer is full
+			// (slow app reader) or its send window is stalled. This conn is
+			// under backpressure, not idle — exempt it from reaping.
+			if localConn := p.getServerConnById(packet.my.Id); localConn != nil {
+				localConn.peerCongestionTime = common.GetNowUpdateInSecond()
+			}
+		}
 		return
 	}
 
@@ -261,7 +282,7 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, (int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress),
 			(int)(packet.my.TcpmodeStat))
 		if p.congestion == "bb" {
-			fm.SetCongestion(&network.BBCongestion{})
+			fm.SetCongestion(newBBControl())
 		}
 
 		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
@@ -447,6 +468,32 @@ func (p *Server) processDataPacket(packet *Packet) {
 	}
 }
 
+// emitServerFrames writes frames FrameMgr already admitted under congestion
+// control. The underlay share slices that list so a closing conn cannot dump
+// its whole window ahead of another conn still transferring or also draining.
+func (p *Server) emitServerFrames(conn *ServerConn, src *net.IPAddr, id string, sendlist *list.List, mark func(*network.Frame)) {
+	p.share.emitFrames(sendlist, func(f *network.Frame) int {
+		if mark != nil {
+			mark(f)
+		}
+		mb, err := conn.fm.MarshalFrame(f)
+		if err != nil {
+			loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
+			return 1
+		}
+		sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+			conn.rproto, -1, p.key, 0,
+			0, 0, 0, 0, 0,
+			0, p.cryptoConfig)
+		p.sendPacket++
+		p.sendPacketSize += (uint64)(len(mb))
+		if len(mb) == 0 {
+			return 1
+		}
+		return len(mb)
+	})
+}
+
 func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	defer common.CrashLog()
@@ -466,16 +513,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		conn.fm.Update()
 		sendlist := conn.fm.GetSendList()
 		hadWork := sendlist.Len() > 0
-		for e := sendlist.Front(); e != nil; e = e.Next() {
-			f := e.Value.(*network.Frame)
-			mb, _ := conn.fm.MarshalFrame(f)
-			sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, -1, p.key, 0,
-				0, 0, 0, 0, 0,
-				0, p.cryptoConfig)
-			p.sendPacket++
-			p.sendPacketSize += (uint64)(len(mb))
-		}
+		p.emitServerFrames(conn, src, id, sendlist, nil)
 		now := common.GetNowUpdateInSecond()
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*5 {
@@ -573,26 +611,14 @@ mainLoop:
 		sendlist := conn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			for e := sendlist.Front(); e != nil; e = e.Next() {
-				f := e.Value.(*network.Frame)
+			p.emitServerFrames(conn, src, id, sendlist, func(f *network.Frame) {
 				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 					// Only real payload counts as conn activity: heartbeat
 					// and ACK frames keep the tunnel alive without keeping
 					// an idle conn alive.
 					conn.activeSendTime = now
 				}
-				mb, err := conn.fm.MarshalFrame(f)
-				if err != nil {
-					loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
-					continue
-				}
-				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-					conn.rproto, -1, p.key, 0,
-					0, 0, 0, 0, 0,
-					0, p.cryptoConfig)
-				p.sendPacket++
-				p.sendPacketSize += (uint64)(len(mb))
-			}
+			})
 		}
 
 		if conn.fm.GetRecvBufferSize() > 0 {
@@ -610,6 +636,22 @@ mainLoop:
 			}
 			if n > 0 {
 				conn.fm.SkipRecvBuffer(n)
+			}
+		}
+
+		// A non-empty recv buffer means the target reads slower than the
+		// tunnel delivers. Report that to the client out-of-band (a PING
+		// carrying this conn id): everything may already be acked out of our
+		// send window into our buffers, so without this signal the client
+		// cannot tell backpressure from a dead conn.
+		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
+			if now.Sub(conn.lastCongestionPing) >= time.Second {
+				conn.lastCongestionPing = now
+				tb, _ := time.Now().MarshalBinary()
+				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
+					conn.rproto, -1, p.key, 0,
+					0, 0, 0, 0, 0,
+					0, p.cryptoConfig)
 			}
 		}
 
@@ -632,10 +674,14 @@ mainLoop:
 		// A conn with unacknowledged frames in flight or undelivered bytes is
 		// under backpressure, not idle: the peer (or the target) is slow, and
 		// closing here would cut the transfer short.
-		// The peer's heartbeat proves the tunnel is stalled on backpressure
-		// (its send window is full), not dead: never reap while it beats.
-		hbFresh := time.Since(time.Unix(0, conn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(conn.timeout))
-		if idleRecv && idleSend && !hbFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
+		// The client's congestion signal (out-of-band PING with this conn id)
+		// proves the tunnel is stalled on backpressure — the client app is a
+		// slow reader and its buffers, one hop away, may already hold
+		// everything we sent — so never reap while it beats. The FrameMgr's
+		// unconditional keepalive HB must NOT count: it beats on fully idle
+		// conns too, which would make the inactivity timeout dead code.
+		congestionFresh := now.Sub(conn.peerCongestionTime) < time.Second*(time.Duration(conn.timeout))
+		if idleRecv && idleSend && !congestionFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
 			break
@@ -669,29 +715,50 @@ mainLoop:
 	conn.fm.Close()
 
 	startCloseTime := common.GetNowUpdateInSecond()
+	// Same pump as the main loop: admitted frames only, shared underlay
+	// quanta, and an activity wait instead of a fixed sleep. A fixed 100ms
+	// sleep let one closing conn emit its whole window while the others were
+	// not runnable, which is what starved a concurrent download on real ICMP.
+	// That sleep also happened to cover the one RTT between "our CLOSE was
+	// acked" and "the peer's CLOSE arrived". The grace below keeps that
+	// handshake without bringing the uninterruptible blast back.
+	closeWait := newAdaptiveLoopWait(2*time.Millisecond, 50*time.Millisecond)
+	var halfFlushSince time.Time
 	for !p.exit && !conn.exit {
 		now := common.GetNowUpdateInSecond()
+		hadWork := false
 
 		conn.fm.Update()
 
 		sendlist := conn.fm.GetSendList()
-		for e := sendlist.Front(); e != nil; e = e.Next() {
-			f := e.Value.(*network.Frame)
-			mb, _ := conn.fm.MarshalFrame(f)
-			sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
-				conn.rproto, -1, p.key, 0,
-				0, 0, 0, 0, 0,
-				0, p.cryptoConfig)
-			p.sendPacket++
-			p.sendPacketSize += (uint64)(len(mb))
+		if sendlist.Len() > 0 {
+			hadWork = true
+			p.emitServerFrames(conn, src, id, sendlist, nil)
 		}
 
 		if conn.fm.GetRecvBufferSize() > 0 {
+			hadWork = true
 			rr := conn.fm.GetRecvReadLineBuffer()
 			conn.tcpconn.SetWriteDeadline(time.Now().Add(time.Millisecond * 100))
 			n, _ := conn.tcpconn.Write(rr)
 			if n > 0 {
 				conn.fm.SkipRecvBuffer(n)
+			}
+		}
+
+		// The close phase is a delivery engine in its own right: a burst
+		// target can EOF long before the tunnel drained it, and everything
+		// left is retransmitted from here for up to 60s. Keep signalling
+		// congestion while that runs, or the client reaps the conn as idle
+		// mid-download (an unthrottled loopback target dies within ~50ms).
+		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
+			if now.Sub(conn.lastCongestionPing) >= time.Second {
+				conn.lastCongestionPing = now
+				tb, _ := time.Now().MarshalBinary()
+				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
+					conn.rproto, -1, p.key, 0,
+					0, 0, 0, 0, 0,
+					0, p.cryptoConfig)
 			}
 		}
 
@@ -706,12 +773,26 @@ mainLoop:
 			loggo.Info("remote conn had closed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
-		if conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
+		halfFlushed := conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed()
+		if !halfFlushed {
+			halfFlushSince = time.Time{}
+		} else if halfFlushSince.IsZero() {
+			halfFlushSince = time.Now()
+		} else if time.Since(halfFlushSince) >= closePeerFlushGrace {
 			loggo.Info("client half-closed and flushed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 
-		time.Sleep(time.Millisecond * 100)
+		if hadWork {
+			closeWait.hit()
+			continue
+		}
+		wait := closeWait.miss()
+		select {
+		case <-conn.activity:
+			closeWait.hit()
+		case <-time.After(wait):
+		}
 	}
 
 	time.Sleep(time.Second)
