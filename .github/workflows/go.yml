@@ -57,7 +57,18 @@ jobs:
         run: go test -c -o /tmp/pingtunnel-e2e.test .
 
       - name: Run e2e suite over real ICMP (root)
-        run: sudo env PINGTUNNEL_E2E_REQUIRE_REAL_ICMP=1 /tmp/pingtunnel-e2e.test -test.run TestE2E -test.v -test.timeout 20m
+        run: |
+          set -o pipefail
+          sudo env PINGTUNNEL_E2E_REQUIRE_REAL_ICMP=1 PINGTUNNEL_E2E_LOGLEVEL=info /tmp/pingtunnel-e2e.test -test.run TestE2E -test.v -test.timeout 20m 2>&1 | tee /tmp/e2e-icmp.log
+      - name: Report failures
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "e2e-icmp failures (attempt ${{ github.run_attempt }}):"
+            grep -aE "^(--- |    --- )?FAIL:|died at|died during|sha256 mismatch|Error read tcp|Error write tcp" /tmp/e2e-icmp.log | tail -30
+          } | gh pr comment ${{ github.event.pull_request.number }} --body-file -
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

@@ -5,7 +5,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -84,23 +83,42 @@ func NewCryptoConfig(mode EncryptionMode, keyInput string) (*CryptoConfig, error
 	}, nil
 }
 
-// deriveKey derives an encryption key from the input string
-func deriveKey(keyInput string, keySize int) ([]byte, error) {
-	if keyInput == "" {
+// KDF parameters. Domain-separated salts keep the authentication code and
+// the encryption key independent even though both derive from the password.
+const (
+	pbkdf2Iterations = 600000 // OWASP-recommended count for PBKDF2-HMAC-SHA256
+	authSalt         = "pingtunnel-auth-v2"
+	encSalt          = "pingtunnel-enc-v2"
+	minPasswordLen   = 8
+)
+
+// ValidatePassword checks a -password value before it is used anywhere.
+func ValidatePassword(password string) error {
+	if password == "" {
+		return errors.New("password is required (flag -password)")
+	}
+	if len(password) < minPasswordLen {
+		return fmt.Errorf("password is too short: need at least %d characters", minPasswordLen)
+	}
+	return nil
+}
+
+// DeriveAuthCode maps a password onto the protocol's 31-bit authentication
+// code (MyMsg.Key). It is not a secret on its own — the AEAD layer already
+// authenticates every packet — but provides a cheap first-byte filter before
+// attempting packet decryption.
+func DeriveAuthCode(password string) int {
+	k := pbkdf2.Key([]byte(password), []byte(authSalt), pbkdf2Iterations, 4, sha256.New)
+	code := int(uint32(k[0]) | uint32(k[1])<<8 | uint32(k[2])<<16 | uint32(k[3])<<24)
+	return code & 0x7fffffff // stay within MyMsg.Key's sint32 positive range
+}
+
+// deriveKey derives an encryption key from the password
+func deriveKey(password string, keySize int) ([]byte, error) {
+	if password == "" {
 		return nil, errors.New("encryption key cannot be empty")
 	}
-
-	// First, try to decode as base64
-	if decoded, err := base64.StdEncoding.DecodeString(keyInput); err == nil {
-		if len(decoded) == keySize {
-			return decoded, nil
-		}
-	}
-
-	// If not valid base64 or wrong size, use PBKDF2 to derive key
-	salt := []byte("pingtunnel-salt") // Fixed salt for deterministic key derivation
-	iterations := 10000               // Standard iteration count
-	return pbkdf2.Key([]byte(keyInput), salt, iterations, keySize, sha256.New), nil
+	return pbkdf2.Key([]byte(password), []byte(encSalt), pbkdf2Iterations, keySize, sha256.New), nil
 }
 
 // Encrypt encrypts the given data

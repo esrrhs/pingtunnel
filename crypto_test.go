@@ -5,9 +5,67 @@ import (
 	"testing"
 )
 
+func TestValidatePassword(t *testing.T) {
+	if err := ValidatePassword(""); err == nil {
+		t.Fatalf("empty password accepted")
+	}
+	if err := ValidatePassword("short"); err == nil {
+		t.Fatalf("short password accepted")
+	}
+	if err := ValidatePassword("long-enough-secret"); err != nil {
+		t.Fatalf("valid password rejected: %v", err)
+	}
+}
+
+func TestDeriveAuthCode(t *testing.T) {
+	code := DeriveAuthCode("correct-horse-battery")
+	if code <= 0 {
+		t.Fatalf("auth code out of sint32 positive range: %d", code)
+	}
+	if code != DeriveAuthCode("correct-horse-battery") {
+		t.Fatalf("auth code is not deterministic")
+	}
+	other := DeriveAuthCode("other-password")
+	if code == other {
+		t.Fatalf("different passwords derived the same auth code")
+	}
+}
+
+// Client and server derive both halves of the credential from the same
+// password: the auth code must match, and each side's AEAD must decrypt the
+// other's output.
+func TestPasswordPairInterop(t *testing.T) {
+	password := "shared-secret-for-pair"
+	clientCrypto, err := NewCryptoConfig(CHACHA20, password)
+	if err != nil {
+		t.Fatalf("client crypto: %v", err)
+	}
+	serverCrypto, err := NewCryptoConfig(CHACHA20, password)
+	if err != nil {
+		t.Fatalf("server crypto: %v", err)
+	}
+
+	msg := []byte("interop probe")
+	enc, err := clientCrypto.Encrypt(msg)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	dec, err := serverCrypto.Decrypt(enc)
+	if err != nil {
+		t.Fatalf("server cannot decrypt client payload: %v", err)
+	}
+	if !bytes.Equal(dec, msg) {
+		t.Fatalf("roundtrip mismatch")
+	}
+
+	authCode := DeriveAuthCode(password)
+	if authCode != DeriveAuthCode(password) {
+		t.Fatalf("auth codes diverged")
+	}
+}
+
 func TestCryptoConfig_AES128(t *testing.T) {
-	// Test with a base64 encoded key
-	key := "MTIzNDU2Nzg5MDEyMzQ1Ng==" // "1234567890123456" in base64
+	key := "MTIzNDU2Nzg5MDEyMzQ1Ng=="
 	config, err := NewCryptoConfig(AES128, key)
 	if err != nil {
 		t.Fatalf("Failed to create crypto config: %v", err)
