@@ -182,7 +182,7 @@ func (p *Server) processPacket(packet *Packet) {
 	if packet.my.Type == (int32)(MyMsg_PING) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.my.Data)
-		loggo.Info("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
+		loggo.Debug("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
@@ -501,9 +501,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
-	loggo.Info("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
+	loggo.Debug("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
 
-	loggo.Info("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+	loggo.Debug("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := common.GetNowUpdateInSecond()
 	connectWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
 	for !p.exit && !conn.exit {
@@ -535,7 +535,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	}
 
 	if !conn.exit {
-		loggo.Info("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
+		loggo.Debug("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	}
 
 	bytes := make([]byte, 10240)
@@ -605,7 +605,7 @@ mainLoop:
 			if tc, ok := conn.tcpconn.(*net.TCPConn); ok {
 				_ = tc.CloseWrite()
 			}
-			loggo.Info("client half-closed conn %s %s", conn.id, conn.tcpaddrTarget.String())
+			loggo.Debug("client half-closed conn %s %s", conn.id, conn.tcpaddrTarget.String())
 		}
 
 		sendlist := conn.fm.GetSendList()
@@ -682,13 +682,13 @@ mainLoop:
 		// conns too, which would make the inactivity timeout dead code.
 		congestionFresh := now.Sub(conn.peerCongestionTime) < time.Second*(time.Duration(conn.timeout))
 		if idleRecv && idleSend && !congestionFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
-			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
+			loggo.Debug("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
 			break
 		}
 
 		if conn.fm.IsRemoteClosed() {
-			loggo.Info("closed by remote conn %s %s", conn.id, conn.tcpaddrTarget.String())
+			loggo.Debug("closed by remote conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
 			break
 		}
@@ -764,13 +764,13 @@ mainLoop:
 
 		diffclose := now.Sub(startCloseTime)
 		if diffclose > time.Second*60 {
-			loggo.Info("close conn had timeout %s %s", conn.id, conn.tcpaddrTarget.String())
+			loggo.Debug("close conn had timeout %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 
 		remoteclosed := conn.fm.IsRemoteClosed()
 		if remoteclosed && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
-			loggo.Info("remote conn had closed %s %s", conn.id, conn.tcpaddrTarget.String())
+			loggo.Debug("remote conn had closed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 		halfFlushed := conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed()
@@ -779,7 +779,7 @@ mainLoop:
 		} else if halfFlushSince.IsZero() {
 			halfFlushSince = time.Now()
 		} else if time.Since(halfFlushSince) >= closePeerFlushGrace {
-			loggo.Info("client half-closed and flushed %s %s", conn.id, conn.tcpaddrTarget.String())
+			loggo.Debug("client half-closed and flushed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 
@@ -808,7 +808,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
-	loggo.Info("server waiting target response %s -> %s %s", conn.udpTargetString(), conn.id, conn.conn.LocalAddr().String())
+	loggo.Debug("server waiting target response %s -> %s %s", conn.udpTargetString(), conn.id, conn.conn.LocalAddr().String())
 
 	bytes := make([]byte, 65535)
 
@@ -897,7 +897,7 @@ func (p *Server) checkTimeoutConn() {
 			continue
 		}
 		if conn.close {
-			loggo.Info("close inactive conn %s %s", id, conn.udpTargetString())
+			loggo.Debug("close inactive conn %s %s", id, conn.udpTargetString())
 			p.close(conn)
 		}
 	}
@@ -931,7 +931,7 @@ func sameUDPAddr(a *net.UDPAddr, b *net.UDPAddr) bool {
 
 func (p *Server) showNet() {
 	p.localConnMapSize = int(p.connCount.Load())
-	loggo.Info("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %dConnections",
+	loggo.Debug("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %dConnections",
 		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localConnMapSize)
 	p.sendPacket = 0
 	p.recvPacket = 0
