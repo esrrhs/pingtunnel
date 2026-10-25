@@ -145,6 +145,7 @@ type Client struct {
 
 type ClientConn struct {
 	exit           bool
+	kicked         atomic.Bool // the server gave up on this conn: deliver what we hold, then close
 	ipaddr         *net.UDPAddr
 	tcpaddr        *net.TCPAddr
 	id             string
@@ -620,6 +621,17 @@ mainLoop:
 		// A conn with unacknowledged frames in flight or undelivered bytes is
 		// under backpressure, not idle: the peer (or the local app) is slow,
 		// and closing here would cut the transfer short.
+		if clientConn.kicked.Load() {
+			// The server abandoned this conn: hand over whatever arrived and
+			// close. Waiting for more data or a CLOSE frame would hang.
+			if clientConn.fm.GetRecvBufferSize() == 0 {
+				loggo.Info("tail delivered, closing kicked conn %s %s", clientConn.id, clientConn.tcpaddr.String())
+				clientConn.fm.Close()
+				break
+			}
+			hadWork = true
+		}
+
 		// The peer's heartbeat proves the tunnel is stalled on backpressure
 		// (its send window is full), not dead: never reap while it beats.
 		hbFresh := time.Since(time.Unix(0, clientConn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(p.timeout))
@@ -692,6 +704,11 @@ mainLoop:
 		diffclose := now.Sub(startCloseTime)
 		if diffclose > time.Second*60 {
 			loggo.Info("close conn had timeout %s %s", clientConn.id, clientConn.tcpaddr.String())
+			break
+		}
+
+		if clientConn.kicked.Load() && clientConn.fm.GetRecvBufferSize() == 0 {
+			loggo.Info("kicked conn tail delivered %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
 
@@ -800,15 +817,18 @@ func (p *Client) processPacket(packet *Packet) {
 	if packet.my.Type == (int32)(MyMsg_KICK) {
 		clientConn := p.getClientConnById(packet.my.Id)
 		if clientConn != nil {
-			if clientConn.fm.IsRemoteClosed() && clientConn.fm.GetRecvBufferSize() > 0 {
-				// The remote already confirmed this conn and the tail is
-				// still being delivered to the local app: a KICK for a stale
-				// retransmit must not cut that delivery short.
-				loggo.Info("ignore kick, delivering tail %s", packet.my.Id)
-				return
+			if clientConn.tcpmode > 0 {
+				// The server gave up on this conn (its close phase timed out
+				// under loss, or it dropped it). Deliver everything already
+				// received to the local app, then close — a hard close here
+				// would cut the tail mid-delivery.
+				clientConn.kicked.Store(true)
+				notifyActivity(clientConn.activity)
+				loggo.Info("server gave up conn %s, delivering tail", packet.my.Id)
+			} else {
+				p.close(clientConn)
+				loggo.Info("remote kick local %s", packet.my.Id)
 			}
-			p.close(clientConn)
-			loggo.Info("remote kick local %s", packet.my.Id)
 		}
 		return
 	}
