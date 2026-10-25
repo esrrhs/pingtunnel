@@ -109,7 +109,7 @@ func TestClientNextPingInterval(t *testing.T) {
 
 func TestCongestionControlAndTimeoutSimulation(t *testing.T) {
 	// 1. Verify BBCongestion setup on server and client
-	s, err := NewServer("0.0.0.0", 0, 0, 0, 0, 1000, nil, nil, "bb")
+	s, err := NewServer("0.0.0.0", 0, 0, 1000, nil, nil, "bb")
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCongestionControlAndTimeoutSimulation(t *testing.T) {
 	}
 
 	c, err := NewClient(":4455", "127.0.0.1", "127.0.0.1:80", 60, 0, "0.0.0.0",
-		1, 1024*1024, 20000, 400, 0, 0, 0, 0, nil, "", "", "bb")
+		false, false, 0, nil, "", "", "bb")
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}

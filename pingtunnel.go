@@ -139,8 +139,14 @@ type Packet struct {
 }
 
 const (
-	FRAME_MAX_SIZE int = 888
-	FRAME_MAX_ID   int = 1000000
+	FRAME_MAX_SIZE         int = 888
+	FRAME_MAX_ID           int = 1000000
+	PACKET_QUEUE_CAP       int = 10000
+	DEFAULT_TCP_WIN        int = 20000
+	DEFAULT_TCP_BUF        int = 1024 * 1024
+	DEFAULT_TCP_RESEND     int = 400
+	DEFAULT_SERVER_THREADS int = 64
+	DEFAULT_SERVER_BUFFER  int = 1000
 )
 
 // icmpPacketConn is the underlay the client and server exchange MyMsg packets
