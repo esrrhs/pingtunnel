@@ -145,7 +145,7 @@ type Client struct {
 
 type ClientConn struct {
 	exit           bool
-	kicked         bool // the server gave up on this conn: deliver what we hold, then close
+	kicked         atomic.Bool // the server gave up on this conn: deliver what we hold, then close
 	ipaddr         *net.UDPAddr
 	tcpaddr        *net.TCPAddr
 	id             string
@@ -621,7 +621,7 @@ mainLoop:
 		// A conn with unacknowledged frames in flight or undelivered bytes is
 		// under backpressure, not idle: the peer (or the local app) is slow,
 		// and closing here would cut the transfer short.
-		if clientConn.kicked {
+		if clientConn.kicked.Load() {
 			// The server abandoned this conn: hand over whatever arrived and
 			// close. Waiting for more data or a CLOSE frame would hang.
 			if clientConn.fm.GetRecvBufferSize() == 0 {
@@ -707,7 +707,7 @@ mainLoop:
 			break
 		}
 
-		if clientConn.kicked && clientConn.fm.GetRecvBufferSize() == 0 {
+		if clientConn.kicked.Load() && clientConn.fm.GetRecvBufferSize() == 0 {
 			loggo.Info("kicked conn tail delivered %s %s", clientConn.id, clientConn.tcpaddr.String())
 			break
 		}
@@ -822,7 +822,7 @@ func (p *Client) processPacket(packet *Packet) {
 				// under loss, or it dropped it). Deliver everything already
 				// received to the local app, then close — a hard close here
 				// would cut the tail mid-delivery.
-				clientConn.kicked = true
+				clientConn.kicked.Store(true)
 				notifyActivity(clientConn.activity)
 				loggo.Info("server gave up conn %s, delivering tail", packet.my.Id)
 			} else {

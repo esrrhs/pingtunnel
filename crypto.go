@@ -105,8 +105,8 @@ func ValidatePassword(password string) error {
 
 // DeriveAuthCode maps a password onto the protocol's 31-bit authentication
 // code (MyMsg.Key). It is not a secret on its own — the AEAD layer already
-// authenticates every packet — it only lets unencrypted legacy peers keep
-// working and adds a cheap first-byte filter.
+// authenticates every packet — but provides a cheap first-byte filter before
+// attempting packet decryption.
 func DeriveAuthCode(password string) int {
 	k := pbkdf2.Key([]byte(password), []byte(authSalt), pbkdf2Iterations, 4, sha256.New)
 	code := int(uint32(k[0]) | uint32(k[1])<<8 | uint32(k[2])<<16 | uint32(k[3])<<24)
