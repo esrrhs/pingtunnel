@@ -106,20 +106,14 @@ jobs:
           fi
           echo "Previous version: ${PREV_VERSION}"
 
-          if [ "${CURRENT_VERSION}" = "${PREV_VERSION}" ]; then
-            echo "Version has not changed (${CURRENT_VERSION}), skipping release."
-            echo "should_release=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-
           # Check if tag already exists in repository
-          if git rev-parse "${CURRENT_VERSION}" >/dev/null 2>&1; then
+          if git rev-parse "refs/tags/${CURRENT_VERSION}" >/dev/null 2>&1; then
             echo "Tag ${CURRENT_VERSION} already exists, skipping release to prevent duplicate."
             echo "should_release=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
-          echo "Version changed from '${PREV_VERSION}' to '${CURRENT_VERSION}'. Triggering release!"
+          echo "Tag for version '${CURRENT_VERSION}' does not exist. Triggering release!"
           echo "should_release=true" >> "${GITHUB_OUTPUT}"
           echo "version=${CURRENT_VERSION}" >> "${GITHUB_OUTPUT}"
 
@@ -131,19 +125,26 @@ jobs:
 
       - name: Set up Android SDK
         if: steps.check_version.outputs.should_release == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android NDK
         if: steps.check_version.outputs.should_release == 'true'
         run: |
           set -euo pipefail
-          # sdkmanager exits after consuming enough input; `yes` then gets SIGPIPE.
-          # Temporarily disable pipefail so the pipeline status reflects sdkmanager.
-          set +o pipefail
-          yes | sdkmanager --licenses >/dev/null
-          set -o pipefail
-          sdkmanager --install "ndk;27.1.12297006"
-          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.1.12297006" >> "${GITHUB_ENV}"
+          if [ -n "${ANDROID_NDK_HOME:-}" ] && [ -d "${ANDROID_NDK_HOME}" ]; then
+            echo "Using preinstalled Android NDK at ${ANDROID_NDK_HOME}"
+          elif [ -d "/usr/local/lib/android/sdk/ndk" ] && [ -n "$(ls -A /usr/local/lib/android/sdk/ndk 2>/dev/null)" ]; then
+            NDK_DIR=$(ls -d /usr/local/lib/android/sdk/ndk/* | tail -1)
+            echo "Found preinstalled Android NDK at ${NDK_DIR}"
+            echo "ANDROID_NDK_HOME=${NDK_DIR}" >> "${GITHUB_ENV}"
+          else
+            # Temporarily disable pipefail so the pipeline status reflects sdkmanager.
+            set +o pipefail
+            yes | sdkmanager --licenses >/dev/null || true
+            set -o pipefail
+            sdkmanager --install "ndk;27.1.12297006"
+            echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.1.12297006" >> "${GITHUB_ENV}"
+          fi
           echo "ANDROID_API_LEVEL=21" >> "${GITHUB_ENV}"
 
       - name: Build release artifacts
@@ -163,10 +164,13 @@ jobs:
           TAG_NAME="${VERSION}"
           RELEASE_NAME="${VERSION}"
 
-          if [ "${BEFORE_SHA}" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            COMMIT_LINES="$(git log -n 10 --pretty='- %h %s' "${AFTER_SHA}")"
-          else
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "${LAST_TAG}" ] && git cat-file -e "${LAST_TAG}^{commit}" 2>/dev/null; then
+            COMMIT_LINES="$(git log --pretty='- %h %s' "${LAST_TAG}..${AFTER_SHA}")"
+          elif [ "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
             COMMIT_LINES="$(git log --pretty='- %h %s' "${BEFORE_SHA}..${AFTER_SHA}")"
+          else
+            COMMIT_LINES="$(git log -n 10 --pretty='- %h %s' "${AFTER_SHA}")"
           fi
 
           if [ -z "${COMMIT_LINES}" ]; then
