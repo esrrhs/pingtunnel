@@ -201,6 +201,9 @@ type pairOpts struct {
 	serverMaxConn int
 	clientMaxConn int
 	congestion    string
+	forward       *ForwardConfig // server-side upstream proxy; nil = dial targets directly
+	maxprt        int            // server packet worker pool size; 0 = inline processing
+	conntt        int            // server dial timeout in ms
 }
 
 func basePairOpts() pairOpts {
@@ -211,6 +214,8 @@ func basePairOpts() pairOpts {
 		tcpRST:     400,
 		timeout:    60,
 		congestion: "bb",
+		maxprt:     16,
+		conntt:     5000,
 	}
 }
 
@@ -253,7 +258,7 @@ func startPair(t *testing.T, opts pairOpts) *e2ePair {
 		}
 	}
 
-	srv, err := NewServer("127.0.0.1", p.key, opts.serverMaxConn, 16, 1000, 5000, cryptoCfg, nil, opts.congestion)
+	srv, err := NewServer("127.0.0.1", p.key, opts.serverMaxConn, opts.maxprt, 1000, opts.conntt, cryptoCfg, opts.forward, opts.congestion)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}

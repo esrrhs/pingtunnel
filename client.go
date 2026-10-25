@@ -144,19 +144,28 @@ type Client struct {
 }
 
 type ClientConn struct {
-	exit           bool
-	kicked         atomic.Bool // the server gave up on this conn: deliver what we hold, then close
-	ipaddr         *net.UDPAddr
-	tcpaddr        *net.TCPAddr
-	id             string
-	addrKey        string
-	tcpmode        int
+	exit     bool
+	kicked   atomic.Bool // the server gave up on this conn: deliver what we hold, then close
+	ipaddr   *net.UDPAddr
+	tcpaddr  *net.TCPAddr
+	id       string
+	addrKey  string
+	tcpmode  int
+	close    bool
+	activity chan struct{}
+
+	// The peer's buffers are one hop away and invisible here: a slow-reading
+	// peer reports itself congested via out-of-band PINGs carrying this conn
+	// id, and only that (not the FrameMgr's unconditional keepalive HB) may
+	// exempt a conn from inactivity reaping.
+	peerCongestionTime time.Time
+	lastCongestionPing time.Time
+
 	activeRecvTime time.Time
 	activeSendTime time.Time
-	close          bool
+
 	udpRelayConn   *net.UDPConn
 	udpTargetAddr  string
-	activity       chan struct{}
 
 	fm *network.FrameMgr
 }
@@ -414,6 +423,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 	if p.maxconn > 0 && p.connCount.Load() >= int64(p.maxconn) {
 		loggo.Info("too many connections %d, client accept new local tcp fail %s", p.connCount.Load(), tcpsrcaddr.String())
+		conn.Close()
 		return
 	}
 
@@ -437,6 +447,16 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	startConnectTime := common.GetNowUpdateInSecond()
 	connectWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
 	for !p.exit && !clientConn.exit {
+		if clientConn.kicked.Load() {
+			// The server refused the conn (blacklisted target, maxconn, dial
+			// failure): no data can have arrived before the ARQ connect
+			// completed, so fail the local conn immediately instead of
+			// waiting out the 5s connect budget with a zombie.
+			loggo.Info("remote refused conn during connect %s %s", uuid, tcpsrcaddr.String())
+			conn.Close()
+			p.close(clientConn)
+			return
+		}
 		if clientConn.fm.IsConnected() {
 			break
 		}
@@ -458,6 +478,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*5 {
 			loggo.Info("can not connect remote tcp %s %s", uuid, tcpsrcaddr.String())
+			conn.Close()
 			p.close(clientConn)
 			return
 		}
@@ -595,6 +616,23 @@ mainLoop:
 			}
 		}
 
+		// A non-empty recv buffer means the local app reads slower than the
+		// tunnel delivers. Report that to the server out-of-band (a PING
+		// carrying this conn id): its own send window may already be empty —
+		// everything acked into our buffers — so without this signal it
+		// cannot tell backpressure from a dead conn.
+		if clientConn.fm.GetRecvBufferSize() > 0 || clientConn.fm.GetSendWinSize() > 0 {
+			if now.Sub(clientConn.lastCongestionPing) >= time.Second {
+				clientConn.lastCongestionPing = now
+				tb, _ := time.Now().MarshalBinary()
+				p.sequence++
+				sendICMP(p.id, p.sequence, p.conn, p.ipaddrServer, "", clientConn.id, (uint32)(MyMsg_PING), tb,
+					SEND_PROTO, RECV_PROTO, p.key,
+					0, 0, 0, 0, 0, 0,
+					0, p.cryptoConfig)
+			}
+		}
+
 		select {
 		case err := <-readErr:
 			if err != nil {
@@ -632,10 +670,14 @@ mainLoop:
 			hadWork = true
 		}
 
-		// The peer's heartbeat proves the tunnel is stalled on backpressure
-		// (its send window is full), not dead: never reap while it beats.
-		hbFresh := time.Since(time.Unix(0, clientConn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(p.timeout))
-		if idleRecv && idleSend && !hbFresh && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.GetSendWinSize() == 0 {
+		// The peer's congestion signal (out-of-band PING with this conn id)
+		// proves the tunnel is stalled on backpressure — its app is slow, its
+		// buffers are one hop away and may already hold everything we sent —
+		// so never reap while it beats. The FrameMgr's unconditional keepalive
+		// HB must NOT count: it beats on fully idle conns too, which would
+		// make the inactivity timeout dead code.
+		congestionFresh := now.Sub(clientConn.peerCongestionTime) < time.Second*(time.Duration(p.timeout))
+		if idleRecv && idleSend && !congestionFresh && clientConn.fm.GetRecvBufferSize() == 0 && clientConn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			clientConn.fm.Close()
 			break
@@ -811,6 +853,14 @@ func (p *Client) processPacket(packet *Packet) {
 		loggo.Info("pong from %s %s", packet.src.String(), d.String())
 		p.rtt = d
 		p.pongTime = now
+		if packet.my.Id != "" {
+			// Congestion signal from the server: its recv buffer is full
+			// (slow target) or its send window is stalled. This conn is under
+			// backpressure, not idle — exempt it from inactivity reaping.
+			if clientConn := p.getClientConnById(packet.my.Id); clientConn != nil {
+				clientConn.peerCongestionTime = common.GetNowUpdateInSecond()
+			}
+		}
 		return
 	}
 

@@ -98,6 +98,13 @@ type ServerConn struct {
 	echoId         int
 	echoSeq        int
 	activity       chan struct{}
+
+	// The client's buffers are one hop away and invisible here: a slow-reading
+	// client reports itself congested via out-of-band PINGs carrying this conn
+	// id, and only that (not the FrameMgr's unconditional keepalive HB) may
+	// exempt a conn from inactivity reaping.
+	peerCongestionTime time.Time
+	lastCongestionPing time.Time
 }
 
 func (p *Server) Run() error {
@@ -150,7 +157,9 @@ func (p *Server) Stop() {
 	p.exit = true
 	p.recvcontrol <- 1
 	p.workResultLock.Wait()
-	p.processtp.Stop()
+	if p.processtp != nil {
+		p.processtp.Stop()
+	}
 	p.conn.Close()
 }
 
@@ -176,6 +185,14 @@ func (p *Server) processPacket(packet *Packet) {
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
+		if packet.my.Id != "" {
+			// Congestion signal from the client: its recv buffer is full
+			// (slow app reader) or its send window is stalled. This conn is
+			// under backpressure, not idle — exempt it from reaping.
+			if localConn := p.getServerConnById(packet.my.Id); localConn != nil {
+				localConn.peerCongestionTime = common.GetNowUpdateInSecond()
+			}
+		}
 		return
 	}
 
@@ -615,6 +632,22 @@ mainLoop:
 			}
 		}
 
+		// A non-empty recv buffer means the target reads slower than the
+		// tunnel delivers. Report that to the client out-of-band (a PING
+		// carrying this conn id): everything may already be acked out of our
+		// send window into our buffers, so without this signal the client
+		// cannot tell backpressure from a dead conn.
+		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
+			if now.Sub(conn.lastCongestionPing) >= time.Second {
+				conn.lastCongestionPing = now
+				tb, _ := time.Now().MarshalBinary()
+				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
+					conn.rproto, -1, p.key, 0,
+					0, 0, 0, 0, 0,
+					0, p.cryptoConfig)
+			}
+		}
+
 		select {
 		case err := <-readErr:
 			if err != nil {
@@ -634,10 +667,14 @@ mainLoop:
 		// A conn with unacknowledged frames in flight or undelivered bytes is
 		// under backpressure, not idle: the peer (or the target) is slow, and
 		// closing here would cut the transfer short.
-		// The peer's heartbeat proves the tunnel is stalled on backpressure
-		// (its send window is full), not dead: never reap while it beats.
-		hbFresh := time.Since(time.Unix(0, conn.fm.GetLastRecvHBTime())) < time.Second*(time.Duration(conn.timeout))
-		if idleRecv && idleSend && !hbFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
+		// The client's congestion signal (out-of-band PING with this conn id)
+		// proves the tunnel is stalled on backpressure — the client app is a
+		// slow reader and its buffers, one hop away, may already hold
+		// everything we sent — so never reap while it beats. The FrameMgr's
+		// unconditional keepalive HB must NOT count: it beats on fully idle
+		// conns too, which would make the inactivity timeout dead code.
+		congestionFresh := now.Sub(conn.peerCongestionTime) < time.Second*(time.Duration(conn.timeout))
+		if idleRecv && idleSend && !congestionFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
 			loggo.Info("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
 			break
