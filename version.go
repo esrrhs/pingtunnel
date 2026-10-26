@@ -6,7 +6,7 @@ import (
 )
 
 // Version is manually set in code and bumped when a release is intended.
-const Version = "3.0"
+const Version = "3.1"
 
 // Build-time variables injected via -ldflags.
 var (
