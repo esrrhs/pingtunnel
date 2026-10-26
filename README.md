@@ -6,6 +6,7 @@
 [<img src="https://img.shields.io/github/downloads/esrrhs/pingtunnel/total">](https://github.com/esrrhs/pingtunnel/releases)
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/actions/workflow/status/esrrhs/pingtunnel/go.yml?branch=master">](https://github.com/esrrhs/pingtunnel/actions)
+[![codecov](https://codecov.io/gh/esrrhs/pingtunnel/graph/badge.svg)](https://codecov.io/gh/esrrhs/pingtunnel)
 
 Pingtunnel is a network tool that tunnels TCP/UDP/SOCKS5 traffic over ICMP Echo (Ping) packets to bypass strict network firewalls or throttled TCP/UDP traffic.
 
