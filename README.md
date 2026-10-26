@@ -7,39 +7,37 @@
 [<img src="https://img.shields.io/docker/pulls/esrrhs/pingtunnel">](https://hub.docker.com/repository/docker/esrrhs/pingtunnel)
 [<img src="https://img.shields.io/github/actions/workflow/status/esrrhs/pingtunnel/go.yml?branch=master">](https://github.com/esrrhs/pingtunnel/actions)
 
-Pingtunnel 是一个通过伪造 ICMP Echo (Ping) 报文将 TCP/UDP/SOCKS5 流量转发到目标服务器的网络穿透工具，用于在网络运营商封锁或限制常规 TCP/UDP 流量时恢复网络连接。
-
 Pingtunnel is a network tool that tunnels TCP/UDP/SOCKS5 traffic over ICMP Echo (Ping) packets to bypass strict network firewalls or throttled TCP/UDP traffic.
 
-> ⚠️ **免责声明 / Note**: 本工具仅供网络技术学习与科研交流使用，请勿用于非法用途。This tool is strictly intended for study and research purposes.
+> ⚠️ **Note**: This tool is strictly intended for study and research purposes. Do not use it for any illegal purpose.
 
 ![image](network.jpg)
 
 ---
 
-## 🌟 核心特性 (Features)
+## 🌟 Features
 
-- **v3 统一安全架构**：告别旧版分散的数字 key 与加密开关，全网统一单一共享密码 (`-password`)，驱动双端认证与 AEAD 全程强加密（默认 `chacha20-poly1305`，可选 `aes256`/`aes128`）。
-- **多种运行模式**：
-  - **SOCKS5 代理**：一键开启本地 SOCKS5 代理服务，支持账号密码认证；
-  - **TCP 端口转发**：穿透内网访问远程特定 TCP 端口（如 SSH、Web、RDP）；
-  - **UDP 端口转发**：转发游戏 UDP、DNS 53 等数据；
-  - **服务端二级转发 (`-forward`)**：服务端接收流量后可通过指定的上游 SOCKS5/HTTP 代理中继访问外网。
-- **配置方式灵活（推荐配置文件模式）**：
-  - 支持直接传配置文件运行：`pingtunnel config.json` 或 `pingtunnel -c config.json`；
-  - 当前目录下存在 `config.json` 时自动缺省加载；
-  - 命令行参数随时覆盖配置文件中的对应项。
-- **抗弱网与防断连**：内置带宽自适应拥塞控制算法（`bb`），有效抑制缓冲区膨胀与丢包断流。
+- **Unified v3 security architecture**: the old numeric key and separate encryption switches are gone. A single shared password (`-password`) drives mutual authentication and end-to-end AEAD encryption (default `chacha20-poly1305`, optional `aes256`/`aes128`).
+- **Multiple modes**:
+  - **SOCKS5 proxy**: start a local SOCKS5 proxy with one command, with optional username/password authentication;
+  - **TCP port forwarding**: reach a specific remote TCP port (e.g. SSH, web, RDP);
+  - **UDP port forwarding**: forward game UDP traffic, DNS 53, etc.;
+  - **Server-side secondary forwarding (`-forward`)**: the server can relay incoming traffic through an upstream SOCKS5/HTTP proxy.
+- **Flexible configuration (config file mode recommended)**:
+  - Run directly with a config file: `pingtunnel config.json` or `pingtunnel -c config.json`;
+  - `config.json` in the current directory is loaded automatically by default;
+  - Command-line flags always override the matching config file values.
+- **Resilient on poor networks**: a built-in bandwidth-adaptive congestion control algorithm (`bb`) suppresses bufferbloat and packet-loss-induced stalls.
 
 ---
 
-## 🚀 快速上手 (Quick Start)
+## 🚀 Quick Start
 
-### 方式 1：配置文件模式（推荐 / Recommended）
+### Option 1: Config file mode (Recommended)
 
-预置示例文件已随仓库提供，只需填写服务器 IP 和强密码即可快速启动：
+Sample files ship with the repository. Just fill in your server IP and a strong password:
 
-#### 1. 服务端配置 (`config-server.json`)
+#### 1. Server config (`config-server.json`)
 ```json
 {
   "type": "server",
@@ -48,13 +46,13 @@ Pingtunnel is a network tool that tunnels TCP/UDP/SOCKS5 traffic over ICMP Echo 
   "icmp_listen": "0.0.0.0"
 }
 ```
-启动服务端（需管理员权限 / root）：
+Start the server (requires root / administrator privileges):
 ```bash
 sudo ./pingtunnel config-server.json
-# 或: sudo ./pingtunnel -c config-server.json
+# or: sudo ./pingtunnel -c config-server.json
 ```
 
-#### 2. 客户端配置（以 SOCKS5 代理模式为例 `config-client-socks5.json`）
+#### 2. Client config (SOCKS5 proxy mode, `config-client-socks5.json`)
 ```json
 {
   "type": "client",
@@ -65,55 +63,55 @@ sudo ./pingtunnel config-server.json
   "encrypt": "chacha20"
 }
 ```
-启动客户端：
+Start the client:
 ```bash
 ./pingtunnel config-client-socks5.json
-# 或: ./pingtunnel -c config-client-socks5.json
+# or: ./pingtunnel -c config-client-socks5.json
 ```
-在浏览器或系统网络设置中配置 SOCKS5 代理为 `127.0.0.1:1080` 即可开始使用。
+Then set your browser or system proxy to SOCKS5 `127.0.0.1:1080`.
 
 ---
 
-### 方式 2：命令行模式 (CLI)
+### Option 2: Command line (CLI)
 
-#### 1. 启动服务端 (Server)
-在拥有公网 IP 的服务器上执行：
+#### 1. Start the server
+Run on a machine with a public IP:
 ```bash
-sudo ./pingtunnel -type server -password "YourSecretPassword"
+sudo ./pingtunnel -type server -password YOUR_STRONG_PASSWORD_HERE
 ```
-*(可选优化)* 关闭 Linux 系统默认内核 ICMP 回显响应以防干扰：
+*(Optional)* Disable the Linux kernel's default ICMP echo replies to avoid interference:
 ```bash
 echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all
 ```
 
-#### 2. 启动客户端 (Client)
-- **SOCKS5 代理模式**：
+#### 2. Start the client
+- **SOCKS5 proxy mode**:
   ```bash
-  ./pingtunnel -type client -l 127.0.0.1:1080 -s YOUR_SERVER_IP -socks5 -password "YourSecretPassword"
+  ./pingtunnel -type client -l 127.0.0.1:1080 -s YOUR_SERVER_IP -socks5 -password YOUR_STRONG_PASSWORD_HERE
   ```
-- **TCP 端口转发（默认模式，例如映射远程内网 192.168.1.100:22 到本地 2222）**：
+- **TCP port forwarding (default mode, e.g. map remote internal 192.168.1.100:22 to local port 2222)**:
   ```bash
-  ./pingtunnel -type client -l :2222 -s YOUR_SERVER_IP -t 192.168.1.100:22 -password "YourSecretPassword"
+  ./pingtunnel -type client -l :2222 -s YOUR_SERVER_IP -t 192.168.1.100:22 -password YOUR_STRONG_PASSWORD_HERE
   ```
-- **UDP 转发（例如转发本地 5353 到公共 DNS 8.8.8.8:53）**：
+- **UDP forwarding (e.g. local port 5353 to public DNS 8.8.8.8:53)**:
   ```bash
-  ./pingtunnel -type client -l :5353 -s YOUR_SERVER_IP -t 8.8.8.8:53 -udp -password "YourSecretPassword"
+  ./pingtunnel -type client -l :5353 -s YOUR_SERVER_IP -t 8.8.8.8:53 -udp -password YOUR_STRONG_PASSWORD_HERE
   ```
 
 ---
 
-## 🐳 Docker 运行
+## 🐳 Docker
 
-### 服务端 Docker 启动
+### Run the server
 ```bash
 docker run --name pingtunnel-server -d \
   --restart=always \
   --privileged \
   --network host \
-  esrrhs/pingtunnel ./pingtunnel -type server -password "YourSecretPassword"
+  esrrhs/pingtunnel ./pingtunnel -type server -password YOUR_STRONG_PASSWORD_HERE
 ```
 
-### 挂载配置文件启动
+### Run with a mounted config file
 ```bash
 docker run --name pingtunnel-server -d \
   --restart=always \
@@ -125,14 +123,14 @@ docker run --name pingtunnel-server -d \
 
 ---
 
-## 📱 移动端客户端 (Android)
+## 📱 Mobile Client (Android)
 
-Pingtunnel 社区开源开发了专属 Android 客户端应用：
-- 仓库链接：[**pingtunnel-client**](https://github.com/itismoej/pingtunnel-client)
+The community has developed a dedicated open-source Android client:
+- Repository: [**pingtunnel-client**](https://github.com/itismoej/pingtunnel-client)
 
 ---
 
-## 📖 详细使用与调优指南
+## 📖 Detailed Usage and Tuning Guide
 
-关于更多高级参数、多场景拓扑配置（服务端二级代理、端口转发、SOCKS5 认证、流控与拥塞算法调优），请参阅详细文档：
-👉 **[USAGE.md - Pingtunnel 完整使用与参数调优指南](USAGE.md)**
+For more advanced options and topologies (server-side secondary proxy, port forwarding, SOCKS5 authentication, flow control and congestion tuning), see:
+👉 **[USAGE.md - Pingtunnel Usage and Configuration Guide](USAGE.md)**
