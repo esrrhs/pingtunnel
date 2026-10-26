@@ -35,7 +35,14 @@ jobs:
         run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
 
       - name: Test
-        run: go test -v ./...
+        run: go test -v -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.txt
+          fail_ci_if_error: true
 
   # The build job above runs the e2e suite unprivileged (in-process fake
   # underlay). This job runs the same suite over real raw ICMP sockets as
