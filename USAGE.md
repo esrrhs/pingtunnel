@@ -63,28 +63,20 @@ sudo ./pingtunnel -c /etc/pingtunnel/server.json
 | `socks5` | bool | Client | `false` | `-socks5` | Enable the local SOCKS5 proxy (TCP mode is enabled automatically) |
 | `s5user` | string | Client | `""` | `-s5user` | Username for the local SOCKS5 proxy (optional) |
 | `s5pass` | string | Client | `""` | `-s5pass` | Password for the local SOCKS5 proxy (optional) |
-| `tcp` | int | Client | `1` | `-tcp` | Forward in TCP mode (`1` = TCP, `0` = UDP; single-port forwarding uses TCP by default) |
-| `udp` | bool | Client | `false`| `-udp` | Enable UDP forwarding (takes precedence over the default TCP mode) |
+| `udp` | bool | Client | `false` | `-udp` | Forward in UDP mode (TCP is the default) |
 | `icmp_listen`| string | Both | `"0.0.0.0"` | `-icmp_l` | Local interface IP used to send and receive ICMP packets |
 | `timeout` | int | Client | `60` | `-timeout` | Idle connection timeout (seconds) |
 | `congestion` | string | Both | `"bb"` | `-congestion` | Congestion control: `"bb"` (bandwidth-adaptive, avoids saturating the link) or `""` (disabled) |
 | `forward` | string | Server | `""` | `-forward` | Upstream relay proxy of the server (e.g. `"socks5://127.0.0.1:2080"` or `"http://proxy:8080"`) |
 | `maxconn` | int | Both | `0` | `-maxconn` | Maximum concurrent connections (`0` = unlimited) |
-| `maxprt` | int | Server | `100` | `-maxprt` | (Advanced/internal) Number of worker goroutines processing packets on the server |
-| `maxprb` | int | Server | `1000` | `-maxprb` | (Advanced/internal) Size of the server's packet processing queue |
 | `conntt` | int | Server | `3000` | `-conntt` | Timeout (ms) for the server connecting to the target |
-| `tcp_bs` | int | Client | `1048576` | `-tcp_bs` | (Advanced/internal) TCP sliding window send/receive buffer size in bytes, default 1MB |
-| `tcp_mw` | int | Client | `20000` | `-tcp_mw` | (Advanced/internal) Maximum TCP send window (in frames) |
-| `tcp_rst` | int | Client | `400` | `-tcp_rst` | (Advanced/internal) TCP frame retransmission check interval (ms) |
-| `tcp_gz` | int | Client | `0` | `-tcp_gz` | (Advanced/internal) Gzip-compress packets larger than this size in bytes; `0` disables |
-| `tcp_stat` | int | Client | `0` | `-tcp_stat` | (Advanced/internal) Periodically log TCP flow control and send statistics (`1` on, `0` off) |
-| `nolog` | int | Both | `0` | `-nolog` | Do not write a log file (`1` = print to stdout only) |
-| `noprint` | int | Both | `0` | `-noprint` | Do not print logs to the console (`1` = silent) |
+| `nolog` | bool | Both | `false` | `-nolog` | Do not write a log file (`true` = print to stdout only) |
 | `loglevel` | string | Both | `"info"` | `-loglevel` | Log level (`"debug"`, `"info"`, `"warn"`, `"error"`) |
+| `quiet` | bool | Both | `false` | `-quiet` | Do not print logs to the console (`true` = silent) |
 | `profile` | int | Both | `0` | `-profile` | Port for Go pprof profiling (`0` disables) |
 
 > 💡 **Migration Notes**:
-> The legacy `"key"`, `"encrypt_key"` and `"sock5"` fields were removed in v3. If a config file still contains them, the program exits with an error asking you to fix it, so old configs never fail silently.
+> The legacy `"key"`, `"encrypt_key"`, `"sock5"`, `"tcp"`, `"tcp_bs"`, `"tcp_mw"`, `"tcp_rst"`, `"tcp_gz"`, `"tcp_stat"`, `"maxprt"`, `"maxprb"` and `"noprint"` fields were removed or renamed in v3 (use `"password"`, `"socks5"`, `"udp"` and `"quiet"` instead; the TCP tuning and worker options are now managed automatically). If a config file still contains them, the program exits with an error and a migration hint, so old configs never fail silently.
 
 ---
 
@@ -99,7 +91,7 @@ sudo ./pingtunnel -c /etc/pingtunnel/server.json
   "icmp_listen": "0.0.0.0",
   "maxconn": 500,
   "loglevel": "info",
-  "nolog": 0
+  "nolog": false
 }
 ```
 
@@ -136,7 +128,6 @@ sudo ./pingtunnel -c /etc/pingtunnel/server.json
   "listen": ":2222",
   "server": "your-server-ip.com",
   "target": "192.168.1.100:22",
-  "tcp": 1,
   "password": "YourSecureSecretPassword123!"
 }
 ```
@@ -164,17 +155,16 @@ sudo ./pingtunnel -type server [OPTIONS]
 |---|---|---|
 | `-type` | `""` | Must be `server` |
 | `-password` | — | **Required**: authentication and encryption secret shared with the client (at least 8 characters) |
-| `-encrypt` | `"chacha20"` | Encryption algorithm: `chacha20` (default), `aes256`, `aes128` |
+| `-encrypt` | `chacha20` | Encryption algorithm: `chacha20` (default), `aes256`, `aes128` |
 | `-c`, `-config` | `""` | Path of the JSON config file to load |
 | `-icmp_l` | `0.0.0.0` | Interface address to listen on for ICMP packets |
 | `-forward` | `""` | Upstream secondary proxy, `socks5://host:port` or `http://host:port` |
 | `-congestion`| `bb` | Congestion control algorithm, `bb` by default; pass an empty string `""` to disable |
 | `-maxconn` | `0` | Maximum concurrent connections (`0` = unlimited) |
-| `-maxprt` | `100` | Number of worker goroutines dispatching packets on the server |
-| `-maxprb` | `1000` | Packet processing buffer size |
 | `-conntt` | `3000` | Timeout for connecting to the target (ms) |
-| `-nolog` | `0` | Set to `1` to not write a log file |
-| `-noprint` | `0` | Set to `1` to silence console output |
+| `-nolog` | `false` | Do not write a log file (print to stdout only) |
+| `-quiet` | `false` | Silence console output |
+| `-profile` | `0` | Port for Go pprof profiling (`0` disables) |
 | `-loglevel` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `-v`, `-version` | `false`| Print the version and Git build info |
 
@@ -194,18 +184,19 @@ sudo ./pingtunnel -type server [OPTIONS]
 | `-password` | — | **Required**: authentication and encryption secret shared with the server (at least 8 characters) |
 | `-socks5` | `false` | Boolean switch enabling the local SOCKS5 proxy (TCP is enabled automatically) |
 | `-t` | `""` | Forwarding target address (required unless in socks5 mode, e.g. `8.8.8.8:53` or `10.0.0.5:22`) |
-| `-udp` | `false` | Forwarding mode: enable UDP forwarding (TCP is the default) |
-| `-tcp` | `1` | (Compatibility option) Forwarding mode: `1` = TCP, `0` = UDP |
+| `-udp` | `false` | Forward in UDP mode (TCP is the default) |
 | `-s5user` | `""` | Local SOCKS5 username (optional) |
 | `-s5pass` | `""` | Local SOCKS5 password (optional) |
-| `-encrypt` | `"chacha20"` | Encryption algorithm: `chacha20` (default), `aes256`, `aes128` |
+| `-encrypt` | `chacha20` | Encryption algorithm: `chacha20` (default), `aes256`, `aes128` |
 | `-timeout` | `60` | Idle timeout of local connections (seconds) |
+| `-maxconn` | `0` | Maximum concurrent connections (`0` = unlimited) |
+| `-icmp_l` | `0.0.0.0` | Local interface address used for ICMP traffic |
+| `-nolog` | `false` | Do not write a log file |
+| `-quiet` | `false` | Silence console output |
+| `-loglevel` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `-profile` | `0` | Port for Go pprof profiling (`0` disables) |
+| `-c`, `-config` | `""` | Path of the JSON config file to load |
 | `-congestion`| `bb` | Congestion control algorithm, `bb` by default; pass an empty string `""` to disable |
-| `-tcp_bs` | `1048576` | TCP sliding window receive/send buffer size in bytes, default 1MB |
-| `-tcp_mw` | `20000` | Maximum TCP sliding window size |
-| `-tcp_rst` | `400` | TCP loss retransmission timeout (ms) |
-| `-tcp_gz` | `0` | Enable Gzip compression above this many bytes; `0` disables |
-| `-tcp_stat` | `0` | Set to `1` to periodically print TCP performance statistics |
 
 ---
 
