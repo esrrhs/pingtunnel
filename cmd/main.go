@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/esrrhs/gohome/common"
@@ -113,61 +114,78 @@ Usage:
 `
 
 func main() {
-
 	defer common.CrashLog()
 
-	t := flag.String("type", "", "client or server")
-	listen := flag.String("l", "", "listen addr")
-	target := flag.String("t", "", "target addr")
-	server := flag.String("s", "", "server addr")
-	icmpListen := flag.String("icmp_l", "0.0.0.0", "listen address for ICMP traffic")
-	timeout := flag.Int("timeout", 60, "conn timeout")
-	password := flag.String("password", "", "shared secret for authentication and encryption (required, min 8 characters)")
-	encryption := flag.String("encrypt", "", "encryption algorithm override: chacha20 (default), aes256, aes128")
-	udp := flag.Bool("udp", false, "forward in udp mode (default is tcp)")
-	nolog := flag.Bool("nolog", false, "write log file")
-	quiet := flag.Bool("quiet", false, "do not print stdout")
-	loglevel := flag.String("loglevel", "info", "log level")
-	socks5 := flag.Bool("socks5", false, "socks5 proxy mode")
-	sock5_user := flag.String("s5user", "", "sock5 username")
-	sock5_pass := flag.String("s5pass", "", "sock5 password")
-	maxconn := flag.Int("maxconn", 0, "max num of connections")
-	profile := flag.Int("profile", 0, "open profile")
-	conntt := flag.Int("conntt", 3000, "the connect call's timeout in ms")
-	forward := flag.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
-	congestion := flag.String("congestion", "bb", "congestion control algorithm: bb or empty")
+	os.Exit(run(os.Args[1:]))
+}
+
+// run holds the whole main body on a private FlagSet so tests can drive it
+// with explicit args; the return value is the process exit code. A zero
+// return only happens on early exits (usage errors, failed validation,
+// listener errors) — a started server or client runs forever below.
+func run(args []string) int {
+
+	t := flag.NewFlagSet("pingtunnel", flag.ContinueOnError)
+	listen := t.String("l", "", "listen addr")
+	target := t.String("t", "", "target addr")
+	server := t.String("s", "", "server addr")
+	icmpListen := t.String("icmp_l", "0.0.0.0", "listen address for ICMP traffic")
+	timeout := t.Int("timeout", 60, "conn timeout")
+	password := t.String("password", "", "shared secret for authentication and encryption (required, min 8 characters)")
+	encryption := t.String("encrypt", "", "encryption algorithm override: chacha20 (default), aes256, aes128")
+	udp := t.Bool("udp", false, "forward in udp mode (default is tcp)")
+	nolog := t.Bool("nolog", false, "write log file")
+	quiet := t.Bool("quiet", false, "do not print stdout")
+	loglevel := t.String("loglevel", "info", "log level")
+	socks5 := t.Bool("socks5", false, "socks5 proxy mode")
+	sock5_user := t.String("s5user", "", "sock5 username")
+	sock5_pass := t.String("s5pass", "", "sock5 password")
+	maxconn := t.Int("maxconn", 0, "max num of connections")
+	profile := t.Int("profile", 0, "open profile")
+	conntt := t.Int("conntt", 3000, "the connect call's timeout in ms")
+	forward := t.String("forward", "", "forward TCP traffic through proxy (socks5://host:port or http://host:port)")
+	congestion := t.String("congestion", "bb", "congestion control algorithm: bb or empty")
+	typ := t.String("type", "", "client or server")
 	var configFile string
-	flag.StringVar(&configFile, "c", "", "path to json config file")
-	flag.StringVar(&configFile, "config", "", "path to json config file")
-	showVersion := flag.Bool("v", false, "show version and build info")
-	showVersionLong := flag.Bool("version", false, "show version and build info")
-	flag.Usage = func() {
+	t.StringVar(&configFile, "c", "", "path to json config file")
+	t.StringVar(&configFile, "config", "", "path to json config file")
+	showVersion := t.Bool("v", false, "show version and build info")
+	showVersionLong := t.Bool("version", false, "show version and build info")
+	t.Usage = func() {
 		fmt.Print(usage)
 	}
 
-	flag.Parse()
+	if err := t.Parse(args); err != nil {
+		// Match the historical ExitOnError behavior: -h/--help prints the
+		// usage and exits 0; any other parse error prints it and exits 2.
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		t.Usage()
+		return 2
+	}
 
 	if *showVersion || *showVersionLong {
 		fmt.Println("pingtunnel " + pingtunnel.GetVersionInfo())
-		return
+		return 0
 	}
 
 	// Track which flags were explicitly set via command line
 	setFlags := make(map[string]bool)
-	flag.Visit(func(f *flag.Flag) {
+	t.Visit(func(f *flag.Flag) {
 		setFlags[f.Name] = true
 	})
 
 	// Positional argument support: pingtunnel <config.json>
-	if configFile == "" && flag.NArg() > 0 {
-		arg0 := flag.Arg(0)
+	if configFile == "" && t.NArg() > 0 {
+		arg0 := t.Arg(0)
 		if _, err := os.Stat(arg0); err == nil {
 			configFile = arg0
 		}
 	}
 
 	// Auto-detect default config.json if no config or type was specified
-	if configFile == "" && !setFlags["type"] && *t == "" {
+	if configFile == "" && !setFlags["type"] && *typ == "" {
 		if _, err := os.Stat("config.json"); err == nil {
 			configFile = "config.json"
 			fmt.Println("Auto-loading default config file: config.json")
@@ -179,11 +197,11 @@ func main() {
 		cfg, err := pingtunnel.LoadConfig(configFile)
 		if err != nil {
 			fmt.Printf("Failed to load config file (%s): %v\n", configFile, err)
-			return
+			return 0
 		}
 
 		if !setFlags["type"] && cfg.Type != "" {
-			*t = cfg.Type
+			*typ = cfg.Type
 		}
 		if !setFlags["l"] && cfg.Listen != "" {
 			*listen = cfg.Listen
@@ -244,18 +262,18 @@ func main() {
 		}
 	}
 
-	if *t != "client" && *t != "server" {
-		flag.Usage()
-		return
+	if *typ != "client" && *typ != "server" {
+		t.Usage()
+		return 0
 	}
-	if *t == "client" {
+	if *typ == "client" {
 		if len(*listen) == 0 || len(*server) == 0 {
-			flag.Usage()
-			return
+			t.Usage()
+			return 0
 		}
 		if !*socks5 && len(*target) == 0 {
-			flag.Usage()
-			return
+			t.Usage()
+			return 0
 		}
 	}
 
@@ -263,7 +281,7 @@ func main() {
 	// the encryption key from it. Everything sent over the wire is encrypted.
 	if err := pingtunnel.ValidatePassword(*password); err != nil {
 		fmt.Printf("Invalid password: %v\n", err)
-		return
+		return 0
 	}
 	authCode := pingtunnel.DeriveAuthCode(*password)
 
@@ -272,11 +290,11 @@ func main() {
 		mode, err := pingtunnel.ParseEncryptionMode(*encryption)
 		if err != nil {
 			fmt.Printf("Invalid encryption mode: %v\n", err)
-			return
+			return 0
 		}
 		if mode == pingtunnel.NoEncryption {
 			fmt.Println("Encryption cannot be disabled in v3: traffic is always encrypted")
-			return
+			return 0
 		}
 		encryptionMode = mode
 	}
@@ -284,7 +302,7 @@ func main() {
 	cryptoConfig, err := pingtunnel.NewCryptoConfig(encryptionMode, *password)
 	if err != nil {
 		fmt.Printf("Failed to create crypto config: %v\n", err)
-		return
+		return 0
 	}
 
 	if *nolog && *quiet {
@@ -304,7 +322,7 @@ func main() {
 	loggo.Info("start pingtunnel (%s)...", pingtunnel.GetVersionInfo())
 	loggo.Info("auth code derived from -password; encryption %s", encryptionMode)
 
-	if *t == "server" {
+	if *typ == "server" {
 		// Parse forward proxy configuration
 		var forwardConfig *pingtunnel.ForwardConfig
 		if *forward != "" {
@@ -312,7 +330,7 @@ func main() {
 			forwardConfig, err = pingtunnel.ParseForwardURL(*forward)
 			if err != nil {
 				fmt.Printf("Invalid forward URL: %v\n", err)
-				return
+				return 0
 			}
 			loggo.Info("Forward proxy configured: %s", *forward)
 		}
@@ -320,17 +338,17 @@ func main() {
 		s, err := pingtunnel.NewServer(*icmpListen, authCode, *maxconn, *conntt, cryptoConfig, forwardConfig, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
-			return
+			return 0
 		}
 		loggo.Info("Server start")
 		err = s.Run()
 		if err != nil {
 			loggo.Error("Run ERROR: %s", err.Error())
-			return
+			return 0
 		}
-	} else if *t == "client" {
+	} else if *typ == "client" {
 
-		loggo.Info("type %s", *t)
+		loggo.Info("type %s", *typ)
 		loggo.Info("listen %s", *listen)
 		loggo.Info("server %s", *server)
 		loggo.Info("target %s", *target)
@@ -339,17 +357,17 @@ func main() {
 			*udp, *socks5, *maxconn, cryptoConfig, *sock5_user, *sock5_pass, *congestion)
 		if err != nil {
 			loggo.Error("ERROR: %s", err.Error())
-			return
+			return 0
 		}
 		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s ICMP Listen %s", c.Addr(), c.IPAddr(),
 			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr(), c.ICMPAddr())
 		err = c.Run()
 		if err != nil {
 			loggo.Error("Run ERROR: %s", err.Error())
-			return
+			return 0
 		}
 	} else {
-		return
+		return 0
 	}
 
 	if *profile > 0 {
