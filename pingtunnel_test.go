@@ -212,7 +212,3 @@ func TestBBCongestionFrameMgrBehavior(t *testing.T) {
 		t.Fatalf("expected sendList with BB to contain frames")
 	}
 }
-
-
-
-

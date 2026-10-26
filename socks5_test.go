@@ -136,4 +136,3 @@ func TestWriteSocks5Reply(t *testing.T) {
 		t.Fatalf("unexpected reserved byte: %d", replyBytes[2])
 	}
 }
-
