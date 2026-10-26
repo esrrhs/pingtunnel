@@ -1,6 +1,6 @@
 module github.com/esrrhs/pingtunnel
 
-go 1.26.0
+go 1.27.3
 
 require (
 	github.com/esrrhs/gohome v0.0.0-20261025165400-5397c569b4d0
