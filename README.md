@@ -123,12 +123,6 @@ docker run --name pingtunnel-server -d \
 
 ---
 
-## 📱 Mobile Client (Android)
-
-The community has developed a dedicated open-source Android client:
-- Repository: [**pingtunnel-client**](https://github.com/itismoej/pingtunnel-client)
-
----
 
 ## 📖 Detailed Usage and Tuning Guide
 
