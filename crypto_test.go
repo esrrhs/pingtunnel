@@ -72,7 +72,7 @@ func TestCryptoConfig_AES128(t *testing.T) {
 	}
 
 	testData := []byte("Hello, World! This is a test message for encryption.")
-	
+
 	// Test encryption
 	encrypted, err := config.Encrypt(testData)
 	if err != nil {
@@ -104,7 +104,7 @@ func TestCryptoConfig_AES256(t *testing.T) {
 	}
 
 	testData := []byte("This is a longer test message to verify AES-256 encryption works correctly with derived keys.")
-	
+
 	// Test encryption
 	encrypted, err := config.Encrypt(testData)
 	if err != nil {
@@ -158,7 +158,7 @@ func TestCryptoConfig_NoEncryption(t *testing.T) {
 	}
 
 	testData := []byte("This should not be encrypted")
-	
+
 	// Test "encryption" (should return original data)
 	encrypted, err := config.Encrypt(testData)
 	if err != nil {
