@@ -7,10 +7,10 @@ import (
 
 func TestParseForwardURL(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantNil   bool
-		wantErr   bool
+		name       string
+		input      string
+		wantNil    bool
+		wantErr    bool
 		wantScheme string
 		wantHost   string
 		wantPort   int
@@ -151,4 +151,3 @@ func TestSocks5UDPAssociateAddr(t *testing.T) {
 		t.Errorf("expected 0.0.0.0:54321, got %s", got)
 	}
 }
-
