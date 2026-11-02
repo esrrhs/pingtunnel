@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/esrrhs/gohome/common"
@@ -71,15 +72,14 @@ func sendICMP(id int, sequence int, conn icmpPacketConn, server *net.IPAddr, tar
 	conn.WriteTo(bytes, icmpDstAddr(server))
 }
 
-func recvICMP(workResultLock *sync.WaitGroup, exit *bool, conn icmpPacketConn, recv chan<- *Packet, cryptoConfig *CryptoConfig) {
+func recvICMP(workResultLock *sync.WaitGroup, exit *atomic.Bool, conn icmpPacketConn, recv chan<- *Packet, cryptoConfig *CryptoConfig) {
 
 	defer common.CrashLog()
 
-	(*workResultLock).Add(1)
 	defer (*workResultLock).Done()
 
 	bytes := make([]byte, 10240)
-	for !*exit {
+	for !exit.Load() {
 		conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, srcaddr, err := conn.ReadFrom(bytes)
 
