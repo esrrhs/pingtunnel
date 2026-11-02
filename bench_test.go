@@ -39,6 +39,7 @@ func BenchmarkTunnelThroughput(b *testing.B) {
 	payload := benchPayload(64 * 1024)
 	buf := make([]byte, len(payload))
 	b.SetBytes(int64(len(payload)))
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := conn.Write(payload); err != nil {
@@ -66,6 +67,7 @@ func BenchmarkTunnelEchoRTT(b *testing.B) {
 	payload := benchPayload(64)
 	buf := make([]byte, len(payload))
 	b.SetBytes(int64(len(payload)))
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := conn.Write(payload); err != nil {
@@ -92,6 +94,7 @@ func BenchmarkCrypto(b *testing.B) {
 				b.Fatalf("Encrypt: %v", err)
 			}
 			b.SetBytes(int64(len(payload)))
+			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				if _, err := cfg.Encrypt(payload); err != nil {
@@ -114,6 +117,7 @@ func BenchmarkMyMsgRoundTrip(b *testing.B) {
 		Data: benchPayload(1024),
 	}
 	b.SetBytes(1024)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		wire, err := proto.Marshal(m)
@@ -124,5 +128,24 @@ func BenchmarkMyMsgRoundTrip(b *testing.B) {
 		if err := proto.Unmarshal(wire, out); err != nil {
 			b.Fatalf("Unmarshal: %v", err)
 		}
+	}
+}
+
+// BenchmarkSendICMPAllocs isolates the per-packet send path: at steady
+// state the pooled buffers make it allocation-free end to end (protobuf
+// marshal, AEAD seal, ICMP header build).
+func BenchmarkSendICMPAllocs(b *testing.B) {
+	rec := &fakeICMPConn{}
+	crypto, err := NewCryptoConfig(CHACHA20, "bench-key-12345678")
+	if err != nil {
+		b.Fatalf("NewCryptoConfig: %v", err)
+	}
+	server := &net.IPAddr{IP: net.IPv4(1, 2, 3, 4)}
+	payload := benchPayload(1024)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sendICMP(1234, i, rec, server, "", "conn-1", (uint32)(MyMsg_DATA), payload,
+			SEND_PROTO, RECV_PROTO, 7, 1, 1024, 100, 10, 0, 0, 60, crypto)
 	}
 }
