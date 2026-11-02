@@ -45,6 +45,7 @@ func TestAcceptSock5ConnRequestErrors(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		c.workResultLock.Add(1)
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -85,6 +86,7 @@ func TestAcceptSock5ConnRequestErrors(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		c.workResultLock.Add(1)
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -234,6 +236,7 @@ func TestRecvSock5UDPMaxConnDrop(t *testing.T) {
 	defer relay.Close()
 
 	c.conn = &fakeICMPConn{}
+	c.workResultLock.Add(1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -250,7 +253,7 @@ func TestRecvSock5UDPMaxConnDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(300 * time.Millisecond)
-	c.exit = true
+	c.exit.Store(true)
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
@@ -271,16 +274,16 @@ func serverWithUDPConn(t *testing.T, s *Server) *ServerConn {
 	}
 	t.Cleanup(func() { uc.Close() })
 	conn := &ServerConn{
-		id:             "u1",
-		tcpmode:        0,
-		conn:           uc,
-		udpViaProxy:    true,
-		udpRelayAddr:   &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5353},
-		udpTargetAddr:  "10.0.0.1:53",
-		timeout:        60,
-		activeRecvTime: common.GetNowUpdateInSecond(),
-		activeSendTime: common.GetNowUpdateInSecond(),
+		id:            "u1",
+		tcpmode:       0,
+		conn:          uc,
+		udpViaProxy:   true,
+		udpRelayAddr:  &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5353},
+		udpTargetAddr: "10.0.0.1:53",
+		timeout:       60,
 	}
+	conn.activeRecvTime.Store(common.GetNowUpdateInSecond().UnixNano())
+	conn.activeSendTime.Store(common.GetNowUpdateInSecond().UnixNano())
 	s.addServerConn("u1", conn)
 	return conn
 }
@@ -304,33 +307,33 @@ func TestServerProxiedUDPDataPath(t *testing.T) {
 	pkt.my.Data = []byte("x")
 	conn.udpTargetAddr = ""
 	s.processPacket(pkt)
-	if !conn.close {
+	if !conn.close.Load() {
 		t.Fatal("missing udp target must mark the conn for close")
 	}
-	conn.close = false
+	conn.close.Store(false)
 
 	// Undialable target string fails datagram encoding.
 	conn.udpTargetAddr = "not-an-addr"
 	s.processPacket(pkt)
-	if !conn.close {
+	if !conn.close.Load() {
 		t.Fatal("bad target must mark the conn for close")
 	}
-	conn.close = false
+	conn.close.Store(false)
 	conn.udpTargetAddr = "10.0.0.1:53"
 
 	// Missing relay addr.
 	conn.udpRelayAddr = nil
 	s.processPacket(pkt)
-	if !conn.close {
+	if !conn.close.Load() {
 		t.Fatal("missing relay addr must mark the conn for close")
 	}
-	conn.close = false
+	conn.close.Store(false)
 	conn.udpRelayAddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5353}
 
 	// Write error: closed target socket.
 	conn.conn.Close()
 	s.processPacket(pkt)
-	if !conn.close {
+	if !conn.close.Load() {
 		t.Fatal("write failure must mark the conn for close")
 	}
 }
@@ -343,14 +346,14 @@ func TestServerUDPDataNilPayload(t *testing.T) {
 	}
 	defer uc.Close()
 	conn := &ServerConn{
-		id:             "n1",
-		tcpmode:        0,
-		conn:           uc,
-		udpTargetAddr:  "10.0.0.1:53",
-		timeout:        60,
-		activeRecvTime: common.GetNowUpdateInSecond(),
-		activeSendTime: common.GetNowUpdateInSecond(),
+		id:            "n1",
+		tcpmode:       0,
+		conn:          uc,
+		udpTargetAddr: "10.0.0.1:53",
+		timeout:       60,
 	}
+	conn.activeRecvTime.Store(common.GetNowUpdateInSecond().UnixNano())
+	conn.activeSendTime.Store(common.GetNowUpdateInSecond().UnixNano())
 	s.addServerConn("n1", conn)
 
 	pkt := testPacket("n1", MyMsg_DATA, "10.0.0.1:53")
@@ -365,12 +368,12 @@ func TestServerUDPDataNilPayload(t *testing.T) {
 func TestServerTCPFrameUnmarshalError(t *testing.T) {
 	s, rec := testServer(t)
 	conn := &ServerConn{
-		id:             "t1",
-		tcpmode:        1,
-		timeout:        60,
-		activeRecvTime: common.GetNowUpdateInSecond(),
-		activeSendTime: common.GetNowUpdateInSecond(),
+		id:      "t1",
+		tcpmode: 1,
+		timeout: 60,
 	}
+	conn.activeRecvTime.Store(common.GetNowUpdateInSecond().UnixNano())
+	conn.activeSendTime.Store(common.GetNowUpdateInSecond().UnixNano())
 	s.addServerConn("t1", conn)
 
 	pkt := testPacket("t1", MyMsg_DATA, "")

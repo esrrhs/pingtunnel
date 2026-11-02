@@ -1,0 +1,17 @@
+# Coverage gates on top of the Codecov upload in go.yml: the repo sits at
+# ~92% (unit + e2e), so hold the project at 90% with 1% slack for noise, and
+# require new patches to carry their own coverage.
+coverage:
+  status:
+    project:
+      default:
+        target: 90%
+        threshold: 1%
+    patch:
+      default:
+        target: 85%
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

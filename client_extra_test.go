@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -113,14 +114,14 @@ func TestClientGetters(t *testing.T) {
 		icmpAddr:               "0.0.0.0",
 		ipaddrServer:           &net.IPAddr{IP: net.IPv4(1, 2, 3, 4)},
 		addrServer:             "example.com",
-		sendPacket:             1,
-		recvPacket:             2,
-		sendPacketSize:         3,
-		recvPacketSize:         4,
 		localIdToConnMapSize:   5,
 		localAddrToConnMapSize: 6,
-		rtt:                    7 * time.Millisecond,
 	}
+	c.rtt.Store(int64(7 * time.Millisecond))
+	c.sendPacket.Store(1)
+	c.recvPacket.Store(2)
+	c.sendPacketSize.Store(3)
+	c.recvPacketSize.Store(4)
 	if c.Addr() != "127.0.0.1:4455" {
 		t.Errorf("Addr = %q", c.Addr())
 	}
@@ -191,9 +192,9 @@ func TestMaybeRefreshServerAddr(t *testing.T) {
 	c := &Client{
 		addrServer:          "127.0.0.1",
 		ipaddrServer:        &net.IPAddr{IP: net.IPv4(1, 2, 3, 4)},
-		pongTime:            time.Now(),
 		resolveRetryBackoff: 2 * time.Second,
 	}
+	c.pongTime.Store(time.Now().UnixNano())
 
 	// Fresh pong: success schedules the 30s refresh.
 	c.nextResolveAt = time.Time{}
@@ -207,7 +208,7 @@ func TestMaybeRefreshServerAddr(t *testing.T) {
 
 	// Stale pong: success schedules the 5s refresh.
 	c.nextResolveAt = time.Time{}
-	c.pongTime = time.Now().Add(-10 * time.Second)
+	c.pongTime.Store(time.Now().Add(-10 * time.Second).UnixNano())
 	c.maybeRefreshServerAddr(time.Now())
 	if until := time.Until(c.nextResolveAt); until <= 3*time.Second {
 		t.Errorf("stale pong schedule = %v, want ~5s", until)
@@ -355,6 +356,7 @@ func TestClientAcceptTcpListenerError(t *testing.T) {
 	}
 	c := &Client{tcplistenConn: ln.(*net.TCPListener)}
 	done := make(chan struct{})
+	c.workResultLock.Add(1)
 	go func() {
 		_ = c.AcceptTcp()
 		close(done)
@@ -362,7 +364,7 @@ func TestClientAcceptTcpListenerError(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	ln.Close() // non-timeout accept error -> logged, loop continues until exit
 	time.Sleep(50 * time.Millisecond)
-	c.exit = true
+	c.exit.Store(true)
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -402,10 +404,10 @@ func TestClientRemoteError(t *testing.T) {
 	rec := &fakeICMPConn{}
 	c := &Client{
 		id:           1,
-		sequence:     2,
 		conn:         rec,
 		ipaddrServer: &net.IPAddr{IP: net.IPv4(1, 2, 3, 4)},
 	}
+	c.sequence.Store(2)
 	c.remoteError("conn-x")
 	if rec.writeCount() != 1 {
 		t.Fatalf("remoteError must send one packet, wrote %d", rec.writeCount())
@@ -454,13 +456,12 @@ func TestRecvICMPDispatchAndErrors(t *testing.T) {
 		},
 	}
 
-	exit := false
+	var exit atomic.Bool
 	var loopWG sync.WaitGroup
 	recv := make(chan *Packet, 10)
 	loopWG.Add(1)
 	go func() {
-		defer loopWG.Done()
-		recvICMP(&loopWG, &exit, conn, recv, nil)
+		recvICMP(&loopWG, &exit, conn, recv, nil) // recvICMP owns the matching Done
 	}()
 
 	select {
@@ -475,7 +476,7 @@ func TestRecvICMPDispatchAndErrors(t *testing.T) {
 		t.Fatal("valid packet not delivered")
 	}
 
-	exit = true
+	exit.Store(true)
 	done := make(chan struct{})
 	go func() { loopWG.Wait(); close(done) }()
 	select {
@@ -491,13 +492,12 @@ func TestRecvICMPDecryptErrorSkipped(t *testing.T) {
 	conn := &fakeICMPConn{
 		responses: [][]byte{make([]byte, 32)},
 	}
-	exit := false
+	var exit atomic.Bool
 	var loopWG sync.WaitGroup
 	recv := make(chan *Packet, 10)
 	loopWG.Add(1)
 	go func() {
-		defer loopWG.Done()
-		recvICMP(&loopWG, &exit, conn, recv, broken)
+		recvICMP(&loopWG, &exit, conn, recv, broken) // recvICMP owns the matching Done
 	}()
 
 	select {
@@ -505,7 +505,7 @@ func TestRecvICMPDecryptErrorSkipped(t *testing.T) {
 		t.Fatalf("undecryptable payload must be dropped, got %+v", p)
 	case <-time.After(300 * time.Millisecond):
 	}
-	exit = true
+	exit.Store(true)
 	done := make(chan struct{})
 	go func() { loopWG.Wait(); close(done) }()
 	select {

@@ -85,7 +85,7 @@ func TestServerProcessPacketPing(t *testing.T) {
 	if rec.writeCount() != 2 {
 		t.Fatalf("second ping must be echoed, wrote %d", rec.writeCount())
 	}
-	if cc.peerCongestionTime.IsZero() {
+	if cc.peerCongestionTime.Load() == 0 {
 		t.Error("congestion ping must mark the conn")
 	}
 }
@@ -228,7 +228,7 @@ func TestServerStopWithoutConn(t *testing.T) {
 	s, rec := testServer(t)
 	s.recvcontrol = make(chan int, 1)
 	s.Stop()
-	if !s.exit {
+	if !s.exit.Load() {
 		t.Error("Stop must set exit")
 	}
 	_ = rec
