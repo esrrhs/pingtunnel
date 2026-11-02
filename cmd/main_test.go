@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,19 +20,28 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("pipe: %v", err)
 	}
 	os.Stdout = w
+
+	// Drain concurrently: fn's output can exceed the OS pipe buffer (the
+	// usage text does on Windows, whose default is ~4KB), which would block
+	// the write side forever if nothing read until fn returned.
+	out := make(chan []byte, 1)
+	go func() {
+		var sb bytes.Buffer
+		buf := make([]byte, 4096)
+		for {
+			n, rerr := r.Read(buf)
+			sb.Write(buf[:n])
+			if rerr != nil {
+				break
+			}
+		}
+		out <- sb.Bytes()
+	}()
+
 	fn()
 	os.Stdout = old
 	_ = w.Close()
-	var sb strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, rerr := r.Read(buf)
-		sb.Write(buf[:n])
-		if rerr != nil {
-			break
-		}
-	}
-	return sb.String()
+	return string(<-out)
 }
 
 func TestRunShowVersion(t *testing.T) {
