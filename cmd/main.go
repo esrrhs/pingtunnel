@@ -10,8 +10,9 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"strconv"
-	"time"
+	"syscall"
 )
 
 var usage = `
@@ -121,9 +122,15 @@ func main() {
 
 // run holds the whole main body on a private FlagSet so tests can drive it
 // with explicit args; the return value is the process exit code. A zero
-// return only happens on early exits (usage errors, failed validation,
-// listener errors) — a started server or client runs forever below.
-func run(args []string) int {
+// return happens on early exits (usage errors, failed validation, listener
+// errors) and on graceful shutdown. A started server or client serves until
+// SIGINT/SIGTERM or the injected stop channel (used by tests) closes.
+func run(args []string, injectedStop ...<-chan struct{}) int {
+
+	var stopCh <-chan struct{}
+	if len(injectedStop) > 0 {
+		stopCh = injectedStop[0]
+	}
 
 	t := flag.NewFlagSet("pingtunnel", flag.ContinueOnError)
 	listen := t.String("l", "", "listen addr")
@@ -341,11 +348,11 @@ func run(args []string) int {
 			return 0
 		}
 		loggo.Info("Server start")
-		err = s.Run()
-		if err != nil {
+		if err := s.Run(); err != nil {
 			loggo.Error("Run ERROR: %s", err.Error())
 			return 0
 		}
+		return serveAndStop(*profile, stopCh, s.Stop)
 	} else if *typ == "client" {
 
 		loggo.Info("type %s", *typ)
@@ -361,20 +368,36 @@ func run(args []string) int {
 		}
 		loggo.Info("Client Listen %s (%s) Server %s (%s) TargetPort %s ICMP Listen %s", c.Addr(), c.IPAddr(),
 			c.ServerAddr(), c.ServerIPAddr(), c.TargetAddr(), c.ICMPAddr())
-		err = c.Run()
-		if err != nil {
+		if err := c.Run(); err != nil {
 			loggo.Error("Run ERROR: %s", err.Error())
 			return 0
 		}
+		return serveAndStop(*profile, stopCh, c.Stop)
 	} else {
 		return 0
 	}
+}
 
-	if *profile > 0 {
-		go http.ListenAndServe("127.0.0.1:"+strconv.Itoa(*profile), nil)
+// serveAndStop serves the started component until shutdown is requested —
+// SIGINT/SIGTERM on the process, or the injected stop channel (used by
+// tests) — then calls stopFn so listeners and worker goroutines unwind
+// cleanly instead of being killed with the process.
+func serveAndStop(profilePort int, stop <-chan struct{}, stopFn func()) int {
+	if profilePort > 0 {
+		go http.ListenAndServe("127.0.0.1:"+strconv.Itoa(profilePort), nil)
 	}
 
-	for {
-		time.Sleep(time.Hour)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+
+	select {
+	case <-sig:
+	case <-stop:
 	}
+
+	if stopFn != nil {
+		stopFn()
+	}
+	return 0
 }
