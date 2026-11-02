@@ -20,7 +20,6 @@ import (
 func NewServer(icmpAddr string, key int, maxconn int, connecttimeout int, cryptoConfig *CryptoConfig, forwardConfig *ForwardConfig, congestion string) (*Server, error) {
 	s := &Server{
 		icmpAddr:         icmpAddr,
-		exit:             false,
 		key:              key,
 		maxconn:          maxconn,
 		maxprocessthread: DEFAULT_SERVER_THREADS,
@@ -41,7 +40,7 @@ func NewServer(icmpAddr string, key int, maxconn int, connecttimeout int, crypto
 }
 
 type Server struct {
-	exit             bool
+	exit             atomic.Bool
 	key              int
 	workResultLock   sync.WaitGroup
 	maxconn          int
@@ -60,10 +59,10 @@ type Server struct {
 	localConnMap sync.Map
 	connErrorMap sync.Map
 
-	sendPacket       uint64
-	recvPacket       uint64
-	sendPacketSize   uint64
-	recvPacketSize   uint64
+	sendPacket       atomic.Uint64
+	recvPacket       atomic.Uint64
+	sendPacketSize   atomic.Uint64
+	recvPacketSize   atomic.Uint64
 	localConnMapSize int
 
 	// connCount tracks localConnMap exactly (insert/delete); the maxconn
@@ -81,7 +80,7 @@ type Server struct {
 }
 
 type ServerConn struct {
-	exit           bool
+	exit           atomic.Bool
 	timeout        int
 	ipaddrTarget   *net.UDPAddr
 	conn           *net.UDPConn
@@ -91,22 +90,46 @@ type ServerConn struct {
 	tcpaddrTarget  *net.TCPAddr
 	tcpconn        net.Conn // Changed from *net.TCPConn to support proxy connections
 	id             string
-	activeRecvTime time.Time
-	activeSendTime time.Time
-	close          bool
+	activeRecvTime atomic.Int64
+	activeSendTime atomic.Int64
+	close          atomic.Bool
 	rproto         int
 	fm             *network.FrameMgr
 	tcpmode        int
-	echoId         int
-	echoSeq        int
+	echoId         atomic.Int64
+	echoSeq        atomic.Int64
 	activity       chan struct{}
 
 	// The client's buffers are one hop away and invisible here: a slow-reading
 	// client reports itself congested via out-of-band PINGs carrying this conn
 	// id, and only that (not the FrameMgr's unconditional keepalive HB) may
 	// exempt a conn from inactivity reaping.
-	peerCongestionTime time.Time
-	lastCongestionPing time.Time
+	peerCongestionTime atomic.Int64
+	lastCongestionPing atomic.Int64
+
+	// fmLock serializes the FrameMgr calls that touch its unsynchronized
+	// close flags (CloseSend/IsRemoteSendClosed/CloseFlushed) with Update,
+	// which reads and writes those flags internally. Data-path FrameMgr calls
+	// stay outside: they are internally locked.
+	fmLock sync.Mutex
+}
+
+func (cc *ServerConn) fmUpdate() {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	cc.fm.Update()
+}
+
+func (cc *ServerConn) fmIsRemoteSendClosed() bool {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	return cc.fm.IsRemoteSendClosed()
+}
+
+func (cc *ServerConn) fmCloseFlushed() bool {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	return cc.fm.CloseFlushed()
 }
 
 func (p *Server) Run() error {
@@ -120,15 +143,15 @@ func (p *Server) Run() error {
 
 	recv := make(chan *Packet, PACKET_QUEUE_CAP)
 	p.recvcontrol = make(chan int, 1)
+	p.workResultLock.Add(1)
 	go recvICMP(&p.workResultLock, &p.exit, p.conn, recv, p.cryptoConfig)
 
+	p.workResultLock.Add(1)
 	go func() {
 		defer common.CrashLog()
-
-		p.workResultLock.Add(1)
 		defer p.workResultLock.Done()
 
-		for !p.exit {
+		for !p.exit.Load() {
 			p.checkTimeoutConn()
 			p.showNet()
 			p.updateConnError()
@@ -136,13 +159,12 @@ func (p *Server) Run() error {
 		}
 	}()
 
+	p.workResultLock.Add(1)
 	go func() {
 		defer common.CrashLog()
-
-		p.workResultLock.Add(1)
 		defer p.workResultLock.Done()
 
-		for !p.exit {
+		for !p.exit.Load() {
 			select {
 			case <-p.recvcontrol:
 				return
@@ -156,7 +178,7 @@ func (p *Server) Run() error {
 }
 
 func (p *Server) Stop() {
-	p.exit = true
+	p.exit.Store(true)
 	p.recvcontrol <- 1
 	p.workResultLock.Wait()
 	if p.processtp != nil {
@@ -182,7 +204,7 @@ func (p *Server) processPacket(packet *Packet) {
 	if packet.my.Type == (int32)(MyMsg_PING) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.my.Data)
-		loggo.Debug("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
+		loggo.Debug("ping from %v %v %d %d %d", packet.src, t, packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
@@ -192,7 +214,7 @@ func (p *Server) processPacket(packet *Packet) {
 			// (slow app reader) or its send window is stalled. This conn is
 			// under backpressure, not idle — exempt it from reaping.
 			if localConn := p.getServerConnById(packet.my.Id); localConn != nil {
-				localConn.peerCongestionTime = common.GetNowUpdateInSecond()
+				localConn.peerCongestionTime.Store(common.GetNowUpdateInSecond().UnixNano())
 			}
 		}
 		return
@@ -285,11 +307,14 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 			fm.SetCongestion(newBBControl())
 		}
 
-		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
+		localConn := &ServerConn{timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id,
 			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode), activity: make(chan struct{}, 1)}
+		localConn.activeRecvTime.Store(now.UnixNano())
+		localConn.activeSendTime.Store(now.UnixNano())
 
 		p.addServerConn(id, localConn)
 
+		p.workResultLock.Add(1)
 		go p.RecvTCP(localConn, id, packet.src)
 		return localConn
 
@@ -311,23 +336,20 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 			}
 
 			localConn := &ServerConn{
-				exit:           false,
-				timeout:        (int)(packet.my.Timeout),
-				conn:           association.UDPConn,
-				udpTargetAddr:  addr,
-				udpRelayAddr:   association.RelayAddr,
-				udpViaProxy:    true,
-				tcpconn:        association.ControlConn,
-				id:             id,
-				activeRecvTime: now,
-				activeSendTime: now,
-				close:          false,
-				rproto:         (int)(packet.my.Rproto),
-				tcpmode:        (int)(packet.my.Tcpmode),
+				timeout:       (int)(packet.my.Timeout),
+				conn:          association.UDPConn,
+				udpTargetAddr: addr,
+				udpRelayAddr:  association.RelayAddr,
+				udpViaProxy:   true,
+				tcpconn:       association.ControlConn,
+				id:            id,
+				rproto:        (int)(packet.my.Rproto),
+				tcpmode:       (int)(packet.my.Tcpmode),
 			}
 
 			p.addServerConn(id, localConn)
 
+			p.workResultLock.Add(1)
 			go p.Recv(localConn, id, packet.src)
 
 			return localConn
@@ -343,11 +365,14 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 		targetConn := c.(*net.UDPConn)
 		ipaddrTarget := targetConn.RemoteAddr().(*net.UDPAddr)
 
-		localConn := &ServerConn{exit: false, timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id, activeRecvTime: now, activeSendTime: now, close: false,
+		localConn := &ServerConn{timeout: (int)(packet.my.Timeout), conn: targetConn, ipaddrTarget: ipaddrTarget, id: id,
 			rproto: (int)(packet.my.Rproto), tcpmode: (int)(packet.my.Tcpmode), udpTargetAddr: addr}
+		localConn.activeRecvTime.Store(now.UnixNano())
+		localConn.activeSendTime.Store(now.UnixNano())
 
 		p.addServerConn(id, localConn)
 
+		p.workResultLock.Add(1)
 		go p.Recv(localConn, id, packet.src)
 
 		return localConn
@@ -390,7 +415,7 @@ func dialTCPTarget(addr string, timeoutms int) (net.Conn, error) {
 
 func (p *Server) processDataPacket(packet *Packet) {
 
-	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
+	loggo.Debug("processPacket %v %v %d", packet.my.Id, packet.src, len(packet.my.Data))
 
 	now := common.GetNowUpdateInSecond()
 
@@ -403,8 +428,8 @@ func (p *Server) processDataPacket(packet *Packet) {
 		}
 	}
 
-	localConn.echoId = packet.echoId
-	localConn.echoSeq = packet.echoSeq
+	localConn.echoId.Store(int64(packet.echoId))
+	localConn.echoSeq.Store(int64(packet.echoSeq))
 
 	if packet.my.Type == (int32)(MyMsg_DATA) {
 
@@ -418,14 +443,14 @@ func (p *Server) processDataPacket(packet *Packet) {
 			if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 				// Only payload frames count as conn activity; ACK/HB frames
 				// must not keep an idle conn alive.
-				localConn.activeRecvTime = now
+				localConn.activeRecvTime.Store(now.UnixNano())
 			}
 
 			localConn.fm.OnRecvFrame(f)
 			notifyActivity(localConn.activity)
 
 		} else {
-			localConn.activeRecvTime = now
+			localConn.activeRecvTime.Store(now.UnixNano())
 			if packet.my.Data == nil {
 				return
 			}
@@ -438,18 +463,18 @@ func (p *Server) processDataPacket(packet *Packet) {
 				}
 				if targetAddr == "" {
 					loggo.Info("missing udp target for proxied udp conn %s", id)
-					localConn.close = true
+					localConn.close.Store(true)
 					return
 				}
 				udpPacket, packetErr := buildSocks5UDPDatagram(targetAddr, packet.my.Data)
 				if packetErr != nil {
 					loggo.Info("build socks5 udp datagram error %s", packetErr)
-					localConn.close = true
+					localConn.close.Store(true)
 					return
 				}
 				if localConn.udpRelayAddr == nil {
 					loggo.Info("missing udp relay addr for proxied udp conn %s", id)
-					localConn.close = true
+					localConn.close.Store(true)
 					return
 				}
 				_, err = localConn.conn.WriteToUDP(udpPacket, localConn.udpRelayAddr)
@@ -458,13 +483,13 @@ func (p *Server) processDataPacket(packet *Packet) {
 			}
 			if err != nil {
 				loggo.Info("WriteToUDP Error %s", err)
-				localConn.close = true
+				localConn.close.Store(true)
 				return
 			}
 		}
 
-		p.recvPacket++
-		p.recvPacketSize += (uint64)(len(packet.my.Data))
+		p.recvPacket.Add(1)
+		p.recvPacketSize.Add((uint64)(len(packet.my.Data)))
 	}
 }
 
@@ -481,12 +506,12 @@ func (p *Server) emitServerFrames(conn *ServerConn, src *net.IPAddr, id string, 
 			loggo.Error("Error tcp Marshal %s %s %s", conn.id, conn.tcpaddrTarget.String(), err)
 			return 1
 		}
-		sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
+		sendICMP(int(conn.echoId.Load()), int(conn.echoSeq.Load()), p.conn, src, "", id, (uint32)(MyMsg_DATA), mb,
 			conn.rproto, -1, p.key, 0,
 			0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
-		p.sendPacket++
-		p.sendPacketSize += (uint64)(len(mb))
+		p.sendPacket.Add(1)
+		p.sendPacketSize.Add((uint64)(len(mb)))
 		if len(mb) == 0 {
 			return 1
 		}
@@ -498,7 +523,6 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 	defer common.CrashLog()
 
-	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
 	loggo.Debug("server waiting target response %s -> %s %s", conn.tcpaddrTarget.String(), conn.id, conn.tcpconn.LocalAddr().String())
@@ -506,11 +530,11 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	loggo.Debug("start wait remote connect tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	startConnectTime := common.GetNowUpdateInSecond()
 	connectWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
-	for !p.exit && !conn.exit {
+	for !p.exit.Load() && !conn.exit.Load() {
 		if conn.fm.IsConnected() {
 			break
 		}
-		conn.fm.Update()
+		conn.fmUpdate()
 		sendlist := conn.fm.GetSendList()
 		hadWork := sendlist.Len() > 0
 		p.emitServerFrames(conn, src, id, sendlist, nil)
@@ -519,7 +543,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		if diffclose > time.Second*5 {
 			loggo.Info("can not connect remote tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 			p.close(conn)
-			p.remoteError(conn.echoId, conn.echoSeq, id, conn.rproto, src)
+			p.remoteError(int(conn.echoId.Load()), int(conn.echoSeq.Load()), id, conn.rproto, src)
 			return
 		}
 		if hadWork {
@@ -534,7 +558,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 	}
 
-	if !conn.exit {
+	if !conn.exit.Load() {
 		loggo.Debug("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	}
 
@@ -547,7 +571,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		defer common.CrashLog()
 
 		readWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
-		for !p.exit && !conn.exit {
+		for !p.exit.Load() && !conn.exit.Load() {
 			left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
 			if left <= 0 {
 				wait := readWait.miss()
@@ -590,13 +614,13 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 	halfClosedPropagated := false
 
 mainLoop:
-	for !p.exit && !conn.exit {
+	for !p.exit.Load() && !conn.exit.Load() {
 		now := common.GetNowUpdateInSecond()
 		hadWork := false
 
-		conn.fm.Update()
+		conn.fmUpdate()
 
-		if !halfClosedPropagated && conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 {
+		if !halfClosedPropagated && conn.fmIsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 {
 			// The client half-closed its side and every buffered byte of it
 			// has been written to the target: propagate the EOF now — a
 			// CloseWrite issued earlier would put the FIN ahead of data
@@ -616,7 +640,7 @@ mainLoop:
 					// Only real payload counts as conn activity: heartbeat
 					// and ACK frames keep the tunnel alive without keeping
 					// an idle conn alive.
-					conn.activeSendTime = now
+					conn.activeSendTime.Store(now.UnixNano())
 				}
 			})
 		}
@@ -645,10 +669,10 @@ mainLoop:
 		// send window into our buffers, so without this signal the client
 		// cannot tell backpressure from a dead conn.
 		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
-			if now.Sub(conn.lastCongestionPing) >= time.Second {
-				conn.lastCongestionPing = now
+			if time.Duration(now.UnixNano()-conn.lastCongestionPing.Load()) >= time.Second {
+				conn.lastCongestionPing.Store(now.UnixNano())
 				tb, _ := time.Now().MarshalBinary()
-				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
+				sendICMP(int(conn.echoId.Load()), int(conn.echoSeq.Load()), p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
 					conn.rproto, -1, p.key, 0,
 					0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
@@ -669,8 +693,8 @@ mainLoop:
 		// direction for the whole timeout window and nothing is waiting to be
 		// delivered: a slow reader (on either side) is backpressure, not
 		// idleness.
-		idleRecv := now.Sub(conn.activeRecvTime) > time.Second*(time.Duration(conn.timeout))
-		idleSend := now.Sub(conn.activeSendTime) > time.Second*(time.Duration(conn.timeout))
+		idleRecv := time.Duration(now.UnixNano()-conn.activeRecvTime.Load()) > time.Second*(time.Duration(conn.timeout))
+		idleSend := time.Duration(now.UnixNano()-conn.activeSendTime.Load()) > time.Second*(time.Duration(conn.timeout))
 		// A conn with unacknowledged frames in flight or undelivered bytes is
 		// under backpressure, not idle: the peer (or the target) is slow, and
 		// closing here would cut the transfer short.
@@ -680,7 +704,7 @@ mainLoop:
 		// everything we sent — so never reap while it beats. The FrameMgr's
 		// unconditional keepalive HB must NOT count: it beats on fully idle
 		// conns too, which would make the inactivity timeout dead code.
-		congestionFresh := now.Sub(conn.peerCongestionTime) < time.Second*(time.Duration(conn.timeout))
+		congestionFresh := time.Duration(now.UnixNano()-conn.peerCongestionTime.Load()) < time.Second*(time.Duration(conn.timeout))
 		if idleRecv && idleSend && !congestionFresh && conn.fm.GetRecvBufferSize() == 0 && conn.fm.GetSendWinSize() == 0 {
 			loggo.Debug("close inactive conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
@@ -724,11 +748,11 @@ mainLoop:
 	// handshake without bringing the uninterruptible blast back.
 	closeWait := newAdaptiveLoopWait(2*time.Millisecond, 50*time.Millisecond)
 	var halfFlushSince time.Time
-	for !p.exit && !conn.exit {
+	for !p.exit.Load() && !conn.exit.Load() {
 		now := common.GetNowUpdateInSecond()
 		hadWork := false
 
-		conn.fm.Update()
+		conn.fmUpdate()
 
 		sendlist := conn.fm.GetSendList()
 		if sendlist.Len() > 0 {
@@ -752,10 +776,10 @@ mainLoop:
 		// congestion while that runs, or the client reaps the conn as idle
 		// mid-download (an unthrottled loopback target dies within ~50ms).
 		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
-			if now.Sub(conn.lastCongestionPing) >= time.Second {
-				conn.lastCongestionPing = now
+			if time.Duration(now.UnixNano()-conn.lastCongestionPing.Load()) >= time.Second {
+				conn.lastCongestionPing.Store(now.UnixNano())
 				tb, _ := time.Now().MarshalBinary()
-				sendICMP(conn.echoId, conn.echoSeq, p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
+				sendICMP(int(conn.echoId.Load()), int(conn.echoSeq.Load()), p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
 					conn.rproto, -1, p.key, 0,
 					0, 0, 0, 0, 0,
 					0, p.cryptoConfig)
@@ -769,11 +793,11 @@ mainLoop:
 		}
 
 		remoteclosed := conn.fm.IsRemoteClosed()
-		if remoteclosed && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed() {
+		if remoteclosed && conn.fm.GetRecvBufferSize() == 0 && conn.fmCloseFlushed() {
 			loggo.Debug("remote conn had closed %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
-		halfFlushed := conn.fm.IsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fm.CloseFlushed()
+		halfFlushed := conn.fmIsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 && conn.fmCloseFlushed()
 		if !halfFlushed {
 			halfFlushSince = time.Time{}
 		} else if halfFlushSince.IsZero() {
@@ -805,14 +829,13 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 
 	defer common.CrashLog()
 
-	p.workResultLock.Add(1)
 	defer p.workResultLock.Done()
 
 	loggo.Debug("server waiting target response %s -> %s %s", conn.udpTargetString(), conn.id, conn.conn.LocalAddr().String())
 
 	bytes := make([]byte, 65535)
 
-	for !p.exit {
+	for !p.exit.Load() {
 
 		conn.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 		n, srcAddr, err := conn.conn.ReadFromUDP(bytes)
@@ -820,7 +843,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			nerr, ok := err.(net.Error)
 			if !ok || !nerr.Timeout() {
 				loggo.Info("ReadFromUDP Error read udp %s", err)
-				conn.close = true
+				conn.close.Store(true)
 				return
 			}
 		}
@@ -829,7 +852,7 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 
 		now := common.GetNowUpdateInSecond()
-		conn.activeSendTime = now
+		conn.activeSendTime.Store(now.UnixNano())
 
 		targetAddr := conn.udpTargetString()
 		payload := bytes[:n]
@@ -847,19 +870,19 @@ func (p *Server) Recv(conn *ServerConn, id string, src *net.IPAddr) {
 			payload = parsedPayload
 		}
 
-		sendICMP(conn.echoId, conn.echoSeq, p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
+		sendICMP(int(conn.echoId.Load()), int(conn.echoSeq.Load()), p.conn, src, targetAddr, id, (uint32)(MyMsg_DATA), payload,
 			conn.rproto, -1, p.key, 0,
 			0, 0, 0, 0, 0,
 			0, p.cryptoConfig)
 
-		p.sendPacket++
-		p.sendPacketSize += (uint64)(len(payload))
+		p.sendPacket.Add(1)
+		p.sendPacketSize.Add((uint64)(len(payload)))
 	}
 }
 
 func (p *Server) close(conn *ServerConn) {
 	if p.getServerConnById(conn.id) != nil {
-		conn.exit = true
+		conn.exit.Store(true)
 		if conn.conn != nil {
 			conn.conn.Close()
 		}
@@ -885,10 +908,10 @@ func (p *Server) checkTimeoutConn() {
 		if conn.tcpmode > 0 {
 			continue
 		}
-		diffrecv := now.Sub(conn.activeRecvTime)
-		diffsend := now.Sub(conn.activeSendTime)
+		diffrecv := time.Duration(now.UnixNano() - conn.activeRecvTime.Load())
+		diffsend := time.Duration(now.UnixNano() - conn.activeSendTime.Load())
 		if diffrecv > time.Second*(time.Duration(conn.timeout)) && diffsend > time.Second*(time.Duration(conn.timeout)) {
-			conn.close = true
+			conn.close.Store(true)
 		}
 	}
 
@@ -896,7 +919,7 @@ func (p *Server) checkTimeoutConn() {
 		if conn.tcpmode > 0 {
 			continue
 		}
-		if conn.close {
+		if conn.close.Load() {
 			loggo.Debug("close inactive conn %s %s", id, conn.udpTargetString())
 			p.close(conn)
 		}
@@ -931,12 +954,10 @@ func sameUDPAddr(a *net.UDPAddr, b *net.UDPAddr) bool {
 
 func (p *Server) showNet() {
 	p.localConnMapSize = int(p.connCount.Load())
+	sp, sps := p.sendPacket.Swap(0), p.sendPacketSize.Swap(0)
+	rp, rps := p.recvPacket.Swap(0), p.recvPacketSize.Swap(0)
 	loggo.Debug("send %dPacket/s %dKB/s recv %dPacket/s %dKB/s %dConnections",
-		p.sendPacket, p.sendPacketSize/1024, p.recvPacket, p.recvPacketSize/1024, p.localConnMapSize)
-	p.sendPacket = 0
-	p.recvPacket = 0
-	p.sendPacketSize = 0
-	p.recvPacketSize = 0
+		sp, sps/1024, rp, rps/1024, p.localConnMapSize)
 }
 
 func (p *Server) addServerConn(uuid string, serverConn *ServerConn) {

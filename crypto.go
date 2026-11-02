@@ -126,26 +126,48 @@ func (c *CryptoConfig) Encrypt(data []byte) ([]byte, error) {
 	if c.Mode == NoEncryption {
 		return data, nil
 	}
-
 	if c.Cipher == nil {
 		return nil, errors.New("cipher not initialized")
 	}
 
-	// Generate a random nonce
-	nonce := make([]byte, c.Cipher.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
+	// One output buffer, zero intermediate copies: the nonce is generated
+	// directly at the head of the buffer and Seal appends the ciphertext
+	// right behind it (dst must not overlap plaintext — the nonce region
+	// may overlap dst, Seal only writes past dst's length).
+	nonceSize := c.Cipher.NonceSize()
+	result := make([]byte, nonceSize, nonceSize+len(data)+c.Cipher.Overhead())
+	if _, err := rand.Read(result); err != nil {
 		return nil, fmt.Errorf("failed to generate nonce: %v", err)
 	}
+	return c.Cipher.Seal(result, result[:nonceSize], data, nil), nil
+}
 
-	// Encrypt the data
-	ciphertext := c.Cipher.Seal(nil, nonce, data, nil)
+// EncryptInto appends the nonce-ciphertext envelope for data onto dst and
+// returns the extended slice. dst must not overlap data. Used on the send
+// path to write the envelope straight into a pooled packet buffer.
+func (c *CryptoConfig) EncryptInto(dst []byte, data []byte) ([]byte, error) {
+	if c.Mode == NoEncryption {
+		return append(dst, data...), nil
+	}
+	if c.Cipher == nil {
+		return nil, errors.New("cipher not initialized")
+	}
 
-	// Prepend nonce to ciphertext
-	result := make([]byte, len(nonce)+len(ciphertext))
-	copy(result, nonce)
-	copy(result[len(nonce):], ciphertext)
-
-	return result, nil
+	nonceSize := c.Cipher.NonceSize()
+	start := len(dst)
+	if need := start + nonceSize + len(data) + c.Cipher.Overhead(); cap(dst) < need {
+		grown := make([]byte, start, need)
+		copy(grown, dst[:start])
+		dst = grown
+	}
+	// Reserve the nonce slot in dst's length so Seal appends the ciphertext
+	// behind it — the nonce region must not sit inside the ciphertext's
+	// write region.
+	dst = dst[:start+nonceSize]
+	if _, err := rand.Read(dst[start:]); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %v", err)
+	}
+	return c.Cipher.Seal(dst[:start+nonceSize], dst[start:start+nonceSize], data, nil), nil
 }
 
 // Decrypt decrypts the given data

@@ -44,6 +44,93 @@ jobs:
           files: ./coverage.txt
           fail_ci_if_error: true
 
+      - name: Benchmark smoke (single iteration each)
+        # Keeps the benchmarks compilable and runnable; real regression
+        # tracking happens locally with benchstat, not on shared CI runners.
+        run: go test -run '^$' -bench . -benchtime=1x .
+
+  # The race detector over the full suite (fake-underlay e2e included) — the
+  # tunnel machinery is goroutine-heavy (conn pools, backpressure, heartbeat
+  # timers) and the unit tests alone rarely interleave enough to expose
+  # races. Same conditions as the build job's e2e: no root, no raw ICMP.
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+
+      - name: Test with race detector (full suite)
+        run: go test -race -timeout 35m ./...
+
+  # Platform smoke: build, vet and the unit tests (e2e excluded — the fake
+  # underlay is tuned for Linux/macOS port budgets, and real-ICMP coverage
+  # already has a dedicated Linux job). Catches platform-specific breakage
+  # in portable code paths, including Windows where the runner's admin user
+  # takes the privileged branch of the raw-ICMP tests.
+  smoke-platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests (e2e excluded)
+        run: go test -timeout 15m -skip '^TestE2E' ./...
+
+  # Short fuzzing windows on the network-facing parsers. These only catch
+  # cheap-to-reach crashes; deeper sessions are meant to be run locally, and
+  # any finding lands in testdata/fuzz/ as a regression seed for the normal
+  # unit suite.
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+
+      - name: Fuzz SOCKS5 request parser (30s)
+        run: go test . -run '^$' -fuzz FuzzReadSocks5Request -fuzztime 30s
+
+      - name: Fuzz SOCKS5 UDP datagram parser (30s)
+        run: go test . -run '^$' -fuzz FuzzParseSocks5UDPDatagram -fuzztime 30s
+
+      - name: Fuzz tunnel message decoding (30s)
+        run: go test . -run '^$' -fuzz FuzzMyMsgUnmarshal -fuzztime 30s
+
+      - name: Fuzz crypto decrypt (30s)
+        run: go test . -run '^$' -fuzz FuzzCryptoDecrypt -fuzztime 30s
+
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-corpus
+          path: testdata/fuzz/
+          if-no-files-found: ignore
+
   # The build job above runs the e2e suite unprivileged (in-process fake
   # underlay). This job runs the same suite over real raw ICMP sockets as
   # root, covering the kernel path the fake cannot: raw-socket behavior and

@@ -316,9 +316,9 @@ func TestE2E_Lifecycle_Socks5IdleHandshakeClosed(t *testing.T) {
 	p := startPair(t, opts)
 	defer p.Close()
 
-	origTimeout := socks5HandshakeTimeout
-	socks5HandshakeTimeout = time.Second
-	t.Cleanup(func() { socks5HandshakeTimeout = origTimeout })
+	origTimeout := socks5HandshakeTimeoutNs.Load()
+	socks5HandshakeTimeoutNs.Store(int64(time.Second))
+	t.Cleanup(func() { socks5HandshakeTimeoutNs.Store(origTimeout) })
 
 	assertIdleConnClosedByServer(t, p.clientAddr, "socks5/no-bytes", nil)
 	assertIdleConnClosedByServer(t, p.clientAddr, "socks5/partial-greeting", []byte{0x05})
