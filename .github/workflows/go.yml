@@ -284,7 +284,7 @@ jobs:
 
       - name: Create release and upload artifacts
         if: steps.check_version.outputs.should_release == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release_meta.outputs.tag_name }}
           name: ${{ steps.release_meta.outputs.release_name }}
