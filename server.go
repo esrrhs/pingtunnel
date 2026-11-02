@@ -204,7 +204,7 @@ func (p *Server) processPacket(packet *Packet) {
 	if packet.my.Type == (int32)(MyMsg_PING) {
 		t := time.Time{}
 		t.UnmarshalBinary(packet.my.Data)
-		loggo.Debug("ping from %s %s %d %d %d", packet.src.String(), t.String(), packet.my.Rproto, packet.echoId, packet.echoSeq)
+		loggo.Debug("ping from %v %v %d %d %d", packet.src, t, packet.my.Rproto, packet.echoId, packet.echoSeq)
 		sendICMP(packet.echoId, packet.echoSeq, p.conn, packet.src, "", "", (uint32)(MyMsg_PING), packet.my.Data,
 			(int)(packet.my.Rproto), -1, p.key,
 			0, 0, 0, 0, 0, 0,
@@ -415,7 +415,7 @@ func dialTCPTarget(addr string, timeoutms int) (net.Conn, error) {
 
 func (p *Server) processDataPacket(packet *Packet) {
 
-	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
+	loggo.Debug("processPacket %v %v %d", packet.my.Id, packet.src, len(packet.my.Data))
 
 	now := common.GetNowUpdateInSecond()
 
