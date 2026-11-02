@@ -943,7 +943,7 @@ func (p *Client) processPacket(packet *Packet) {
 		t.UnmarshalBinary(packet.my.Data)
 		now := time.Now()
 		d := now.Sub(t)
-		loggo.Debug("pong from %s %s", packet.src.String(), d.String())
+		loggo.Debug("pong from %v %v", packet.src, d)
 		p.rtt.Store(int64(d))
 		p.pongTime.Store(now.UnixNano())
 		if packet.my.Id != "" {
@@ -976,7 +976,7 @@ func (p *Client) processPacket(packet *Packet) {
 		return
 	}
 
-	loggo.Debug("processPacket %s %s %d", packet.my.Id, packet.src.String(), len(packet.my.Data))
+	loggo.Debug("processPacket %v %v %d", packet.my.Id, packet.src, len(packet.my.Data))
 
 	clientConn := p.getClientConnById(packet.my.Id)
 	if clientConn == nil {
