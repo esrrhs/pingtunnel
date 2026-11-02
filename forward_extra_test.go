@@ -59,6 +59,10 @@ func TestDialThroughProxyErrors(t *testing.T) {
 		{
 			name: "socks5 requires auth",
 			handler: func(conn net.Conn) {
+				// Consume the greeting first: closing with the client's
+				// bytes still unread makes Windows RST the conn before the
+				// client can read the reply.
+				readN(conn, 3)
 				_, _ = conn.Write([]byte{0x05, 0xFF})
 				conn.Close()
 			},
@@ -68,6 +72,7 @@ func TestDialThroughProxyErrors(t *testing.T) {
 		{
 			name: "socks5 bad version",
 			handler: func(conn net.Conn) {
+				readN(conn, 3)
 				_, _ = conn.Write([]byte{0x04, 0x00})
 				conn.Close()
 			},
