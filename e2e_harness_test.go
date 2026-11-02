@@ -60,7 +60,7 @@ var (
 	icmpFakeOK   bool
 )
 
-func ensureICMPUnderlay(t *testing.T) {
+func ensureICMPUnderlay(t testing.TB) {
 	t.Helper()
 	icmpGateOnce.Do(func() {
 		if c, err := listenICMP("127.0.0.1"); err == nil {
@@ -218,7 +218,7 @@ func basePairOpts() pairOpts {
 }
 
 type e2ePair struct {
-	t          *testing.T
+	t          testing.TB
 	opts       pairOpts
 	key        int
 	server     *Server
@@ -230,7 +230,7 @@ type e2ePair struct {
 	closeOnce sync.Once
 }
 
-func startPair(t *testing.T, opts pairOpts) *e2ePair {
+func startPair(t testing.TB, opts pairOpts) *e2ePair {
 	t.Helper()
 	ensureICMPUnderlay(t)
 
@@ -329,7 +329,7 @@ func (p *e2ePair) Close() {
 
 // --- echo servers --------------------------------------------------------------
 
-func getFreePort(t *testing.T) int {
+func getFreePort(t testing.TB) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -339,7 +339,7 @@ func getFreePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-func getFreeUDPPort(t *testing.T) int {
+func getFreeUDPPort(t testing.TB) int {
 	t.Helper()
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
@@ -349,7 +349,7 @@ func getFreeUDPPort(t *testing.T) int {
 	return pc.LocalAddr().(*net.UDPAddr).Port
 }
 
-func startTCPEchoServer(t *testing.T) (string, func()) {
+func startTCPEchoServer(t testing.TB) (string, func()) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -393,7 +393,7 @@ func startTCPEchoServer(t *testing.T) (string, func()) {
 
 // startCountedTCPEchoServer also reports how many conns are currently open,
 // used to verify that closing the local proxy conn propagates to the target.
-func startCountedTCPEchoServer(t *testing.T) (addr string, stop func(), liveConns func() int) {
+func startCountedTCPEchoServer(t testing.TB) (addr string, stop func(), liveConns func() int) {
 	t.Helper()
 	var live atomic.Int64
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -437,7 +437,7 @@ func startCountedTCPEchoServer(t *testing.T) (addr string, stop func(), liveConn
 	return ln.Addr().String(), cleanup, func() int { return int(live.Load()) }
 }
 
-func startUDPEchoServer(t *testing.T) (string, func()) {
+func startUDPEchoServer(t testing.TB) (string, func()) {
 	t.Helper()
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
@@ -496,7 +496,7 @@ func fillPattern(b []byte, seed byte) {
 	}
 }
 
-func echoRoundTrip(t *testing.T, conn net.Conn, payload []byte, timeout time.Duration) {
+func echoRoundTrip(t testing.TB, conn net.Conn, payload []byte, timeout time.Duration) {
 	t.Helper()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	if _, err := conn.Write(payload); err != nil {
@@ -511,7 +511,7 @@ func echoRoundTrip(t *testing.T, conn net.Conn, payload []byte, timeout time.Dur
 	}
 }
 
-func echoAndHash(t *testing.T, conn net.Conn, payload []byte, timeout time.Duration) [32]byte {
+func echoAndHash(t testing.TB, conn net.Conn, payload []byte, timeout time.Duration) [32]byte {
 	t.Helper()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	want := sha256.Sum256(payload)
@@ -577,7 +577,7 @@ func dialResourceRetry(addr string, timeout time.Duration) (conn net.Conn, exhau
 
 // --- SOCKS5 client helpers -------------------------------------------------------
 
-func socks5Connect(t *testing.T, proxyAddr, targetAddr string, timeout time.Duration) net.Conn {
+func socks5Connect(t testing.TB, proxyAddr, targetAddr string, timeout time.Duration) net.Conn {
 	t.Helper()
 	conn, err := socks5ConnectErr(proxyAddr, targetAddr, timeout)
 	if err != nil {
@@ -662,7 +662,7 @@ func socks5ConnectErr(proxyAddr, targetAddr string, timeout time.Duration) (net.
 
 // socks5ConnectAuth dials a SOCKS5 proxy with RFC 1929 username/password auth
 // (empty creds = no-auth) via the gohome client, then CONNECTs to targetAddr.
-func socks5ConnectAuth(t *testing.T, proxyAddr, targetAddr, user, pass string, timeout time.Duration) net.Conn {
+func socks5ConnectAuth(t testing.TB, proxyAddr, targetAddr, user, pass string, timeout time.Duration) net.Conn {
 	t.Helper()
 	raw, exhausted, err := dialResourceRetry(proxyAddr, timeout)
 	if err != nil {
@@ -701,7 +701,7 @@ func socks5ConnectAuth(t *testing.T, proxyAddr, targetAddr, user, pass string, t
 //     (0 = unthrottled), computes streaming SHA-256, writes the 32-byte digest back.
 //   - Header 'D' + uint64(totalBytes): streams totalBytes of deterministic
 //     pattern bytes to the client as fast as possible and closes the conn.
-func startStreamVerifyServer(t *testing.T, uploadReadRateBytesPerSec int64) (string, func()) {
+func startStreamVerifyServer(t testing.TB, uploadReadRateBytesPerSec int64) (string, func()) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

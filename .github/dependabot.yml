@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Go dependencies (gohome, quic-go, kcp-go, x/crypto, ...). PRs land
+  # against master; CI gates them like any other change.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      go-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Keep the workflow actions (checkout, setup-go, codecov, docker ones)
+  # current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

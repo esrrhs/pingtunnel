@@ -1,18 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
-
-// runningAsRoot would let the raw ICMP listeners in the client/server run
-// paths succeed and block forever, so the guarded subtests below skip.
-// (Geteuid returns -1 on platforms without the concept.)
-func runningAsRoot() bool {
-	return os.Geteuid() == 0
-}
 
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
@@ -22,19 +20,28 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("pipe: %v", err)
 	}
 	os.Stdout = w
+
+	// Drain concurrently: fn's output can exceed the OS pipe buffer (the
+	// usage text does on Windows, whose default is ~4KB), which would block
+	// the write side forever if nothing read until fn returned.
+	out := make(chan []byte, 1)
+	go func() {
+		var sb bytes.Buffer
+		buf := make([]byte, 4096)
+		for {
+			n, rerr := r.Read(buf)
+			sb.Write(buf[:n])
+			if rerr != nil {
+				break
+			}
+		}
+		out <- sb.Bytes()
+	}()
+
 	fn()
 	os.Stdout = old
 	_ = w.Close()
-	var sb strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, rerr := r.Read(buf)
-		sb.Write(buf[:n])
-		if rerr != nil {
-			break
-		}
-	}
-	return sb.String()
+	return string(<-out)
 }
 
 func TestRunShowVersion(t *testing.T) {
@@ -178,40 +185,37 @@ func TestRunConfigFileErrors(t *testing.T) {
 	}
 }
 
-// TestRunClientRunError covers the full client startup path ending in the
-// ICMP listener error every unprivileged process hits; skipped under root,
-// where Run would instead block serving forever.
+// TestRunClientRunError covers the client startup path. Unprivileged
+// processes end it at the ICMP listener error; privileged ones (root on
+// Linux, the admin user on Windows runners) get a serving client, so the
+// pre-closed stop channel makes both shapes return promptly — one full
+// startup plus graceful shutdown either way.
 func TestRunClientRunError(t *testing.T) {
-	if runningAsRoot() {
-		t.Skip("raw ICMP listener succeeds under root; run would block")
-	}
 	var code int
 	captureStdout(t, func() {
 		code = run([]string{
 			"-type", "client", "-l", "127.0.0.1:0", "-s", "127.0.0.1",
 			"-t", "127.0.0.1:9", "-password", "12345678", "-nolog", "-quiet",
-		})
+		}, closedStop())
 	})
 	if code != 0 {
-		t.Errorf("client run error exit = %d, want 0", code)
+		t.Errorf("client run exit = %d, want 0", code)
 	}
 }
 
-// TestRunServerRunError covers the server startup path ending in the ICMP
-// listener error every unprivileged process hits.
+// TestRunServerRunError covers the server startup path — ICMP listener
+// error when unprivileged, serve-until-shutdown (via the closed stop
+// channel) when privileged.
 func TestRunServerRunError(t *testing.T) {
-	if runningAsRoot() {
-		t.Skip("raw ICMP listener succeeds under root; run would block")
-	}
 	var code int
 	captureStdout(t, func() {
 		code = run([]string{
 			"-type", "server", "-password", "12345678", "-nolog", "-quiet",
 			"-icmp_l", "127.0.0.1",
-		})
+		}, closedStop())
 	})
 	if code != 0 {
-		t.Errorf("server run error exit = %d, want 0", code)
+		t.Errorf("server run exit = %d, want 0", code)
 	}
 }
 
@@ -225,5 +229,108 @@ func TestRunHelpExitsZero(t *testing.T) {
 	}
 	if !strings.Contains(out, "Usage") {
 		t.Errorf("run(-h) output missing usage: %q", out[:min(len(out), 200)])
+	}
+}
+
+// closedStop returns an already-closed channel: serveAndStop sees shutdown
+// as immediately requested, which lets the tests below drive the serve loop
+// without signals or real ICMP listeners.
+func closedStop() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+// TestRunConfigFileMerge covers a fully-populated config file: every
+// cfg.* value must land in the corresponding flag unless it was set on the
+// command line. The closed stop channel makes the run return instead of
+// blocking where the process would serve (root) or fail the ICMP listener
+// (unprivileged), so no subtest can hang.
+func TestRunConfigFileMerge(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "full.json")
+	cfgJSON := `{"type":"server","listen":"127.0.0.1:14450","target":"127.0.0.1:80","server":"127.0.0.1",` +
+		`"icmp_listen":"127.0.0.1","timeout":30,"password":"12345678","encrypt":"aes128","udp":true,` +
+		`"congestion":"bb","nolog":true,"quiet":true,"loglevel":"warn","socks5":true,"s5user":"u",` +
+		`"s5pass":"p","maxconn":10,"profile":65530,"conntt":3000,"forward":"socks5://127.0.0.1:1080"}`
+	if err := os.WriteFile(cfgPath, []byte(cfgJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	captureStdout(t, func() {
+		code = run([]string{"-c", cfgPath}, closedStop())
+	})
+	if code != 0 {
+		t.Errorf("run with valid full config exit = %d, want 0", code)
+	}
+}
+
+// TestRunAutoLoadConfig covers the positional "pingtunnel config.json"
+// auto-detection: with no flags at all, a config.json in the working
+// directory is loaded.
+func TestRunAutoLoadConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile("config.json", []byte(
+		`{"type":"server","password":"12345678","icmp_listen":"127.0.0.1","nolog":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var code int
+	captureStdout(t, func() {
+		code = run(nil, closedStop())
+	})
+	if code != 0 {
+		t.Errorf("run with auto-loaded config.json exit = %d, want 0", code)
+	}
+}
+
+func TestServeAndStopCallsStopFn(t *testing.T) {
+	stopped := false
+	code := serveAndStop(0, closedStop(), func() { stopped = true })
+	if code != 0 {
+		t.Errorf("serveAndStop exit = %d, want 0", code)
+	}
+	if !stopped {
+		t.Error("stopFn not called after shutdown")
+	}
+}
+
+func TestServeAndStopNilStopFn(t *testing.T) {
+	if code := serveAndStop(0, closedStop(), nil); code != 0 {
+		t.Errorf("serveAndStop with nil stopFn exit = %d, want 0", code)
+	}
+}
+
+// TestServeAndStopProfileServes drives the -profile branch: the pprof
+// listener must actually answer on the chosen port before shutdown.
+func TestServeAndStopProfileServes(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	stopped := false
+	code := serveAndStop(port, closedStop(), func() { stopped = true })
+	if code != 0 {
+		t.Errorf("serveAndStop exit = %d, want 0", code)
+	}
+	if !stopped {
+		t.Error("stopFn not called after shutdown")
+	}
+
+	var served bool
+	for i := 0; i < 100 && !served; i++ {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/debug/pprof/", port))
+		if err == nil {
+			resp.Body.Close()
+			served = resp.StatusCode == http.StatusOK
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !served {
+		t.Errorf("profile listener on 127.0.0.1:%d never served /debug/pprof/", port)
 	}
 }
