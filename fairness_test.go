@@ -1,7 +1,6 @@
 package pingtunnel
 
 import (
-	"container/list"
 	"testing"
 	"time"
 
@@ -78,9 +77,9 @@ func TestUnderlayShareInterleavesConns(t *testing.T) {
 
 	for id := 0; id < conns; id++ {
 		go func(id int) {
-			q := list.New()
+			q := make([]*network.Frame, 0, frames)
 			for i := 0; i < frames; i++ {
-				q.PushBack(&network.Frame{Id: int32(i)})
+				q = append(q, &network.Frame{Id: int32(i)})
 			}
 			started <- struct{}{}
 			<-ready

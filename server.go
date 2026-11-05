@@ -1,7 +1,6 @@
 package pingtunnel
 
 import (
-	"container/list"
 	"errors"
 	"net"
 	"strings"
@@ -496,8 +495,8 @@ func (p *Server) processDataPacket(packet *Packet) {
 // emitServerFrames writes frames FrameMgr already admitted under congestion
 // control. The underlay share slices that list so a closing conn cannot dump
 // its whole window ahead of another conn still transferring or also draining.
-func (p *Server) emitServerFrames(conn *ServerConn, src *net.IPAddr, id string, sendlist *list.List, mark func(*network.Frame)) {
-	p.share.emitFrames(sendlist, func(f *network.Frame) int {
+func (p *Server) emitServerFrames(conn *ServerConn, src *net.IPAddr, id string, frames []*network.Frame, mark func(*network.Frame)) {
+	p.share.emitFrames(frames, func(f *network.Frame) int {
 		if mark != nil {
 			mark(f)
 		}
@@ -517,6 +516,7 @@ func (p *Server) emitServerFrames(conn *ServerConn, src *net.IPAddr, id string, 
 		}
 		return len(mb)
 	})
+	conn.fm.PutSendFrames(frames)
 }
 
 func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
@@ -535,9 +535,9 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			break
 		}
 		conn.fmUpdate()
-		sendlist := conn.fm.GetSendList()
-		hadWork := sendlist.Len() > 0
-		p.emitServerFrames(conn, src, id, sendlist, nil)
+		frames := conn.fm.GetSendFrames()
+		hadWork := len(frames) > 0
+		p.emitServerFrames(conn, src, id, frames, nil)
 		now := common.GetNowUpdateInSecond()
 		diffclose := now.Sub(startConnectTime)
 		if diffclose > time.Second*5 {
@@ -554,7 +554,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		select {
 		case <-conn.activity:
 			connectWait.hit()
-		case <-time.After(wait):
+		case <-connectWait.arm(wait):
 		}
 	}
 
@@ -581,7 +581,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				case <-conn.activity:
 					readWait.hit()
 					continue
-				case <-time.After(wait):
+				case <-readWait.arm(wait):
 					continue
 				}
 			}
@@ -632,10 +632,10 @@ mainLoop:
 			loggo.Debug("client half-closed conn %s %s", conn.id, conn.tcpaddrTarget.String())
 		}
 
-		sendlist := conn.fm.GetSendList()
-		if sendlist.Len() > 0 {
+		frames := conn.fm.GetSendFrames()
+		if len(frames) > 0 {
 			hadWork = true
-			p.emitServerFrames(conn, src, id, sendlist, func(f *network.Frame) {
+			p.emitServerFrames(conn, src, id, frames, func(f *network.Frame) {
 				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 					// Only real payload counts as conn activity: heartbeat
 					// and ACK frames keep the tunnel alive without keeping
@@ -728,7 +728,7 @@ mainLoop:
 					conn.fm.Close()
 					break mainLoop
 				}
-			case <-time.After(wait):
+			case <-loopWait.arm(wait):
 			}
 		} else {
 			loopWait.hit()
@@ -754,10 +754,10 @@ mainLoop:
 
 		conn.fmUpdate()
 
-		sendlist := conn.fm.GetSendList()
-		if sendlist.Len() > 0 {
+		frames := conn.fm.GetSendFrames()
+		if len(frames) > 0 {
 			hadWork = true
-			p.emitServerFrames(conn, src, id, sendlist, nil)
+			p.emitServerFrames(conn, src, id, frames, nil)
 		}
 
 		if conn.fm.GetRecvBufferSize() > 0 {
@@ -815,7 +815,7 @@ mainLoop:
 		select {
 		case <-conn.activity:
 			closeWait.hit()
-		case <-time.After(wait):
+		case <-closeWait.arm(wait):
 		}
 	}
 

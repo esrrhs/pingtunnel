@@ -14,10 +14,14 @@ import "time"
 const closePeerFlushGrace = time.Second
 
 // adaptiveLoopWait grows sleep duration on idle loops and resets on activity.
+// It carries a reusable timer: time.After would allocate a fresh timer per
+// iteration, which under sustained backpressure (wait pinned at the floor)
+// dominates the allocator profile.
 type adaptiveLoopWait struct {
 	min time.Duration
 	max time.Duration
 	cur time.Duration
+	t   *time.Timer
 }
 
 func newAdaptiveLoopWait(min, max time.Duration) adaptiveLoopWait {
@@ -31,7 +35,21 @@ func newAdaptiveLoopWait(min, max time.Duration) adaptiveLoopWait {
 		min: min,
 		max: max,
 		cur: min,
+		t:   time.NewTimer(time.Hour),
 	}
+}
+
+// arm prepares the embedded timer for one select wait of d and returns its
+// channel. Any stale fire from a previous iteration is drained first.
+func (a *adaptiveLoopWait) arm(d time.Duration) <-chan time.Time {
+	if !a.t.Stop() {
+		select {
+		case <-a.t.C:
+		default:
+		}
+	}
+	a.t.Reset(d)
+	return a.t.C
 }
 
 func (a *adaptiveLoopWait) hit() {
