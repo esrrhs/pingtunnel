@@ -21,6 +21,44 @@ func TestEncryptionModeString(t *testing.T) {
 	}
 }
 
+func TestDecryptInPlace(t *testing.T) {
+	payload := []byte("in-place payload bytes")
+	for _, mode := range []EncryptionMode{NoEncryption, AES128, AES256, CHACHA20} {
+		t.Run(mode.String(), func(t *testing.T) {
+			cfg, err := NewCryptoConfig(mode, "test-key-12345678")
+			if err != nil {
+				t.Fatalf("NewCryptoConfig: %v", err)
+			}
+			enc, err := cfg.Encrypt(payload)
+			if err != nil {
+				t.Fatalf("Encrypt: %v", err)
+			}
+
+			buf := append([]byte(nil), enc...)
+			got, err := cfg.DecryptInPlace(buf)
+			if err != nil {
+				t.Fatalf("DecryptInPlace: %v", err)
+			}
+			if !bytes.Equal(got, payload) {
+				t.Fatalf("DecryptInPlace = %q, want %q", got, payload)
+			}
+
+			if mode == NoEncryption {
+				return
+			}
+
+			bad := append([]byte(nil), enc...)
+			bad[len(bad)-1] ^= 0xff
+			if _, err := cfg.DecryptInPlace(bad); err == nil {
+				t.Fatal("DecryptInPlace accepted a corrupted tag")
+			}
+			if _, err := cfg.DecryptInPlace(enc[:1]); err == nil {
+				t.Fatal("DecryptInPlace accepted a truncated envelope")
+			}
+		})
+	}
+}
+
 func TestParseEncryptionModeAll(t *testing.T) {
 	cases := map[string]EncryptionMode{
 		"":                  NoEncryption,
