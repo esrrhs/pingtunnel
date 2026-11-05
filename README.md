@@ -12,7 +12,7 @@ Pingtunnel is a network tool that tunnels TCP/UDP/SOCKS5 traffic over ICMP Echo 
 
 > ⚠️ **Note**: This tool is strictly intended for study and research purposes. Do not use it for any illegal purpose.
 
-![image](network.jpg)
+![image](network.png)
 
 ---
 
