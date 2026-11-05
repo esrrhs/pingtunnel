@@ -160,7 +160,7 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *atomic.Bool, conn icmpPacket
 
 		// Decrypt the data if encryption is enabled
 		if cryptoConfig != nil {
-			payloadData, err = cryptoConfig.Decrypt(payloadData)
+			payloadData, err = cryptoConfig.DecryptInPlace(payloadData)
 			if err != nil {
 				loggo.Debug("recvICMP Decrypt error: %s", err)
 				continue

@@ -170,6 +170,39 @@ func (c *CryptoConfig) EncryptInto(dst []byte, data []byte) ([]byte, error) {
 	return c.Cipher.Seal(dst[:start+nonceSize], dst[start:start+nonceSize], data, nil), nil
 }
 
+// DecryptInPlace decrypts the nonce||ciphertext envelope in data, writing the
+// plaintext over the ciphertext region. It returns the plaintext view that
+// starts at data[nonceSize:]; the nonce prefix is left untouched but must not
+// be read afterwards. AEAD Open guarantees that a failed authentication writes
+// no plaintext, so callers must discard the whole buffer on error exactly as
+// they do with Decrypt.
+func (c *CryptoConfig) DecryptInPlace(data []byte) ([]byte, error) {
+	if c.Mode == NoEncryption {
+		return data, nil
+	}
+	if c.Cipher == nil {
+		return nil, errors.New("cipher not initialized")
+	}
+
+	nonceSize := c.Cipher.NonceSize()
+	if len(data) < nonceSize {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	nonce := data[:nonceSize]
+	ciphertext := data[nonceSize:]
+
+	// dst aliases ciphertext exactly, which every AEAD in crypto/aes and
+	// chacha20poly1305 supports, so no second 900B buffer is allocated and
+	// the received bytes are not copied.
+	plaintext, err := c.Cipher.Open(ciphertext[:0], nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed: %v", err)
+	}
+
+	return plaintext, nil
+}
+
 // Decrypt decrypts the given data
 func (c *CryptoConfig) Decrypt(data []byte) ([]byte, error) {
 	if c.Mode == NoEncryption {

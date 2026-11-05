@@ -108,6 +108,35 @@ func BenchmarkCrypto(b *testing.B) {
 	}
 }
 
+// BenchmarkDecrypt measures the receive-side AEAD open on a 900B envelope
+// (typical encrypted frame). The buffer is reused and pre-filled before each
+// open so the measurement isolates decrypt cost from harness allocation.
+func BenchmarkDecrypt(b *testing.B) {
+	payload := benchPayload(900)
+	for _, mode := range []EncryptionMode{AES128, AES256, CHACHA20} {
+		b.Run(mode.String(), func(b *testing.B) {
+			cfg, err := NewCryptoConfig(mode, "benchmark-key-12345678")
+			if err != nil {
+				b.Fatalf("NewCryptoConfig: %v", err)
+			}
+			enc, err := cfg.Encrypt(payload)
+			if err != nil {
+				b.Fatalf("Encrypt: %v", err)
+			}
+			buf := make([]byte, len(enc))
+			b.SetBytes(int64(len(enc)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				copy(buf, enc)
+				if _, err := cfg.DecryptInPlace(buf); err != nil {
+					b.Fatalf("DecryptInPlace: %v", err)
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkMyMsgRoundTrip measures the protobuf framing that every tunnel
 // packet goes through (marshal + unmarshal of a 1KiB USER_DATA message).
 func BenchmarkMyMsgRoundTrip(b *testing.B) {
