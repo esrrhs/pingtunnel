@@ -465,8 +465,10 @@ func (p *Client) emitClientFrames(clientConn *ClientConn, targetAddr string, fra
 		if mark != nil {
 			mark(f)
 		}
-		mb, err := clientConn.fm.MarshalFrame(f)
+		bp := getSendBuf(0)
+		mb, err := clientConn.fm.MarshalFrameAppend((*bp)[:0], f)
 		if err != nil {
+			putSendBuf(bp)
 			addr := ""
 			if clientConn.tcpaddr != nil {
 				addr = clientConn.tcpaddr.String()
@@ -474,17 +476,21 @@ func (p *Client) emitClientFrames(clientConn *ClientConn, targetAddr string, fra
 			loggo.Error("Error tcp Marshal %s %s %s", clientConn.id, addr, err)
 			return 1
 		}
+		n := len(mb)
 		seq := p.sequence.Add(1)
 		sendICMP(p.id, int(seq), p.conn, p.ipaddrServer, targetAddr, clientConn.id, (uint32)(MyMsg_DATA), mb,
 			SEND_PROTO, RECV_PROTO, p.key,
 			p.tcpmode, tcpmodeBuf, tcpmodeWin, tcpmodeResend, tcpmodeCompress, tcpmodeStat,
 			timeout, p.cryptoConfig)
+		// sendICMP copies the payload into its own pooled wire buffer, so the
+		// marshal buffer can go back to the pool before the length accounting.
+		putSendBuf(bp)
 		p.sendPacket.Add(1)
-		p.sendPacketSize.Add((uint64)(len(mb)))
-		if len(mb) == 0 {
+		p.sendPacketSize.Add((uint64)(n))
+		if n == 0 {
 			return 1
 		}
-		return len(mb)
+		return n
 	})
 	clientConn.fm.PutSendFrames(frames)
 }
