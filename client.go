@@ -1,7 +1,6 @@
 package pingtunnel
 
 import (
-	"container/list"
 	"io"
 	"math"
 	"math/rand"
@@ -459,10 +458,10 @@ func (p *Client) AcceptTcp() error {
 // control, through the shared underlay quanta. Connect-phase negotiation
 // passes the tcpmode parameters; steady-state and close passes zeroes, matching
 // the previous sendICMP argument lists.
-func (p *Client) emitClientFrames(clientConn *ClientConn, targetAddr string, sendlist *list.List,
+func (p *Client) emitClientFrames(clientConn *ClientConn, targetAddr string, frames []*network.Frame,
 	tcpmodeBuf, tcpmodeWin, tcpmodeResend, tcpmodeCompress, tcpmodeStat, timeout int,
 	mark func(*network.Frame)) {
-	p.share.emitFrames(sendlist, func(f *network.Frame) int {
+	p.share.emitFrames(frames, func(f *network.Frame) int {
 		if mark != nil {
 			mark(f)
 		}
@@ -487,6 +486,7 @@ func (p *Client) emitClientFrames(clientConn *ClientConn, targetAddr string, sen
 		}
 		return len(mb)
 	})
+	clientConn.fm.PutSendFrames(frames)
 }
 
 func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
@@ -542,9 +542,9 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			break
 		}
 		clientConn.fmUpdate()
-		sendlist := clientConn.fm.GetSendList()
-		hadWork := sendlist.Len() > 0
-		p.emitClientFrames(clientConn, targetAddr, sendlist,
+		frames := clientConn.fm.GetSendFrames()
+		hadWork := len(frames) > 0
+		p.emitClientFrames(clientConn, targetAddr, frames,
 			p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat, p.timeout,
 			nil)
 		now := common.GetNowUpdateInSecond()
@@ -563,7 +563,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		select {
 		case <-clientConn.activity:
 			connectWait.hit()
-		case <-time.After(wait):
+		case <-connectWait.arm(wait):
 		}
 	}
 
@@ -595,7 +595,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				case <-clientConn.activity:
 					readWait.hit()
 					continue
-				case <-time.After(wait):
+				case <-readWait.arm(wait):
 					continue
 				}
 			}
@@ -643,10 +643,10 @@ mainLoop:
 
 		clientConn.fmUpdate()
 
-		sendlist := clientConn.fm.GetSendList()
-		if sendlist.Len() > 0 {
+		frames := clientConn.fm.GetSendFrames()
+		if len(frames) > 0 {
 			hadWork = true
-			p.emitClientFrames(clientConn, targetAddr, sendlist, 0, 0, 0, 0, 0, 0, func(f *network.Frame) {
+			p.emitClientFrames(clientConn, targetAddr, frames, 0, 0, 0, 0, 0, 0, func(f *network.Frame) {
 				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 					// Only real payload counts as conn activity: heartbeat
 					// and ACK frames keep the tunnel alive without keeping
@@ -765,7 +765,7 @@ mainLoop:
 					halfClosed = true
 					loggo.Debug("local half-close conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 				}
-			case <-time.After(wait):
+			case <-loopWait.arm(wait):
 			}
 		} else {
 			loopWait.hit()
@@ -789,10 +789,10 @@ mainLoop:
 
 		clientConn.fmUpdate()
 
-		sendlist := clientConn.fm.GetSendList()
-		if sendlist.Len() > 0 {
+		frames := clientConn.fm.GetSendFrames()
+		if len(frames) > 0 {
 			hadWork = true
-			p.emitClientFrames(clientConn, targetAddr, sendlist, 0, 0, 0, 0, 0, 0, nil)
+			p.emitClientFrames(clientConn, targetAddr, frames, 0, 0, 0, 0, 0, 0, nil)
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
@@ -856,7 +856,7 @@ mainLoop:
 		select {
 		case <-clientConn.activity:
 			closeWait.hit()
-		case <-time.After(wait):
+		case <-closeWait.arm(wait):
 		}
 	}
 

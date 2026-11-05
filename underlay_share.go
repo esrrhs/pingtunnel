@@ -1,7 +1,6 @@
 package pingtunnel
 
 import (
-	"container/list"
 	"sync"
 
 	"github.com/esrrhs/gohome/network"
@@ -62,29 +61,29 @@ func (s *underlayShare) unlock() {
 // emitFrames sends frames the congestion controller already admitted, in
 // quanta, releasing the underlay between quanta. send returns the bytes
 // just written (0 if the frame was skipped).
-func (s *underlayShare) emitFrames(frames *list.List, send func(*network.Frame) int) {
-	if frames == nil || frames.Len() == 0 || send == nil {
+func (s *underlayShare) emitFrames(frames []*network.Frame, send func(*network.Frame) int) {
+	if len(frames) == 0 || send == nil {
 		return
 	}
 	if s == nil {
-		for e := frames.Front(); e != nil; e = e.Next() {
-			send(e.Value.(*network.Frame))
+		for _, f := range frames {
+			send(f)
 		}
 		return
 	}
-	e := frames.Front()
-	for e != nil {
+	i := 0
+	for i < len(frames) {
 		s.lock()
 		func() {
 			defer s.unlock()
 			budget := underlayShareQuantum
-			for e != nil && budget > 0 {
-				n := send(e.Value.(*network.Frame))
+			for i < len(frames) && budget > 0 {
+				n := send(frames[i])
 				if n < 1 {
 					n = 1
 				}
 				budget -= n
-				e = e.Next()
+				i++
 			}
 		}()
 	}

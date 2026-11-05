@@ -1,7 +1,6 @@
 package pingtunnel
 
 import (
-	"container/list"
 	"net"
 	"os"
 	"path/filepath"
@@ -79,6 +78,34 @@ func TestAdaptiveLoopWait(t *testing.T) {
 	if got := b.miss(); got != 2*time.Millisecond {
 		t.Errorf("after hit miss = %v, want 2ms", got)
 	}
+
+	// arm reuses the embedded timer and drains stale fires.
+	ch := b.arm(10 * time.Millisecond)
+	select {
+	case <-ch:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("arm timer did not fire")
+	}
+
+	// Re-arm immediately: stale channel state must be clear.
+	ch2 := b.arm(10 * time.Millisecond)
+	select {
+	case <-ch2:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("re-armed timer did not fire")
+	}
+
+	// Re-arm before expiration (timer reset before firing).
+	ch3 := b.arm(time.Hour)
+	ch4 := b.arm(10 * time.Millisecond)
+	if ch3 != ch4 {
+		t.Fatal("arm must reuse the same timer channel")
+	}
+	select {
+	case <-ch4:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("arm timer did not fire after pre-expiration reset")
+	}
 }
 
 func TestUnderlayShareEmitFrames(t *testing.T) {
@@ -87,9 +114,7 @@ func TestUnderlayShareEmitFrames(t *testing.T) {
 	// Nil receiver: send everything directly.
 	var nilShare *underlayShare
 	sent := 0
-	frames := list.New()
-	frames.PushBack(frame)
-	frames.PushBack(frame)
+	frames := []*network.Frame{frame, frame}
 	nilShare.emitFrames(frames, func(*network.Frame) int { sent++; return 1 })
 	if sent != 2 {
 		t.Fatalf("nil share sent %d", sent)
@@ -98,16 +123,16 @@ func TestUnderlayShareEmitFrames(t *testing.T) {
 	// Degenerate arguments are no-ops.
 	s := newUnderlayShare()
 	s.emitFrames(nil, func(*network.Frame) int { sent++; return 1 })
-	s.emitFrames(list.New(), func(*network.Frame) int { sent++; return 1 })
+	s.emitFrames([]*network.Frame{}, func(*network.Frame) int { sent++; return 1 })
 	s.emitFrames(frames, nil)
 	if sent != 2 {
 		t.Fatalf("no-op calls must not send, sent %d", sent)
 	}
 
 	// A skipped frame (send returns 0) still consumes quantum budget.
-	big := list.New()
+	big := make([]*network.Frame, 0, 3)
 	for i := 0; i < 3; i++ {
-		big.PushBack(frame)
+		big = append(big, frame)
 	}
 	n := 0
 	s.emitFrames(big, func(*network.Frame) int { n++; return 0 })
