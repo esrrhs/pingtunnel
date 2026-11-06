@@ -543,3 +543,84 @@ func TestE2E_LargeStream_UploadAndDownload(t *testing.T) {
 		t.Logf("%d MiB download verified in %s", totalBytes>>20, time.Since(start))
 	})
 }
+
+// TestE2E_ThroughputStability verifies that sustained streaming over pingtunnel
+// saturates available throughput and maintains stable high-speed transfer
+// across successive measurement windows without collapses or stalls.
+func TestE2E_ThroughputStability(t *testing.T) {
+	targetAddr, stopTarget := startStreamVerifyServer(t, 0)
+	defer stopTarget()
+
+	opts := basePairOpts()
+	opts.direct = false
+	opts.timeout = 30
+	p := startPair(t, opts)
+	defer p.Close()
+
+	conn := socks5Connect(t, p.clientAddr, targetAddr, 10*time.Second)
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
+
+	const totalBytes = int64(256 * 1024 * 1024)
+	hdr := putStreamHeader('D', totalBytes)
+	if _, err := conn.Write(hdr[:]); err != nil {
+		t.Fatalf("write download header: %v", err)
+	}
+
+	buf := make([]byte, 64*1024)
+	var received int64
+	var secRates []float64
+	secStart := time.Now()
+	var currentSecBytes int64
+
+	for received < totalBytes {
+		n, err := conn.Read(buf)
+		if n > 0 {
+			received += int64(n)
+			currentSecBytes += int64(n)
+		}
+		if time.Since(secStart) >= time.Second {
+			dur := time.Since(secStart)
+			rateMB := float64(currentSecBytes) / (1024 * 1024) / dur.Seconds()
+			secRates = append(secRates, rateMB)
+			t.Logf("sec %d: %.2f MB/s (%d bytes)", len(secRates), rateMB, currentSecBytes)
+			secStart = time.Now()
+			currentSecBytes = 0
+		}
+		if err != nil {
+			if err == io.EOF && received == totalBytes {
+				break
+			}
+			t.Fatalf("download read failed at %d/%d: %v", received, totalBytes, err)
+		}
+	}
+
+	t.Logf("completed %d bytes across %d full-second sampling intervals", received, len(secRates))
+	// Evaluate steady state after slow-start ramp-up (intervals >= 5)
+	if len(secRates) >= 6 {
+		steadyRates := secRates[5:]
+		var minRate, maxRate, totalSteady float64
+		minRate = steadyRates[0]
+		maxRate = steadyRates[0]
+		for _, r := range steadyRates {
+			if r < minRate {
+				minRate = r
+			}
+			if r > maxRate {
+				maxRate = r
+			}
+			totalSteady += r
+		}
+		avgRate := totalSteady / float64(len(steadyRates))
+		stabilityRatio := minRate / avgRate
+		t.Logf("steady avg: %.2f MB/s, min: %.2f MB/s, max: %.2f MB/s, stability ratio: %.2f",
+			avgRate, minRate, maxRate, stabilityRatio)
+
+		if minRate < 10.0 {
+			t.Fatalf("throughput collapsed to %.2f MB/s (< 10 MB/s baseline)", minRate)
+		}
+		if stabilityRatio < 0.50 {
+			t.Fatalf("throughput unstable: min/avg ratio %.2f < 0.50", stabilityRatio)
+		}
+	}
+}
