@@ -3,7 +3,7 @@ module github.com/esrrhs/pingtunnel
 go 1.27.3
 
 require (
-	github.com/esrrhs/gohome v0.0.0-20261105070722-909c7d106b1f
+	github.com/esrrhs/gohome v0.0.0-20261106024440-da7912ccb93e
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
 	google.golang.org/protobuf v1.36.12
