@@ -147,7 +147,7 @@ func recvICMP(workResultLock *sync.WaitGroup, exit *atomic.Bool, conn icmpPacket
 			}
 		}
 
-		if n <= 0 {
+		if n < 8 {
 			continue
 		}
 

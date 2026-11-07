@@ -453,7 +453,8 @@ func TestRecvICMPDispatchAndErrors(t *testing.T) {
 	conn := &fakeICMPConn{
 		readErrs: []error{errors.New("permanent read failure")},
 		responses: [][]byte{
-			{}, // n <= 0
+			{},                                               // n <= 0
+			{1, 2, 3},                                        // truncated (< 8B header)
 			echoHeader([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF}), // unmarshal error
 			echoHeader(badMagic),                             // magic mismatch
 			echoHeader(good),                                 // delivered

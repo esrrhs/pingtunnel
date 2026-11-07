@@ -8,22 +8,34 @@ import (
 )
 
 func TestWindowsBindAddrKeepsConcreteIPv4(t *testing.T) {
-	got, err := windowsBindAddr("10.1.2.3")
-	if err != nil {
-		t.Fatalf("windowsBindAddr: %v", err)
+	for _, want := range []string{"10.1.2.3", "127.0.0.1"} {
+		got, err := windowsBindAddr(want)
+		if err != nil {
+			t.Fatalf("windowsBindAddr(%q): %v", want, err)
+		}
+		if got != want {
+			t.Fatalf("windowsBindAddr(%q) = %q, want %s", want, got, want)
+		}
 	}
-	if got != "10.1.2.3" {
-		t.Fatalf("windowsBindAddr = %q, want 10.1.2.3", got)
+}
+
+func TestWindowsBindAddrRejectsInvalidExplicitAddr(t *testing.T) {
+	for _, bad := range []string{"::1", "2001:db8::1", "999.999.999.999", "nosuch-host.invalid"} {
+		if got, err := windowsBindAddr(bad); err == nil {
+			t.Fatalf("windowsBindAddr(%q) = %q, want error", bad, got)
+		}
 	}
 }
 
 func TestWindowsBindAddrResolvesWildcard(t *testing.T) {
-	got, err := windowsBindAddr("0.0.0.0")
-	if err != nil {
-		t.Skipf("cannot resolve a concrete IPv4 in this environment: %v", err)
-	}
-	ip := net.ParseIP(got)
-	if ip == nil || ip.To4() == nil || ip.IsUnspecified() {
-		t.Fatalf("windowsBindAddr(0.0.0.0) = %q, want a concrete IPv4", got)
+	for _, wildcard := range []string{"0.0.0.0", ""} {
+		got, err := windowsBindAddr(wildcard)
+		if err != nil {
+			t.Skipf("cannot resolve a concrete IPv4 in this environment: %v", err)
+		}
+		ip := net.ParseIP(got)
+		if ip == nil || ip.To4() == nil || ip.IsUnspecified() {
+			t.Fatalf("windowsBindAddr(%q) = %q, want a concrete IPv4", wildcard, got)
+		}
 	}
 }

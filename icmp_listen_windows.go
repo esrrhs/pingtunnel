@@ -3,7 +3,6 @@
 package pingtunnel
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -49,32 +48,36 @@ func listenICMPServer(addr string) (icmpPacketConn, error) {
 		return nil, err
 	}
 
-	var h syscall.Handle
-	lc := net.ListenConfig{
-		Control: func(network, address string, c syscall.RawConn) error {
-			return c.Control(func(fd uintptr) {
-				h = syscall.Handle(fd)
-			})
-		},
-	}
-	pc, err := lc.ListenPacket(context.Background(), "ip4:icmp", bind)
+	pc, err := net.ListenPacket("ip4:icmp", bind)
 	if err != nil {
 		return nil, err
 	}
-	if h == 0 {
-		_ = pc.Close()
-		return nil, errors.New("windows icmp: could not capture the raw socket handle")
+	sc, ok := pc.(syscall.Conn)
+	if !ok {
+		loggo.Error("windows icmp: packet conn %T does not expose SyscallConn (falling back to plain raw socket)", pc)
+		return pc, nil
+	}
+	rawConn, err := sc.SyscallConn()
+	if err != nil {
+		loggo.Error("windows icmp: SyscallConn on %s failed: %s (falling back to plain raw socket)", bind, err)
+		return pc, nil
 	}
 
-	level := uint32(rcvallIPLevel)
-	var returned uint32
-	if err := syscall.WSAIoctl(h, sioRCVALL,
-		(*byte)(unsafe.Pointer(&level)), uint32(unsafe.Sizeof(level)),
-		nil, 0, &returned, nil, 0); err != nil {
+	var ioctlErr error
+	if ctrlErr := rawConn.Control(func(fd uintptr) {
+		level := uint32(rcvallIPLevel)
+		var returned uint32
+		ioctlErr = syscall.WSAIoctl(syscall.Handle(fd), sioRCVALL,
+			(*byte)(unsafe.Pointer(&level)), uint32(unsafe.Sizeof(level)),
+			nil, 0, &returned, nil, 0)
+	}); ctrlErr != nil {
+		ioctlErr = ctrlErr
+	}
+	if ioctlErr != nil {
 		// The socket still works as a plain raw socket. Keep it, but make
 		// the failure visible: without SIO_RCVALL inbound Echo Requests may
 		// never arrive (this is exactly the Windows wildcard-binding bug).
-		loggo.Error("windows icmp: WSAIoctl(SIO_RCVALL, IPLEVEL) on %s failed: %s (falling back to plain raw socket)", bind, err)
+		loggo.Error("windows icmp: WSAIoctl(SIO_RCVALL, IPLEVEL) on %s failed: %s (falling back to plain raw socket)", bind, ioctlErr)
 		return pc, nil
 	}
 	loggo.Info("windows icmp: bound %s with SIO_RCVALL(IPLEVEL)", bind)
@@ -83,11 +86,24 @@ func listenICMPServer(addr string) (icmpPacketConn, error) {
 
 // windowsBindAddr turns a wildcard listen address into a concrete local
 // IPv4 address. SIO_RCVALL rejects INADDR_ANY, so a concrete address is
-// mandatory.
+// mandatory. An explicit non-wildcard address is validated rather than
+// silently falling back to the default route.
 func windowsBindAddr(addr string) (string, error) {
 	if addr != "" {
-		if ip := net.ParseIP(addr); ip != nil && ip.To4() != nil && !ip.IsUnspecified() {
-			return addr, nil
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			resolved, err := net.ResolveIPAddr("ip4", addr)
+			if err != nil {
+				return "", fmt.Errorf("windows icmp: invalid listen address %q: %w", addr, err)
+			}
+			ip = resolved.IP
+		}
+		if !ip.IsUnspecified() {
+			ip4 := ip.To4()
+			if ip4 == nil {
+				return "", fmt.Errorf("windows icmp: listen address %q is not an IPv4 address", addr)
+			}
+			return ip4.String(), nil
 		}
 	}
 
