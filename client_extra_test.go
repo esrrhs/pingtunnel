@@ -78,12 +78,16 @@ func (c *fakeICMPConn) writeCount() int {
 	return len(c.written)
 }
 
-// swapICMPListen replaces the package-level underlay factory for the test.
+// swapICMPListen replaces the package-level underlay factories for the test.
 func swapICMPListen(t *testing.T, fake func(addr string) (icmpPacketConn, error)) {
 	t.Helper()
-	old := icmpListen
+	old, oldServer := icmpListen, icmpListenServer
 	icmpListen = fake
-	t.Cleanup(func() { icmpListen = old })
+	icmpListenServer = fake
+	t.Cleanup(func() {
+		icmpListen = old
+		icmpListenServer = oldServer
+	})
 }
 
 // --- constructor error paths ---------------------------------------------------

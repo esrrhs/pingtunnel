@@ -4,7 +4,11 @@ package pingtunnel
 
 import "golang.org/x/net/icmp"
 
-func listenICMP(addr string) (*icmp.PacketConn, error) {
+func listenICMPServer(addr string) (icmpPacketConn, error) {
+	return listenICMP(addr)
+}
+
+func listenICMP(addr string) (icmpPacketConn, error) {
 	// Try unprivileged ICMP socket on Android.
 	if conn, err := icmp.ListenPacket("udp4", addr); err == nil {
 		setICMPDatagram(true)

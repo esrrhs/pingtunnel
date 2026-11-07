@@ -133,7 +133,7 @@ func (cc *ServerConn) fmCloseFlushed() bool {
 
 func (p *Server) Run() error {
 
-	conn, err := icmpListen(p.icmpAddr)
+	conn, err := icmpListenServer(p.icmpAddr)
 	if err != nil {
 		loggo.Error("Error listening for ICMP packets: %s", err.Error())
 		return err

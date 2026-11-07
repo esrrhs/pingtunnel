@@ -71,7 +71,9 @@ func ensureICMPUnderlay(t testing.TB) {
 		if os.Getenv("PINGTUNNEL_E2E_REQUIRE_REAL_ICMP") == "1" {
 			return
 		}
-		icmpListen = func(addr string) (icmpPacketConn, error) { return fakeICMPHub.listen(addr) }
+		fake := func(addr string) (icmpPacketConn, error) { return fakeICMPHub.listen(addr) }
+		icmpListen = fake
+		icmpListenServer = fake
 		icmpFakeOK = true
 	})
 	switch {
