@@ -439,6 +439,14 @@ func (p *Server) processDataPacket(packet *Packet) {
 				loggo.Error("Unmarshal tcp Error %s", err)
 				return
 			}
+			// A DATA frame without a payload submessage is malformed: FrameMgr
+			// dereferences f.Data while reassembling, so forwarding one crafted
+			// packet from the peer would panic the whole process. ACK/REQ frames
+			// legitimately carry only Dataid and no submessage.
+			if f.Type == (int32)(network.Frame_DATA) && f.Data == nil {
+				loggo.Debug("drop data frame without payload %s", localConn.id)
+				return
+			}
 			if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 				// Only payload frames count as conn activity; ACK/HB frames
 				// must not keep an idle conn alive.
