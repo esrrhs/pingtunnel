@@ -178,6 +178,7 @@ type ClientConn struct {
 	udpTargetAddr string
 
 	fm *network.FrameMgr
+	bb *bbControl
 
 	// fmLock serializes the FrameMgr calls that touch its unsynchronized
 	// close flags (CloseSend/IsRemoteSendClosed/CloseFlushed) with Update,
@@ -512,8 +513,11 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	uuid := common.UniqueId()
 
 	fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat)
+	var bb *bbControl
 	if p.congestion == "bb" {
-		fm.SetCongestion(newBBControl())
+		bb = newBBControl()
+		fm.SetCongestion(bb)
+		bb.EnablePacing(time.Duration(p.tcpmode_resend_timems)*time.Millisecond, int(p.connCount.Load())+1)
 	}
 
 	now := time.Now()
@@ -522,7 +526,8 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		id:       uuid,
 		tcpmode:  p.tcpmode,
 		activity: make(chan struct{}, 1),
-		fm:       fm}
+		fm:       fm,
+		bb:       bb}
 	clientConn.activeRecvTime.Store(now.UnixNano())
 	clientConn.activeSendTime.Store(now.UnixNano())
 	p.addClientConn(uuid, tcpsrcaddr.String(), clientConn)
@@ -577,7 +582,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 		loggo.Debug("connected remote tcp %s %s", uuid, tcpsrcaddr.String())
 	}
 
-	bytes := make([]byte, 10240)
+	bytes := make([]byte, 64*1024)
 
 	// readEOF closes when the local app half-closes its write side: the conn
 	// stays open for the remaining server->app data until the remote closes
@@ -586,11 +591,12 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	readEOF := make(chan struct{})
 	readErr := make(chan error, 1)
 	stopRead := make(chan struct{})
+	readActivity := make(chan struct{}, 1)
 
 	go func() {
 		defer common.CrashLog()
 
-		readWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
+		readWait := newAdaptiveLoopWait(time.Millisecond, 80*time.Millisecond)
 		for !p.exit.Load() && !clientConn.exit.Load() {
 			left := common.MinOfInt(clientConn.fm.GetSendBufferLeft(), len(bytes))
 			if left <= 0 {
@@ -598,7 +604,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				select {
 				case <-stopRead:
 					return
-				case <-clientConn.activity:
+				case <-readActivity:
 					readWait.hit()
 					continue
 				case <-readWait.arm(wait):
@@ -640,7 +646,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 	}()
 
 	halfClosed := false
-	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
+	loopWait := newAdaptiveLoopWait(time.Millisecond, 250*time.Millisecond)
 
 mainLoop:
 	for !p.exit.Load() && !clientConn.exit.Load() {
@@ -648,6 +654,9 @@ mainLoop:
 		hadWork := false
 
 		clientConn.fmUpdate()
+		if clientConn.fm.GetSendBufferLeft() > 0 {
+			notifyActivity(readActivity)
+		}
 
 		frames := clientConn.fm.GetSendFrames()
 		if len(frames) > 0 {
@@ -687,8 +696,8 @@ mainLoop:
 		// carrying this conn id): its own send window may already be empty —
 		// everything acked into our buffers — so without this signal it
 		// cannot tell backpressure from a dead conn.
-		if clientConn.fm.GetRecvBufferSize() > 0 || clientConn.fm.GetSendWinSize() > 0 {
-			if time.Duration(now.UnixNano()-clientConn.lastCongestionPing.Load()) >= time.Second {
+		if time.Duration(now.UnixNano()-clientConn.lastCongestionPing.Load()) >= time.Second {
+			if clientConn.fm.GetRecvBufferSize() > 0 || clientConn.fm.GetSendWinSize() > 0 {
 				clientConn.lastCongestionPing.Store(now.UnixNano())
 				tb, _ := time.Now().MarshalBinary()
 				seq := p.sequence.Add(1)
@@ -757,6 +766,12 @@ mainLoop:
 
 		if !hadWork {
 			wait := loopWait.miss()
+			if clientConn.bb.takePacedWait() {
+				loopWait.hit()
+				wait = time.Millisecond
+			} else if clientConn.bb.hasInflight() && wait > 10*time.Millisecond {
+				wait = 10 * time.Millisecond
+			}
 			select {
 			case <-clientConn.activity:
 				loopWait.hit()
@@ -787,7 +802,7 @@ mainLoop:
 	// sleep made one closing conn's burst uninterruptible on the ICMP socket.
 	// It also covered the RTT in which the peer, having just acked our CLOSE,
 	// sends its own. See closePeerFlushGrace.
-	closeWait := newAdaptiveLoopWait(2*time.Millisecond, 50*time.Millisecond)
+	closeWait := newAdaptiveLoopWait(time.Millisecond, 50*time.Millisecond)
 	var halfFlushSince time.Time
 	for !p.exit.Load() && !clientConn.exit.Load() {
 		now := common.GetNowUpdateInSecond()
@@ -816,8 +831,8 @@ mainLoop:
 		// left is retransmitted from here for up to 60s. Keep signalling
 		// congestion while that runs, or the server reaps the conn as idle
 		// mid-tail (an unthrottled loopback target dies within ~50ms).
-		if clientConn.fm.GetRecvBufferSize() > 0 || clientConn.fm.GetSendWinSize() > 0 {
-			if time.Duration(now.UnixNano()-clientConn.lastCongestionPing.Load()) >= time.Second {
+		if time.Duration(now.UnixNano()-clientConn.lastCongestionPing.Load()) >= time.Second {
+			if clientConn.fm.GetRecvBufferSize() > 0 || clientConn.fm.GetSendWinSize() > 0 {
 				clientConn.lastCongestionPing.Store(now.UnixNano())
 				tb, _ := time.Now().MarshalBinary()
 				seq := p.sequence.Add(1)
@@ -859,6 +874,12 @@ mainLoop:
 			continue
 		}
 		wait := closeWait.miss()
+		if clientConn.bb.takePacedWait() {
+			closeWait.hit()
+			wait = time.Millisecond
+		} else if clientConn.bb.hasInflight() && wait > 10*time.Millisecond {
+			wait = 10 * time.Millisecond
+		}
 		select {
 		case <-clientConn.activity:
 			closeWait.hit()

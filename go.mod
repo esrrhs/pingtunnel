@@ -3,7 +3,7 @@ module github.com/esrrhs/pingtunnel
 go 1.27.3
 
 require (
-	github.com/esrrhs/gohome v0.0.0-20261106024440-da7912ccb93e
+	github.com/esrrhs/gohome v0.0.0-20261117155140-cf447bd6fcc9
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0
 	google.golang.org/protobuf v1.36.12
@@ -11,8 +11,9 @@ require (
 
 require (
 	github.com/OneOfOne/xxhash v1.2.8 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.20.3 // indirect
+	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
 	github.com/klauspost/reedsolomon v1.14.2 // indirect
 	github.com/miekg/dns v1.1.73 // indirect

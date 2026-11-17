@@ -624,3 +624,179 @@ func TestE2E_ThroughputStability(t *testing.T) {
 		}
 	}
 }
+
+type delayedICMPPacket struct {
+	deliverAt time.Time
+	payload   []byte
+	dst       net.Addr
+}
+
+type delayedLossICMPEndpoint struct {
+	inner   icmpPacketConn
+	delay   time.Duration
+	lossMod uint64
+	seq     atomic.Uint64
+	queue   chan delayedICMPPacket
+	stopCh  chan struct{}
+	once    sync.Once
+}
+
+func newDelayedLossICMPEndpoint(inner icmpPacketConn, oneWayDelay time.Duration, lossMod uint64) *delayedLossICMPEndpoint {
+	ep := &delayedLossICMPEndpoint{
+		inner:   inner,
+		delay:   oneWayDelay,
+		lossMod: lossMod,
+		queue:   make(chan delayedICMPPacket, 32768),
+		stopCh:  make(chan struct{}),
+	}
+	go ep.pump()
+	return ep
+}
+
+func (ep *delayedLossICMPEndpoint) pump() {
+	for {
+		select {
+		case <-ep.stopCh:
+			return
+		case pkt := <-ep.queue:
+			if wait := time.Until(pkt.deliverAt); wait > 0 {
+				timer := time.NewTimer(wait)
+				select {
+				case <-ep.stopCh:
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+			}
+			_, _ = ep.inner.WriteTo(pkt.payload, pkt.dst)
+		}
+	}
+}
+
+func (ep *delayedLossICMPEndpoint) WriteTo(b []byte, dst net.Addr) (int, error) {
+	s := ep.seq.Add(1)
+	// Deterministically drop 1 in lossMod large data frames after initial warmup.
+	if ep.lossMod > 0 && len(b) > 400 && s > 32 && (s*2654435761)%ep.lossMod == 0 {
+		return len(b), nil
+	}
+	cp := append([]byte(nil), b...)
+	select {
+	case ep.queue <- delayedICMPPacket{
+		deliverAt: time.Now().Add(ep.delay),
+		payload:   cp,
+		dst:       dst,
+	}:
+	default:
+	}
+	return len(b), nil
+}
+
+func (ep *delayedLossICMPEndpoint) ReadFrom(b []byte) (int, net.Addr, error) {
+	return ep.inner.ReadFrom(b)
+}
+
+func (ep *delayedLossICMPEndpoint) SetReadDeadline(t time.Time) error {
+	return ep.inner.SetReadDeadline(t)
+}
+
+func (ep *delayedLossICMPEndpoint) Close() error {
+	ep.once.Do(func() { close(ep.stopCh) })
+	return ep.inner.Close()
+}
+
+// TestE2E_CrossOceanICMPThroughputRedline simulates a cross-ocean ICMP link
+// (50ms RTT + ~6.7% random packet loss on data frames) end-to-end through the
+// SOCKS5 proxy, verifies SHA-256 payload integrity, and fails if download
+// throughput drops below the 2.50 MiB/s (20 Mbps) redline.
+func TestE2E_CrossOceanICMPThroughputRedline(t *testing.T) {
+	ensureICMPUnderlay(t)
+
+	origListen := icmpListen
+	origListenServer := icmpListenServer
+	wrapped := func(addr string) (icmpPacketConn, error) {
+		inner, err := fakeICMPHub.listen(addr)
+		if err != nil {
+			return nil, err
+		}
+		return newDelayedLossICMPEndpoint(inner, 25*time.Millisecond, 15), nil
+	}
+	icmpListen = wrapped
+	icmpListenServer = wrapped
+	defer func() {
+		icmpListen = origListen
+		icmpListenServer = origListenServer
+	}()
+
+	targetAddr, stopTarget := startStreamVerifyServer(t, 0)
+	defer stopTarget()
+
+	opts := basePairOpts()
+	opts.direct = false
+	opts.tcpBS = DEFAULT_TCP_BUF
+	opts.tcpMW = DEFAULT_TCP_WIN
+	opts.tcpRST = DEFAULT_TCP_RESEND
+	opts.timeout = 30
+	p := startPair(t, opts)
+	defer p.Close()
+
+	const (
+		totalBytes     = int64(12 * 1024 * 1024) // 12 MiB
+		redlineMiBPerS = 2.50                    // 2.50 MiB/s (~21 Mbps) redline
+	)
+
+	var patternChunks [256][]byte
+	for i := 0; i < 256; i++ {
+		b := make([]byte, 64*1024)
+		fillPattern(b, byte(i))
+		patternChunks[i] = b
+	}
+	wantHash := sha256.New()
+	totalChunks := totalBytes / (64 * 1024)
+	for i := int64(0); i < totalChunks; i++ {
+		_, _ = wantHash.Write(patternChunks[byte(i)])
+	}
+	var wantSum [32]byte
+	copy(wantSum[:], wantHash.Sum(nil))
+
+	conn := socks5Connect(t, p.clientAddr, targetAddr, 10*time.Second)
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	start := time.Now()
+	hdr := putStreamHeader('D', totalBytes)
+	if _, err := conn.Write(hdr[:]); err != nil {
+		t.Fatalf("write download header: %v", err)
+	}
+
+	gotHash := sha256.New()
+	buf := make([]byte, 64*1024)
+	var received int64
+	for received < totalBytes {
+		n, err := conn.Read(buf)
+		if n > 0 {
+			_, _ = gotHash.Write(buf[:n])
+			received += int64(n)
+		}
+		if err != nil {
+			if err == io.EOF && received == totalBytes {
+				break
+			}
+			t.Fatalf("download read failed at %d/%d: %v", received, totalBytes, err)
+		}
+	}
+	elapsed := time.Since(start)
+
+	var gotSum [32]byte
+	copy(gotSum[:], gotHash.Sum(nil))
+	if gotSum != wantSum {
+		t.Fatalf("download sha256 mismatch: got %x, want %x", gotSum, wantSum)
+	}
+
+	mibPerSec := (float64(totalBytes) / (1024 * 1024)) / elapsed.Seconds()
+	t.Logf("cross-ocean E2E download: %d MiB in %s = %.2f MiB/s (%.2f Mbps), redline=%.2f MiB/s",
+		totalBytes>>20, elapsed, mibPerSec, mibPerSec*8, redlineMiBPerS)
+	if mibPerSec < redlineMiBPerS {
+		t.Fatalf("cross-ocean E2E download throughput %.2f MiB/s fell below redline %.2f MiB/s",
+			mibPerSec, redlineMiBPerS)
+	}
+}
