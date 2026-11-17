@@ -94,6 +94,7 @@ type ServerConn struct {
 	close          atomic.Bool
 	rproto         int
 	fm             *network.FrameMgr
+	bb             *bbControl
 	tcpmode        int
 	echoId         atomic.Int64
 	echoSeq        atomic.Int64
@@ -302,12 +303,15 @@ func (p *Server) processDataPacketNewConn(id string, packet *Packet) *ServerConn
 
 		fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, (int)(packet.my.TcpmodeBuffersize), (int)(packet.my.TcpmodeMaxwin), (int)(packet.my.TcpmodeResendTimems), (int)(packet.my.TcpmodeCompress),
 			(int)(packet.my.TcpmodeStat))
+		var bb *bbControl
 		if p.congestion == "bb" {
-			fm.SetCongestion(newBBControl())
+			bb = newBBControl()
+			fm.SetCongestion(bb)
+			bb.EnablePacing(time.Duration(packet.my.TcpmodeResendTimems)*time.Millisecond, int(p.connCount.Load())+1)
 		}
 
 		localConn := &ServerConn{timeout: (int)(packet.my.Timeout), tcpconn: c, tcpaddrTarget: ipaddrTarget, id: id,
-			rproto: (int)(packet.my.Rproto), fm: fm, tcpmode: (int)(packet.my.Tcpmode), activity: make(chan struct{}, 1)}
+			rproto: (int)(packet.my.Rproto), fm: fm, bb: bb, tcpmode: (int)(packet.my.Tcpmode), activity: make(chan struct{}, 1)}
 		localConn.activeRecvTime.Store(now.UnixNano())
 		localConn.activeSendTime.Store(now.UnixNano())
 
@@ -576,15 +580,16 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		loggo.Debug("remote connected tcp %s %s", conn.id, conn.tcpaddrTarget.String())
 	}
 
-	bytes := make([]byte, 10240)
+	bytes := make([]byte, 64*1024)
 
 	readErr := make(chan error, 1)
 	stopRead := make(chan struct{})
+	readActivity := make(chan struct{}, 1)
 
 	go func() {
 		defer common.CrashLog()
 
-		readWait := newAdaptiveLoopWait(2*time.Millisecond, 80*time.Millisecond)
+		readWait := newAdaptiveLoopWait(time.Millisecond, 80*time.Millisecond)
 		for !p.exit.Load() && !conn.exit.Load() {
 			left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
 			if left <= 0 {
@@ -592,7 +597,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				select {
 				case <-stopRead:
 					return
-				case <-conn.activity:
+				case <-readActivity:
 					readWait.hit()
 					continue
 				case <-readWait.arm(wait):
@@ -623,7 +628,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 		}
 	}()
 
-	loopWait := newAdaptiveLoopWait(2*time.Millisecond, 250*time.Millisecond)
+	loopWait := newAdaptiveLoopWait(time.Millisecond, 250*time.Millisecond)
 
 	halfClosedPropagated := false
 
@@ -633,6 +638,9 @@ mainLoop:
 		hadWork := false
 
 		conn.fmUpdate()
+		if conn.fm.GetSendBufferLeft() > 0 {
+			notifyActivity(readActivity)
+		}
 
 		if !halfClosedPropagated && conn.fmIsRemoteSendClosed() && conn.fm.GetRecvBufferSize() == 0 {
 			// The client half-closed its side and every buffered byte of it
@@ -682,8 +690,8 @@ mainLoop:
 		// carrying this conn id): everything may already be acked out of our
 		// send window into our buffers, so without this signal the client
 		// cannot tell backpressure from a dead conn.
-		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
-			if time.Duration(now.UnixNano()-conn.lastCongestionPing.Load()) >= time.Second {
+		if time.Duration(now.UnixNano()-conn.lastCongestionPing.Load()) >= time.Second {
+			if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
 				conn.lastCongestionPing.Store(now.UnixNano())
 				tb, _ := time.Now().MarshalBinary()
 				sendICMP(int(conn.echoId.Load()), int(conn.echoSeq.Load()), p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
@@ -733,6 +741,12 @@ mainLoop:
 
 		if !hadWork {
 			wait := loopWait.miss()
+			if conn.bb.takePacedWait() {
+				loopWait.hit()
+				wait = time.Millisecond
+			} else if conn.bb.hasInflight() && wait > 10*time.Millisecond {
+				wait = 10 * time.Millisecond
+			}
 			select {
 			case <-conn.activity:
 				loopWait.hit()
@@ -760,7 +774,7 @@ mainLoop:
 	// That sleep also happened to cover the one RTT between "our CLOSE was
 	// acked" and "the peer's CLOSE arrived". The grace below keeps that
 	// handshake without bringing the uninterruptible blast back.
-	closeWait := newAdaptiveLoopWait(2*time.Millisecond, 50*time.Millisecond)
+	closeWait := newAdaptiveLoopWait(time.Millisecond, 50*time.Millisecond)
 	var halfFlushSince time.Time
 	for !p.exit.Load() && !conn.exit.Load() {
 		now := common.GetNowUpdateInSecond()
@@ -789,8 +803,8 @@ mainLoop:
 		// left is retransmitted from here for up to 60s. Keep signalling
 		// congestion while that runs, or the client reaps the conn as idle
 		// mid-download (an unthrottled loopback target dies within ~50ms).
-		if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
-			if time.Duration(now.UnixNano()-conn.lastCongestionPing.Load()) >= time.Second {
+		if time.Duration(now.UnixNano()-conn.lastCongestionPing.Load()) >= time.Second {
+			if conn.fm.GetRecvBufferSize() > 0 || conn.fm.GetSendWinSize() > 0 {
 				conn.lastCongestionPing.Store(now.UnixNano())
 				tb, _ := time.Now().MarshalBinary()
 				sendICMP(int(conn.echoId.Load()), int(conn.echoSeq.Load()), p.conn, src, "", id, (uint32)(MyMsg_PING), tb,
@@ -826,6 +840,12 @@ mainLoop:
 			continue
 		}
 		wait := closeWait.miss()
+		if conn.bb.takePacedWait() {
+			closeWait.hit()
+			wait = time.Millisecond
+		} else if conn.bb.hasInflight() && wait > 10*time.Millisecond {
+			wait = 10 * time.Millisecond
+		}
 		select {
 		case <-conn.activity:
 			closeWait.hit()

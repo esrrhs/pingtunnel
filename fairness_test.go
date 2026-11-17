@@ -141,3 +141,34 @@ func TestUnderlayShareInterleavesConns(t *testing.T) {
 		t.Fatalf("longest exclusive run = %d frames, one quantum is %d", maxRun, perTurn)
 	}
 }
+
+func TestBBControlRandomLossCompensation(t *testing.T) {
+	bb := newBBControl()
+	bb.Init()
+	bb.SetRtt(210 * time.Millisecond)
+
+	// Simulate 8 intervals on a 210ms cross-ocean link with ~18% random packet
+	// loss (sent ~6 MB/s, acked ~5 MB/s) and small queue delay (15ms).
+	const (
+		sentPerSec  = 6 * 1024 * 1024
+		ackedPerSec = 5 * 1024 * 1024
+	)
+	for i := 0; i < 8; i++ {
+		bb.SetRtt(225 * time.Millisecond)
+		bb.flyingdata = sentPerSec
+		bb.totalsent = sentPerSec
+		bb.flyeddata = ackedPerSec
+		bb.last = time.Now().Add(-time.Second)
+		bb.Update()
+	}
+
+	const minPacingRate = 5.5 * 1024 * 1024
+	if bb.pacingRate < minPacingRate {
+		t.Fatalf("bbControl pacingRate collapsed under random loss: got %.2f MB/s, want >= %.2f MB/s",
+			bb.pacingRate/(1024*1024), float64(minPacingRate)/(1024*1024))
+	}
+	const minMaxfly = 3500 * 1024
+	if bb.maxfly < minMaxfly {
+		t.Fatalf("bbControl maxfly too small under random loss: got %d, want >= %d", bb.maxfly, minMaxfly)
+	}
+}
