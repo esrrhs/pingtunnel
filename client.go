@@ -612,14 +612,16 @@ mainLoop:
 		sendlist := clientConn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			p.emitClientFrames(clientConn, targetAddr, sendlist, 0, 0, 0, 0, 0, 0, func(f *network.Frame) {
-				if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
-					// Only real payload counts as conn activity: heartbeat
-					// and ACK frames keep the tunnel alive without keeping
-					// an idle conn alive.
-					clientConn.activeSendTime = now
-				}
-			})
+			p.emitClientFrames(clientConn, targetAddr, sendlist,
+				p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat, p.timeout,
+				func(f *network.Frame) {
+					if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
+						// Only real payload counts as conn activity: heartbeat
+						// and ACK frames keep the tunnel alive without keeping
+						// an idle conn alive.
+						clientConn.activeSendTime = now
+					}
+				})
 			p.touchActivity()
 		}
 
@@ -758,7 +760,9 @@ mainLoop:
 		sendlist := clientConn.fm.GetSendList()
 		if sendlist.Len() > 0 {
 			hadWork = true
-			p.emitClientFrames(clientConn, targetAddr, sendlist, 0, 0, 0, 0, 0, 0, nil)
+			p.emitClientFrames(clientConn, targetAddr, sendlist,
+				p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat, p.timeout,
+				nil)
 		}
 
 		if clientConn.fm.GetRecvBufferSize() > 0 {
