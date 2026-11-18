@@ -211,6 +211,24 @@ func (cc *ClientConn) fmCloseFlushed() bool {
 	return cc.fm.CloseFlushed()
 }
 
+func (cc *ClientConn) fmGetSendBufferLeft() int {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	return cc.fm.GetSendBufferLeft()
+}
+
+func (cc *ClientConn) fmWriteSendBuffer(data []byte) {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	cc.fm.WriteSendBuffer(data)
+}
+
+func (cc *ClientConn) fmGetSendFrames() []*network.Frame {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	return cc.fm.GetSendFrames()
+}
+
 func (p *Client) Addr() string {
 	return p.addr
 }
@@ -553,7 +571,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 			break
 		}
 		clientConn.fmUpdate()
-		frames := clientConn.fm.GetSendFrames()
+		frames := clientConn.fmGetSendFrames()
 		hadWork := len(frames) > 0
 		p.emitClientFrames(clientConn, targetAddr, frames,
 			p.tcpmode_buffersize, p.tcpmode_maxwin, p.tcpmode_resend_timems, p.tcpmode_compress, p.tcpmode_stat, p.timeout,
@@ -598,7 +616,7 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 
 		readWait := newAdaptiveLoopWait(time.Millisecond, 80*time.Millisecond)
 		for !p.exit.Load() && !clientConn.exit.Load() {
-			left := common.MinOfInt(clientConn.fm.GetSendBufferLeft(), len(bytes))
+			left := common.MinOfInt(clientConn.fmGetSendBufferLeft(), len(bytes))
 			if left <= 0 {
 				wait := readWait.miss()
 				select {
@@ -639,7 +657,12 @@ func (p *Client) AcceptTcpConn(conn *net.TCPConn, targetAddr string) {
 				continue
 			}
 
-			clientConn.fm.WriteSendBuffer(bytes[:n])
+			select {
+			case <-stopRead:
+				return
+			default:
+			}
+			clientConn.fmWriteSendBuffer(bytes[:n])
 			p.touchActivity()
 			notifyActivity(clientConn.activity)
 		}
@@ -654,11 +677,11 @@ mainLoop:
 		hadWork := false
 
 		clientConn.fmUpdate()
-		if clientConn.fm.GetSendBufferLeft() > 0 {
+		if clientConn.fmGetSendBufferLeft() > 0 {
 			notifyActivity(readActivity)
 		}
 
-		frames := clientConn.fm.GetSendFrames()
+		frames := clientConn.fmGetSendFrames()
 		if len(frames) > 0 {
 			hadWork = true
 			p.emitClientFrames(clientConn, targetAddr, frames, 0, 0, 0, 0, 0, 0, func(f *network.Frame) {
@@ -810,7 +833,7 @@ mainLoop:
 
 		clientConn.fmUpdate()
 
-		frames := clientConn.fm.GetSendFrames()
+		frames := clientConn.fmGetSendFrames()
 		if len(frames) > 0 {
 			hadWork = true
 			p.emitClientFrames(clientConn, targetAddr, frames, 0, 0, 0, 0, 0, 0, nil)

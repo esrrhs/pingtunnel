@@ -132,6 +132,24 @@ func (cc *ServerConn) fmCloseFlushed() bool {
 	return cc.fm.CloseFlushed()
 }
 
+func (cc *ServerConn) fmGetSendBufferLeft() int {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	return cc.fm.GetSendBufferLeft()
+}
+
+func (cc *ServerConn) fmWriteSendBuffer(data []byte) {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	cc.fm.WriteSendBuffer(data)
+}
+
+func (cc *ServerConn) fmGetSendFrames() []*network.Frame {
+	cc.fmLock.Lock()
+	defer cc.fmLock.Unlock()
+	return cc.fm.GetSendFrames()
+}
+
 func (p *Server) Run() error {
 
 	conn, err := icmpListenServer(p.icmpAddr)
@@ -553,7 +571,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 			break
 		}
 		conn.fmUpdate()
-		frames := conn.fm.GetSendFrames()
+		frames := conn.fmGetSendFrames()
 		hadWork := len(frames) > 0
 		p.emitServerFrames(conn, src, id, frames, nil)
 		now := common.GetNowUpdateInSecond()
@@ -591,7 +609,7 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 
 		readWait := newAdaptiveLoopWait(time.Millisecond, 80*time.Millisecond)
 		for !p.exit.Load() && !conn.exit.Load() {
-			left := common.MinOfInt(conn.fm.GetSendBufferLeft(), len(bytes))
+			left := common.MinOfInt(conn.fmGetSendBufferLeft(), len(bytes))
 			if left <= 0 {
 				wait := readWait.miss()
 				select {
@@ -623,7 +641,12 @@ func (p *Server) RecvTCP(conn *ServerConn, id string, src *net.IPAddr) {
 				continue
 			}
 
-			conn.fm.WriteSendBuffer(bytes[:n])
+			select {
+			case <-stopRead:
+				return
+			default:
+			}
+			conn.fmWriteSendBuffer(bytes[:n])
 			notifyActivity(conn.activity)
 		}
 	}()
@@ -638,7 +661,7 @@ mainLoop:
 		hadWork := false
 
 		conn.fmUpdate()
-		if conn.fm.GetSendBufferLeft() > 0 {
+		if conn.fmGetSendBufferLeft() > 0 {
 			notifyActivity(readActivity)
 		}
 
@@ -654,7 +677,7 @@ mainLoop:
 			loggo.Debug("client half-closed conn %s %s", conn.id, conn.tcpaddrTarget.String())
 		}
 
-		frames := conn.fm.GetSendFrames()
+		frames := conn.fmGetSendFrames()
 		if len(frames) > 0 {
 			hadWork = true
 			p.emitServerFrames(conn, src, id, frames, func(f *network.Frame) {
@@ -782,7 +805,7 @@ mainLoop:
 
 		conn.fmUpdate()
 
-		frames := conn.fm.GetSendFrames()
+		frames := conn.fmGetSendFrames()
 		if len(frames) > 0 {
 			hadWork = true
 			p.emitServerFrames(conn, src, id, frames, nil)
