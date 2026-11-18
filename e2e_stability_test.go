@@ -228,8 +228,8 @@ func TestE2E_ConcurrentBulkAndInteractiveIntegrity(t *testing.T) {
 // 大流量 + 小水管 scenario).
 func TestE2E_NarrowPipe_HeavyBackpressure(t *testing.T) {
 	const (
-		totalBytes        = 8 * 1024 * 1024 // 8 MiB
-		narrowPipeRateBps = 2 * 1024 * 1024 // 2 MiB/s -> ~4s transfer (>2x the 2s timeout)
+		totalBytes        = 96 * 1024 * 1024 // 96 MiB
+		narrowPipeRateBps = 16 * 1024 * 1024 // 16 MiB/s -> ~6s transfer (2x the 3s timeout)
 	)
 	targetAddr, stopTarget := startStreamVerifyServer(t, narrowPipeRateBps)
 	defer stopTarget()
@@ -239,7 +239,7 @@ func TestE2E_NarrowPipe_HeavyBackpressure(t *testing.T) {
 	opts.tcpBS = 8192   // 8 frames in flight max
 	opts.tcpMW = 100
 	opts.tcpRST = 200
-	opts.timeout = 2 // 2s inactivity window; a 4s one-way transfer must stay alive
+	opts.timeout = 3 // 3s inactivity window; a 6s one-way transfer must stay alive
 	p := startPair(t, opts)
 	defer p.Close()
 
