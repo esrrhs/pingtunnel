@@ -107,11 +107,28 @@ type ServerConn struct {
 	peerCongestionTime atomic.Int64
 	lastCongestionPing atomic.Int64
 
+	// lastPeerPacket is the UnixNano time of the last packet of any kind
+	// (data, ACK, HB, congestion PING) received for this conn. Zero until the
+	// first packet is processed.
+	lastPeerPacket atomic.Int64
+
 	// fmLock serializes the FrameMgr calls that touch its unsynchronized
 	// close flags (CloseSend/IsRemoteSendClosed/CloseFlushed) with Update,
 	// which reads and writes those flags internally. Data-path FrameMgr calls
 	// stay outside: they are internally locked.
 	fmLock sync.Mutex
+}
+
+// peerGone reports that nothing at all has arrived from the peer for longer
+// than the conn timeout. Unlike the idle check it ignores unacknowledged
+// frames: a vanished peer never acknowledges them, so without this the conn
+// (and its retransmit loop) would live forever.
+func (cc *ServerConn) peerGone(now time.Time) bool {
+	last := cc.lastPeerPacket.Load()
+	if last == 0 || cc.timeout <= 0 {
+		return false
+	}
+	return now.UnixNano()-last > int64(time.Second)*int64(cc.timeout)
 }
 
 func (cc *ServerConn) fmUpdate() {
@@ -233,6 +250,7 @@ func (p *Server) processPacket(packet *Packet) {
 			// under backpressure, not idle — exempt it from reaping.
 			if localConn := p.getServerConnById(packet.my.Id); localConn != nil {
 				localConn.peerCongestionTime.Store(common.GetNowUpdateInSecond().UnixNano())
+				localConn.lastPeerPacket.Store(time.Now().UnixNano())
 			}
 		}
 		return
@@ -451,6 +469,7 @@ func (p *Server) processDataPacket(packet *Packet) {
 
 	localConn.echoId.Store(int64(packet.echoId))
 	localConn.echoSeq.Store(int64(packet.echoSeq))
+	localConn.lastPeerPacket.Store(time.Now().UnixNano())
 
 	if packet.my.Type == (int32)(MyMsg_DATA) {
 
@@ -756,6 +775,14 @@ mainLoop:
 			break
 		}
 
+		// Dead peer: the idle check above never fires while frames are
+		// unacknowledged, and a vanished client never acknowledges them.
+		if conn.peerGone(time.Now()) {
+			loggo.Info("close conn, peer silent %s %s", conn.id, conn.tcpaddrTarget.String())
+			conn.fm.Close()
+			break
+		}
+
 		if conn.fm.IsRemoteClosed() {
 			loggo.Debug("closed by remote conn %s %s", conn.id, conn.tcpaddrTarget.String())
 			conn.fm.Close()
@@ -840,6 +867,11 @@ mainLoop:
 		diffclose := now.Sub(startCloseTime)
 		if diffclose > time.Second*60 {
 			loggo.Debug("close conn had timeout %s %s", conn.id, conn.tcpaddrTarget.String())
+			break
+		}
+
+		if conn.peerGone(time.Now()) {
+			loggo.Debug("close phase: peer silent %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 
