@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/esrrhs/gohome/common"
+	"github.com/esrrhs/gohome/network"
+	"google.golang.org/protobuf/proto"
 )
 
 func testServer(t *testing.T) (*Server, *fakeICMPConn) {
@@ -305,5 +307,137 @@ func TestServerConnErrorExpiry(t *testing.T) {
 	}
 	if _, ok := s.recentlyClosed.Load("kept"); !ok {
 		t.Error("fresh recentlyClosed entry must stay")
+	}
+}
+
+func TestServerConnPeerGone(t *testing.T) {
+	now := time.Now()
+	cc := &ServerConn{timeout: 5}
+	if cc.peerGone(now) {
+		t.Fatal("zero lastPeerPacket must not be reported gone")
+	}
+
+	cc.lastPeerPacket.Store(now.Add(-10 * time.Second).UnixNano())
+	cc.timeout = 0
+	if cc.peerGone(now) {
+		t.Fatal("non-positive timeout must not report peer gone")
+	}
+
+	cc.timeout = 5
+	cc.lastPeerPacket.Store(now.Add(-4 * time.Second).UnixNano())
+	if cc.peerGone(now) {
+		t.Fatal("peer within timeout must not be reported gone")
+	}
+
+	cc.lastPeerPacket.Store(now.Add(-6 * time.Second).UnixNano())
+	if !cc.peerGone(now) {
+		t.Fatal("peer silent past timeout must be reported gone")
+	}
+}
+
+func TestServerProcessPacketUpdatesLastPeerPacket(t *testing.T) {
+	s, _ := testServer(t)
+	fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, 1024, 32, 100, 0, 0)
+	cc := &ServerConn{id: "lp", tcpmode: 1, fm: fm, activity: make(chan struct{}, 1)}
+	s.addServerConn("lp", cc)
+
+	// Invalid protobuf must not update lastPeerPacket.
+	badProto := testPacketTCP("lp", "127.0.0.1:80")
+	badProto.my.Key = int32(s.key)
+	badProto.my.Data = []byte{0xff, 0xff, 0xff}
+	s.processPacket(badProto)
+	if cc.lastPeerPacket.Load() != 0 {
+		t.Fatal("invalid protobuf must not update lastPeerPacket")
+	}
+
+	// Malformed DATA frame with nil Data must not update lastPeerPacket.
+	nilDataBytes, err := proto.Marshal(&network.Frame{Type: int32(network.Frame_DATA), Id: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nilDataPkt := testPacketTCP("lp", "127.0.0.1:80")
+	nilDataPkt.my.Key = int32(s.key)
+	nilDataPkt.my.Data = nilDataBytes
+	s.processPacket(nilDataPkt)
+	if cc.lastPeerPacket.Load() != 0 {
+		t.Fatal("malformed DATA frame must not update lastPeerPacket")
+	}
+
+	// Valid HB frame must update lastPeerPacket without touching activeRecvTime.
+	hbBytes, err := proto.Marshal(&network.Frame{
+		Type: int32(network.Frame_DATA),
+		Id:   1,
+		Data: &network.FrameData{Type: int32(network.FrameData_HB)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hbPkt := testPacketTCP("lp", "127.0.0.1:80")
+	hbPkt.my.Key = int32(s.key)
+	hbPkt.my.Data = hbBytes
+	s.processPacket(hbPkt)
+	first := cc.lastPeerPacket.Load()
+	if first == 0 {
+		t.Fatal("valid HB frame must update lastPeerPacket")
+	}
+	if cc.activeRecvTime.Load() != 0 {
+		t.Fatal("HB frame must not update activeRecvTime")
+	}
+
+	// Congestion PING with conn id must advance lastPeerPacket.
+	cc.lastPeerPacket.Store(1)
+	pingPkt := testPacket("lp", MyMsg_PING, "")
+	pingPkt.my.Key = int32(s.key)
+	pingPkt.my.Data, _ = time.Now().MarshalBinary()
+	s.processPacket(pingPkt)
+	if cc.lastPeerPacket.Load() <= 1 {
+		t.Fatal("conn-scoped PING must update lastPeerPacket")
+	}
+}
+
+func TestServerRecvTCPClosesSilentPeerWithUnackedFrames(t *testing.T) {
+	s, _ := testServer(t)
+	s.connErrorMap.Store("dummy", time.Now()) // touch map just to ensure init
+	fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, 1024, 32, 100, 0, 0)
+	fm.Connect()
+	clientEnd, serverEnd := net.Pipe()
+	defer clientEnd.Close()
+
+	cc := &ServerConn{
+		timeout:       1,
+		tcpconn:       serverEnd,
+		tcpaddrTarget: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 80},
+		id:            "silent-unacked",
+		rproto:        0,
+		fm:            fm,
+		tcpmode:       1,
+		activity:      make(chan struct{}, 1),
+	}
+	now := time.Now()
+	cc.activeRecvTime.Store(now.UnixNano())
+	cc.activeSendTime.Store(now.UnixNano())
+	cc.lastPeerPacket.Store(now.Add(-2 * time.Second).UnixNano())
+	s.addServerConn(cc.id, cc)
+
+	// Queue data so SendWin becomes non-empty (unacknowledged frames in flight).
+	fm.WriteSendBuffer([]byte("unacked-payload"))
+	fm.Update()
+
+	s.workResultLock.Add(1)
+	done := make(chan struct{})
+	go func() {
+		s.RecvTCP(cc, cc.id, &net.IPAddr{IP: net.IPv4(9, 9, 9, 9)})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		s.exit.Store(true)
+		t.Fatal("RecvTCP did not reap silent peer with unacknowledged frames")
+	}
+
+	if s.getServerConnById(cc.id) != nil {
+		t.Fatal("reaped conn must be removed from serverConnMap")
 	}
 }

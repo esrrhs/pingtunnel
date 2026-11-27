@@ -171,6 +171,11 @@ type ClientConn struct {
 	peerCongestionTime atomic.Int64
 	lastCongestionPing atomic.Int64
 
+	// lastPeerPacket is the UnixNano time of the last valid packet of any kind
+	// (data, ACK, HB, congestion PING) received for this conn. Zero until the
+	// first packet is processed.
+	lastPeerPacket atomic.Int64
+
 	activeRecvTime atomic.Int64
 	activeSendTime atomic.Int64
 
@@ -185,6 +190,18 @@ type ClientConn struct {
 	// which reads and writes those flags internally. Data-path FrameMgr calls
 	// stay outside: they are internally locked.
 	fmLock sync.Mutex
+}
+
+// peerGone reports that nothing at all has arrived from the peer for longer
+// than the conn timeout. Unlike the idle check it ignores unacknowledged
+// frames: a vanished peer never acknowledges them, so without this the conn
+// (and its retransmit loop) would live forever.
+func (cc *ClientConn) peerGone(now time.Time, timeout int) bool {
+	last := cc.lastPeerPacket.Load()
+	if last == 0 || timeout <= 0 {
+		return false
+	}
+	return now.UnixNano()-last > int64(time.Second)*int64(timeout)
 }
 
 func (cc *ClientConn) fmUpdate() {
@@ -781,6 +798,14 @@ mainLoop:
 			break
 		}
 
+		// Dead peer: the idle check above never fires while frames are
+		// unacknowledged, and a vanished server never acknowledges them.
+		if clientConn.peerGone(time.Now(), p.timeout) {
+			loggo.Info("close conn, peer silent %s %s", clientConn.id, clientConn.tcpaddr.String())
+			clientConn.fm.Close()
+			break
+		}
+
 		if clientConn.fm.IsRemoteClosed() {
 			loggo.Debug("closed by remote conn %s %s", clientConn.id, clientConn.tcpaddr.String())
 			clientConn.fm.Close()
@@ -828,6 +853,11 @@ mainLoop:
 	closeWait := newAdaptiveLoopWait(time.Millisecond, 50*time.Millisecond)
 	var halfFlushSince time.Time
 	for !p.exit.Load() && !clientConn.exit.Load() {
+		if clientConn.peerGone(time.Now(), p.timeout) {
+			loggo.Debug("close phase: peer silent %s %s", clientConn.id, clientConn.tcpaddr.String())
+			break
+		}
+
 		now := common.GetNowUpdateInSecond()
 		hadWork := false
 
@@ -1002,6 +1032,7 @@ func (p *Client) processPacket(packet *Packet) {
 			// backpressure, not idle — exempt it from inactivity reaping.
 			if clientConn := p.getClientConnById(packet.my.Id); clientConn != nil {
 				clientConn.peerCongestionTime.Store(common.GetNowUpdateInSecond().UnixNano())
+				clientConn.lastPeerPacket.Store(time.Now().UnixNano())
 			}
 		}
 		return
@@ -1052,6 +1083,7 @@ func (p *Client) processPacket(packet *Packet) {
 			loggo.Debug("drop data frame without payload %s", clientConn.id)
 			return
 		}
+		clientConn.lastPeerPacket.Store(time.Now().UnixNano())
 		if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 			// Only payload frames count as conn activity; ACK/HB frames must
 			// not keep an idle conn alive.
@@ -1066,6 +1098,7 @@ func (p *Client) processPacket(packet *Packet) {
 		if packet.my.Data == nil {
 			return
 		}
+		clientConn.lastPeerPacket.Store(time.Now().UnixNano())
 		addr := clientConn.ipaddr
 		var err error
 		if clientConn.udpRelayConn != nil {

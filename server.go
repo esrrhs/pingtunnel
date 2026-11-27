@@ -469,7 +469,6 @@ func (p *Server) processDataPacket(packet *Packet) {
 
 	localConn.echoId.Store(int64(packet.echoId))
 	localConn.echoSeq.Store(int64(packet.echoSeq))
-	localConn.lastPeerPacket.Store(time.Now().UnixNano())
 
 	if packet.my.Type == (int32)(MyMsg_DATA) {
 
@@ -488,6 +487,7 @@ func (p *Server) processDataPacket(packet *Packet) {
 				loggo.Debug("drop data frame without payload %s", localConn.id)
 				return
 			}
+			localConn.lastPeerPacket.Store(time.Now().UnixNano())
 			if f.Data != nil && f.Data.Type == (int32)(network.FrameData_USER_DATA) {
 				// Only payload frames count as conn activity; ACK/HB frames
 				// must not keep an idle conn alive.
@@ -502,6 +502,7 @@ func (p *Server) processDataPacket(packet *Packet) {
 			if packet.my.Data == nil {
 				return
 			}
+			localConn.lastPeerPacket.Store(time.Now().UnixNano())
 
 			var err error
 			if localConn.udpViaProxy {
@@ -827,6 +828,11 @@ mainLoop:
 	closeWait := newAdaptiveLoopWait(time.Millisecond, 50*time.Millisecond)
 	var halfFlushSince time.Time
 	for !p.exit.Load() && !conn.exit.Load() {
+		if conn.peerGone(time.Now()) {
+			loggo.Debug("close phase: peer silent %s %s", conn.id, conn.tcpaddrTarget.String())
+			break
+		}
+
 		now := common.GetNowUpdateInSecond()
 		hadWork := false
 
@@ -867,11 +873,6 @@ mainLoop:
 		diffclose := now.Sub(startCloseTime)
 		if diffclose > time.Second*60 {
 			loggo.Debug("close conn had timeout %s %s", conn.id, conn.tcpaddrTarget.String())
-			break
-		}
-
-		if conn.peerGone(time.Now()) {
-			loggo.Debug("close phase: peer silent %s %s", conn.id, conn.tcpaddrTarget.String())
 			break
 		}
 

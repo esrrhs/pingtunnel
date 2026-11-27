@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/esrrhs/gohome/network"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -538,5 +539,94 @@ func TestClientRunStopLifecycle(t *testing.T) {
 	c.Stop()
 	if rec.writeCount() == 0 {
 		t.Error("client should have pinged the server at least once")
+	}
+}
+
+func TestClientConnPeerGone(t *testing.T) {
+	now := time.Now()
+	cc := &ClientConn{}
+	if cc.peerGone(now, 5) {
+		t.Fatal("zero lastPeerPacket must not be reported gone")
+	}
+
+	cc.lastPeerPacket.Store(now.Add(-10 * time.Second).UnixNano())
+	if cc.peerGone(now, 0) {
+		t.Fatal("non-positive timeout must not report peer gone")
+	}
+
+	cc.lastPeerPacket.Store(now.Add(-4 * time.Second).UnixNano())
+	if cc.peerGone(now, 5) {
+		t.Fatal("peer within timeout must not be reported gone")
+	}
+
+	cc.lastPeerPacket.Store(now.Add(-6 * time.Second).UnixNano())
+	if !cc.peerGone(now, 5) {
+		t.Fatal("peer silent past timeout must be reported gone")
+	}
+}
+
+func TestClientProcessPacketUpdatesLastPeerPacket(t *testing.T) {
+	rec := &fakeICMPConn{}
+	c := &Client{
+		key:          12345,
+		conn:         rec,
+		ipaddrServer: &net.IPAddr{IP: net.IPv4(9, 9, 9, 9)},
+		share:        newUnderlayShare(),
+	}
+	fm := network.NewFrameMgr(FRAME_MAX_SIZE, FRAME_MAX_ID, 1024, 32, 100, 0, 0)
+	cc := &ClientConn{id: "cp", addrKey: "127.0.0.1:80", tcpmode: 1, fm: fm, activity: make(chan struct{}, 1)}
+	c.addClientConn("cp", "127.0.0.1:80", cc)
+
+	// Invalid protobuf must not update lastPeerPacket.
+	c.processPacket(&Packet{
+		icmpType: RECV_PROTO,
+		my:       &MyMsg{Id: "cp", Type: int32(MyMsg_DATA), Key: int32(c.key), Rproto: -1, Data: []byte{0xff, 0xff}},
+	})
+	if cc.lastPeerPacket.Load() != 0 {
+		t.Fatal("invalid protobuf must not update lastPeerPacket")
+	}
+
+	// Malformed DATA frame without payload must not update lastPeerPacket.
+	nilDataBytes, err := proto.Marshal(&network.Frame{Type: int32(network.Frame_DATA), Id: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.processPacket(&Packet{
+		icmpType: RECV_PROTO,
+		my:       &MyMsg{Id: "cp", Type: int32(MyMsg_DATA), Key: int32(c.key), Rproto: -1, Data: nilDataBytes},
+	})
+	if cc.lastPeerPacket.Load() != 0 {
+		t.Fatal("malformed DATA frame must not update lastPeerPacket")
+	}
+
+	// Valid HB frame must update lastPeerPacket without touching activeRecvTime.
+	hbBytes, err := proto.Marshal(&network.Frame{
+		Type: int32(network.Frame_DATA),
+		Id:   1,
+		Data: &network.FrameData{Type: int32(network.FrameData_HB)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.processPacket(&Packet{
+		icmpType: RECV_PROTO,
+		my:       &MyMsg{Id: "cp", Type: int32(MyMsg_DATA), Key: int32(c.key), Rproto: -1, Data: hbBytes},
+	})
+	if cc.lastPeerPacket.Load() == 0 {
+		t.Fatal("valid HB frame must update lastPeerPacket")
+	}
+	if cc.activeRecvTime.Load() != 0 {
+		t.Fatal("HB frame must not update activeRecvTime")
+	}
+
+	// Congestion PING with conn id must advance lastPeerPacket.
+	cc.lastPeerPacket.Store(1)
+	tb, _ := time.Now().MarshalBinary()
+	c.processPacket(&Packet{
+		icmpType: RECV_PROTO,
+		my:       &MyMsg{Id: "cp", Type: int32(MyMsg_PING), Key: int32(c.key), Rproto: -1, Data: tb},
+	})
+	if cc.lastPeerPacket.Load() <= 1 {
+		t.Fatal("conn-scoped PING must update lastPeerPacket")
 	}
 }
