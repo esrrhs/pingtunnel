@@ -616,8 +616,14 @@ func TestE2E_ThroughputStability(t *testing.T) {
 		t.Logf("steady avg: %.2f MB/s, min: %.2f MB/s, max: %.2f MB/s, stability ratio: %.2f",
 			avgRate, minRate, maxRate, stabilityRatio)
 
-		if minRate < 10.0 {
-			t.Fatalf("throughput collapsed to %.2f MB/s (< 10 MB/s baseline)", minRate)
+		minBaselineMBps := 10.0
+		if raceDetectorEnabled {
+			// The race detector adds substantial CPU/synchronization overhead;
+			// keep a lower floor while still enforcing stabilityRatio >= 0.50.
+			minBaselineMBps = 2.0
+		}
+		if minRate < minBaselineMBps {
+			t.Fatalf("throughput collapsed to %.2f MB/s (< %.1f MB/s baseline)", minRate, minBaselineMBps)
 		}
 		if stabilityRatio < 0.50 {
 			t.Fatalf("throughput unstable: min/avg ratio %.2f < 0.50", stabilityRatio)
